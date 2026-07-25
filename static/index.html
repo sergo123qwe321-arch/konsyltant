@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ИИ-Консультант</title>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Экран входа -->
+    <div id="login-screen" class="screen active">
+        <div class="glass-card login-card">
+            <div class="logo">🧬 ИИ-Консультант</div>
+            <h2>Авторизация</h2>
+            <p>Введите ваш уникальный код доступа и пароль для входа в защищенную среду.</p>
+            
+            <form id="login-form">
+                <div class="input-group">
+                    <label for="token-input">Секретный код или ссылка</label>
+                    <input type="text" id="token-input" placeholder="Например: abc123xyz" required autocomplete="off">
+                </div>
+                <div class="input-group">
+                    <label for="password-input">Пароль</label>
+                    <input type="password" id="password-input" placeholder="Ваш пароль" required>
+                </div>
+                <div id="login-error" class="error-msg"></div>
+                <button type="submit" class="btn-primary" id="login-btn">
+                    <span>Войти в систему</span>
+                    <div class="loader hidden" id="login-loader"></div>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Экран чата -->
+    <div id="chat-screen" class="screen">
+        <div class="chat-container glass-card">
+            <header class="chat-header">
+                <div class="logo">🧬 ИИ-Консультант</div>
+                <button id="logout-btn" class="btn-secondary">Выйти</button>
+            </header>
+            
+            <div id="chat-history" class="chat-history">
+                <div class="message bot-message">
+                    <div class="msg-avatar">ИИ</div>
+                    <div class="msg-content">Здравствуйте! Я ваш медицинский ИИ-Консультант. Я проанализировал ваши документы и готов ответить на вопросы. Обратите внимание, я не даю самостоятельных диагнозов, а опираюсь строго на факты из ваших файлов. Чем могу помочь?</div>
+                </div>
+            </div>
+            
+            <form id="chat-form" class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Задайте ваш вопрос..." required autocomplete="off">
+                <button type="submit" class="btn-primary" id="send-btn">Отправить</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
