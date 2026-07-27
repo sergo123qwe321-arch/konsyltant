@@ -1,10 +1,7 @@
 import os
-import smtplib
-import socket
 import secrets
 import string
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
 from dotenv import load_dotenv
 
 from database import folder_exists, create_patient_access
@@ -13,11 +10,8 @@ from drive_api import get_drive_service
 # Загружаем переменные окружения из .env
 load_dotenv()
 
-# Настройки почты
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = 465
-SMTP_LOGIN = os.getenv("SMTP_LOGIN", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+# Настройки почты (Resend API)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 TARGET_EMAIL = "sergo123qwe321@gmail.com"
 
 # Настройки диска и проекта
@@ -30,47 +24,35 @@ def generate_random_password(length=12):
     return ''.join(secrets.choice(characters) for _ in range(length))
 
 def send_email(subject: str, body: str, to_email: str) -> bool:
-    """Отправляет email через SMTP"""
-    if not SMTP_LOGIN or not SMTP_PASSWORD:
-        print("[FOLDER WATCHER ERROR] ВНИМАНИЕ: Настройки SMTP (SMTP_LOGIN, SMTP_PASSWORD) не заданы.")
+    """Отправляет email через Resend API"""
+    if not RESEND_API_KEY:
+        print("[FOLDER WATCHER ERROR] ВНИМАНИЕ: RESEND_API_KEY не задан в .env.")
         return False
-        
-    msg = MIMEMultipart()
-    msg['From'] = SMTP_LOGIN
-    msg['To'] = to_email
-    msg['Subject'] = subject
 
-    msg.attach(MIMEText(body, 'html'))
+    print(f"[FOLDER WATCHER] Попытка отправки через Resend API на {to_email}...")
+    
+    url = "https://api.resend.com/emails"
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "from": "onboarding@resend.dev",
+        "to": [to_email],
+        "subject": subject,
+        "html": body
+    }
 
-    print(f"[FOLDER WATCHER] Попытка отправки с {SMTP_LOGIN} через {SMTP_SERVER}:{SMTP_PORT} на {to_email}...")
     try:
-        # Принудительно заставляем сокет использовать только IPv4 (AF_INET),
-        # чтобы избежать ошибки "Network is unreachable" (IPv6) на серверах Render.
-        _orig_getaddrinfo = socket.getaddrinfo
-        def force_ipv4(host, port, family=0, type=0, proto=0, flags=0):
-            return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
-        
-        socket.getaddrinfo = force_ipv4
-        
-        try:
-            # Используем SMTP_SSL (порт 465) с таймаутом 15с через контекстный менеджер
-            with smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=15) as server:
-                server.login(SMTP_LOGIN, SMTP_PASSWORD)
-                server.send_message(msg)
-        finally:
-            # Возвращаем стандартное поведение getaddrinfo
-            socket.getaddrinfo = _orig_getaddrinfo
-            
-        print(f"[FOLDER WATCHER SUCCESS] Письмо успешно отправлено на {to_email}!")
-        return True
-    except socket.timeout:
-        print(f"[FOLDER WATCHER ERROR] Таймаут подключения к Gmail SMTP (15 сек).")
-        return False
-    except smtplib.SMTPException as e:
-        print(f"[FOLDER WATCHER ERROR] Ошибка SMTP при отправке на {to_email}: {e}")
-        return False
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        if response.status_code in (200, 201):
+            print(f"[FOLDER WATCHER SUCCESS] Письмо успешно отправлено на {to_email} через Resend API!")
+            return True
+        else:
+            print(f"[FOLDER WATCHER ERROR] Ошибка Resend API: {response.status_code} - {response.text}")
+            return False
     except Exception as e:
-        print(f"[FOLDER WATCHER ERROR] Сбой отправки Email на {to_email}: {e}")
+        print(f"[FOLDER WATCHER ERROR] Сбой запроса к Resend API: {e}")
         return False
 
 def scan_folders():
