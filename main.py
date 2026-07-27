@@ -11,12 +11,28 @@ from typing import Optional
 
 import threading
 import time
+import requests
 from contextlib import asynccontextmanager
 
 from database import token_exists, verify_access, init_db
 from drive_api import get_drive_service
 from rag import ask_consultant
 from folder_watcher import scan_folders
+
+def keep_awake_loop():
+    """Фоновый пинг сервера, чтобы Render не засыпал (раз в 10 минут)"""
+    base_url = os.getenv("BASE_URL")
+    if not base_url:
+        print("[KEEP-AWAKE] BASE_URL не задан, будильник отключен.")
+        return
+        
+    while True:
+        time.sleep(600)  # Ждем 10 минут
+        try:
+            response = requests.get(base_url, timeout=10)
+            print(f"[KEEP-AWAKE] Успешный пинг сервера: {response.status_code}")
+        except Exception as e:
+            print(f"[KEEP-AWAKE ERROR] Ошибка пинга: {e}")
 
 def watcher_loop():
     while True:
@@ -33,6 +49,10 @@ async def lifespan(app: FastAPI):
     
     thread = threading.Thread(target=watcher_loop, daemon=True)
     thread.start()
+    
+    awake_thread = threading.Thread(target=keep_awake_loop, daemon=True)
+    awake_thread.start()
+    
     yield
 
 app = FastAPI(title="ИИ-Консультант RAG API", lifespan=lifespan)
