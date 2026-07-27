@@ -9,11 +9,30 @@ from pydantic import BaseModel
 import secrets
 from typing import Optional
 
+import threading
+import time
+from contextlib import asynccontextmanager
+
 from database import token_exists, verify_access
 from drive_api import get_drive_service
 from rag import ask_consultant
+from folder_watcher import scan_folders
 
-app = FastAPI(title="ИИ-Консультант RAG API")
+def watcher_loop():
+    while True:
+        try:
+            scan_folders()
+        except Exception as e:
+            print(f"Ошибка в фоновом потоке folder_watcher: {e}")
+        time.sleep(60) # Проверяем новые папки раз в минуту
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    thread = threading.Thread(target=watcher_loop, daemon=True)
+    thread.start()
+    yield
+
+app = FastAPI(title="ИИ-Консультант RAG API", lifespan=lifespan)
 
 STATIC_DIR = "static"
 os.makedirs(STATIC_DIR, exist_ok=True)
