@@ -136,7 +136,12 @@ def scan_folders():
                 if send_email(subject, body, TARGET_EMAIL):
                     print(f"[FOLDER WATCHER] [OK] Доступ для '{folder_name}' отправлен на {TARGET_EMAIL}")
                 else:
-                    print(f"[FOLDER WATCHER ERROR] Доступ для '{folder_name}' создан в БД, но письмо отправить не удалось.")
+                    print(f"[FOLDER WATCHER ERROR] Письмо отправить не удалось (блокировка SMTP).")
+                    print(f"==================================================")
+                    print(f"  ВНИМАНИЕ! ДОСТУП ДЛЯ ПАПКИ '{folder_name}':")
+                    print(f"  Ссылка: {login_link}")
+                    print(f"  Пароль: {password}")
+                    print(f"==================================================")
                     
                 new_count += 1
                 
