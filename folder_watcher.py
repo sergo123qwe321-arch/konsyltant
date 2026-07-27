@@ -53,25 +53,26 @@ def send_email(subject: str, body: str, to_email: str) -> bool:
         return False
 
 def scan_folders():
-    """Сканирует корневую папку и создает доступы для новых подпапок"""
+    """Сканирует все доступные папки и создает доступы для новых подпапок"""
+    print(f"\n[FOLDER WATCHER] Старт цикла проверки. ROOT_FOLDER_ID: {ROOT_FOLDER_ID}")
+    
     if not ROOT_FOLDER_ID:
-        print("Ошибка: ROOT_FOLDER_ID не задан в .env. Невозможно просканировать корневую папку.")
-        return
-        
-    print(f"Начинаю сканирование корневой папки: {ROOT_FOLDER_ID}")
-    service = get_drive_service()
-    if not service:
-        print("Ошибка доступа к Google Диску.")
+        print("[FOLDER WATCHER ERROR] ROOT_FOLDER_ID не задан в .env. Невозможно просканировать папки.")
         return
         
     try:
-        # Ищем только папки внутри корневой папки
-        query = f"'{ROOT_FOLDER_ID}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        service = get_drive_service()
+        if not service:
+            print("[FOLDER WATCHER ERROR] Ошибка доступа к Google Диску (сервис не инициализирован).")
+            return
+            
+        # Убираем ограничение in parents, чтобы находить папки на любой глубине вложенности
+        query = "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
         results = service.files().list(q=query, fields="files(id, name)").execute()
         folders = results.get('files', [])
         
         if not folders:
-            print("В корневой папке нет подпапок обследуемых.")
+            print("[FOLDER WATCHER] Доступные папки не найдены (возможно, нет доступа).")
             return
             
         new_count = 0
@@ -79,9 +80,15 @@ def scan_folders():
             folder_id = folder['id']
             folder_name = folder['name']
             
+            # Игнорируем саму корневую папку
+            if folder_id == ROOT_FOLDER_ID:
+                continue
+                
+            print(f"[FOLDER WATCHER] Проверка папки: '{folder_name}' (ID: {folder_id})")
+            
             # Проверяем, зарегистрирована ли папка в SQLite
             if not folder_exists(folder_id):
-                print(f"Обнаружена новая папка: {folder_name} (ID: {folder_id})")
+                print(f"[FOLDER WATCHER] [+] Обнаружена новая папка: {folder_name}")
                 
                 # Генерируем пароль и сохраняем доступ в БД
                 password = generate_random_password()
@@ -104,21 +111,21 @@ def scan_folders():
                 </html>
                 """
                 
-                print(f"Отправка Email для {folder_name}...")
+                print(f"[FOLDER WATCHER] Отправка Email для {folder_name}...")
                 if send_email(subject, body, TARGET_EMAIL):
-                    print(f"[+] Доступ для '{folder_name}' отправлен на {TARGET_EMAIL}")
+                    print(f"[FOLDER WATCHER] [OK] Доступ для '{folder_name}' отправлен на {TARGET_EMAIL}")
                 else:
-                    print(f"[-] Доступ для '{folder_name}' создан в БД, но письмо отправить не удалось.")
+                    print(f"[FOLDER WATCHER ERROR] Доступ для '{folder_name}' создан в БД, но письмо отправить не удалось.")
                     
                 new_count += 1
                 
         if new_count == 0:
-            print("Сканирование завершено. Все папки уже зарегистрированы в системе.")
+            print("[FOLDER WATCHER] Новых папок нет.")
         else:
-            print(f"Успешно обработано новых папок: {new_count}")
+            print(f"[FOLDER WATCHER] Успешно обработано новых папок: {new_count}")
 
     except Exception as e:
-        print(f"Ошибка при поиске папок на Google Диске: {e}")
+        print(f"[FOLDER WATCHER ERROR] Критическая ошибка API Google Drive: {e}")
 
 if __name__ == "__main__":
     scan_folders()
