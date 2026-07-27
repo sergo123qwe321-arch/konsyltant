@@ -15,7 +15,7 @@ load_dotenv()
 
 # Настройки почты
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+SMTP_PORT = int(os.getenv("SMTP_PORT", 465))
 SMTP_LOGIN = os.getenv("SMTP_LOGIN", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 TARGET_EMAIL = "sergo123qwe321@gmail.com"

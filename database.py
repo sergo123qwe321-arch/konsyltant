@@ -11,6 +11,11 @@ except ImportError:
 DB_FILE = "konsyltant.db"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Render.com иногда выдает строку, начинающуюся с postgres://, 
+# которая устарела для современных драйверов, поэтому принудительно заменяем на postgresql://
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 def get_connection():
     if DATABASE_URL and psycopg2:
         return psycopg2.connect(DATABASE_URL)
