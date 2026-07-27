@@ -32,7 +32,13 @@ def get_drive_service():
             return None
             
         # Подтягиваем системные настройки прокси (HTTP_PROXY / HTTPS_PROXY) для обхода ограничений сети (WinError 10060)
-        proxy_info = httplib2.ProxyInfo.from_environment()
+        proxy_info = None
+        try:
+            if hasattr(httplib2, 'proxy_info_from_environment'):
+                proxy_info = httplib2.proxy_info_from_environment()
+        except Exception as e:
+            logger.warning(f"Не удалось получить прокси из окружения: {e}")
+            
         http_client = httplib2.Http(proxy_info=proxy_info, timeout=30)
         
         # Авторизуем http-клиент с помощью credentials
