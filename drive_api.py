@@ -5,6 +5,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 import logging
+import httplib2
+import google_auth_httplib2
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,7 +31,14 @@ def get_drive_service():
             logger.error("Учетные данные Google не найдены (ни GOOGLE_CREDENTIALS_JSON, ни credentials.json).")
             return None
             
-        service = build('drive', 'v3', credentials=creds)
+        # Подтягиваем системные настройки прокси (HTTP_PROXY / HTTPS_PROXY) для обхода ограничений сети (WinError 10060)
+        proxy_info = httplib2.ProxyInfo.from_environment()
+        http_client = httplib2.Http(proxy_info=proxy_info, timeout=30)
+        
+        # Авторизуем http-клиент с помощью credentials
+        authed_http = google_auth_httplib2.AuthorizedHttp(creds, http=http_client)
+        
+        service = build('drive', 'v3', http=authed_http)
         return service
     except Exception as e:
         logger.error(f"Ошибка при инициализации Google Drive API: {e}")

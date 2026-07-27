@@ -113,7 +113,7 @@ def ask_consultant(user_message: str, folder_id: str) -> str:
         results = service.files().list(q=query, fields="files(id, name, mimeType)").execute()
         all_files = results.get('files', [])
     except Exception as e:
-        return f"Ошибка при получении списка документов: {str(e)}"
+        return f"Связь с Google Drive временно недоступна (таймаут или сбой сети). Пожалуйста, подождите и попробуйте снова. (Детали: {str(e)})"
     
     if not all_files:
         return "В вашей папке пока нет медицинских документов."

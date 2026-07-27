@@ -111,7 +111,9 @@ async def get_patient_files(authorization: Optional[str] = Header(None)):
         files = results.get('files', [])
         return {"files": files}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка при получении файлов: {str(e)}")
+        # Понятное сообщение для UI при таймаутах (WinError 10060) и сетевых сбоях
+        error_msg = f"Связь с Google Drive временно недоступна. Пожалуйста, подождите и попробуйте снова. (Детали: {str(e)})"
+        raise HTTPException(status_code=503, detail=error_msg)
 
 @app.post("/api/chat")
 def chat_api(req: ChatRequest, authorization: Optional[str] = Header(None)):
