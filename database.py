@@ -3,24 +3,46 @@ import bcrypt
 import secrets
 import os
 
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
+
 DB_FILE = "konsyltant.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_connection():
+    if DATABASE_URL and psycopg2:
+        return psycopg2.connect(DATABASE_URL)
     return sqlite3.connect(DB_FILE)
+
+def execute_query(cursor, query, params=()):
+    if DATABASE_URL and psycopg2:
+        # В PostgreSQL используется синтаксис %s вместо ?
+        query = query.replace("?", "%s")
+    cursor.execute(query, params)
 
 def init_db():
     """
-    Инициализирует базу данных SQLite и создает таблицу patient_access.
+    Инициализирует базу данных (PostgreSQL или SQLite) и создает таблицу patient_access.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
+    
+    if DATABASE_URL and psycopg2:
+        auto_inc = "SERIAL PRIMARY KEY"
+        date_type = "TIMESTAMP"
+    else:
+        auto_inc = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        date_type = "DATETIME"
+        
+    cursor.execute(f"""
         CREATE TABLE IF NOT EXISTS patient_access (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {auto_inc},
             access_token TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             gdrive_folder_id TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at {date_type} DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()
@@ -38,7 +60,7 @@ def create_patient_access(password: str, gdrive_folder_id: str) -> str:
     salt = bcrypt.gensalt()
     password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
     
-    cursor.execute("""
+    execute_query(cursor, """
         INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id)
         VALUES (?, ?, ?)
     """, (access_token, password_hash, gdrive_folder_id))
@@ -55,7 +77,7 @@ def verify_access(access_token: str, password: str) -> str:
     conn = get_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
+    execute_query(cursor, """
         SELECT password_hash, gdrive_folder_id FROM patient_access 
         WHERE access_token = ?
     """, (access_token,))
@@ -78,7 +100,7 @@ def token_exists(access_token: str) -> bool:
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM patient_access WHERE access_token = ?", (access_token,))
+    execute_query(cursor, "SELECT 1 FROM patient_access WHERE access_token = ?", (access_token,))
     exists = cursor.fetchone() is not None
     conn.close()
     return exists
@@ -89,7 +111,7 @@ def folder_exists(gdrive_folder_id: str) -> bool:
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM patient_access WHERE gdrive_folder_id = ?", (gdrive_folder_id,))
+    execute_query(cursor, "SELECT 1 FROM patient_access WHERE gdrive_folder_id = ?", (gdrive_folder_id,))
     exists = cursor.fetchone() is not None
     conn.close()
     return exists
