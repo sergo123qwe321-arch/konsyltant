@@ -53,11 +53,10 @@ def send_email(subject: str, body: str, to_email: str) -> bool:
         socket.getaddrinfo = force_ipv4
         
         try:
-            # Используем SMTP_SSL (порт 465) с таймаутом, чтобы предотвратить бесконечное зависание
-            server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=10)
-            server.login(SMTP_LOGIN, SMTP_PASSWORD)
-            server.send_message(msg)
-            server.quit()
+            # Используем SMTP_SSL (порт 465) с таймаутом 15с через контекстный менеджер
+            with smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=15) as server:
+                server.login(SMTP_LOGIN, SMTP_PASSWORD)
+                server.send_message(msg)
         finally:
             # Возвращаем стандартное поведение getaddrinfo
             socket.getaddrinfo = _orig_getaddrinfo
@@ -65,7 +64,7 @@ def send_email(subject: str, body: str, to_email: str) -> bool:
         print(f"[FOLDER WATCHER SUCCESS] Письмо успешно отправлено на {to_email}!")
         return True
     except socket.timeout:
-        print(f"[FOLDER WATCHER ERROR] Таймаут подключения к Gmail SMTP (10 сек).")
+        print(f"[FOLDER WATCHER ERROR] Таймаут подключения к Gmail SMTP (15 сек).")
         return False
     except smtplib.SMTPException as e:
         print(f"[FOLDER WATCHER ERROR] Ошибка SMTP при отправке на {to_email}: {e}")
