@@ -47,9 +47,8 @@ def send_email(subject: str, body: str, to_email: str) -> bool:
         # Принудительно заставляем сокет использовать только IPv4 (AF_INET),
         # чтобы избежать ошибки "Network is unreachable" (IPv6) на серверах Render.
         _orig_getaddrinfo = socket.getaddrinfo
-        def force_ipv4(*args, **kwargs):
-            kwargs['family'] = socket.AF_INET
-            return _orig_getaddrinfo(*args, **kwargs)
+        def force_ipv4(host, port, family=0, type=0, proto=0, flags=0):
+            return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
         
         socket.getaddrinfo = force_ipv4
         
