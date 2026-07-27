@@ -1,5 +1,6 @@
 import os
 import smtplib
+import socket
 import secrets
 import string
 from email.mime.text import MIMEText
@@ -43,13 +44,19 @@ def send_email(subject: str, body: str, to_email: str) -> bool:
 
     print(f"[FOLDER WATCHER] Попытка отправки с {SMTP_LOGIN} через {SMTP_SERVER}:{SMTP_PORT} на {to_email}...")
     try:
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
+        # Используем SMTP_SSL (порт 465) с таймаутом, чтобы предотвратить бесконечное зависание
+        server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=10)
         server.login(SMTP_LOGIN, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
         print(f"[FOLDER WATCHER SUCCESS] Письмо успешно отправлено на {to_email}!")
         return True
+    except socket.timeout:
+        print(f"[FOLDER WATCHER ERROR] Таймаут подключения к Gmail SMTP (10 сек).")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"[FOLDER WATCHER ERROR] Ошибка SMTP при отправке на {to_email}: {e}")
+        return False
     except Exception as e:
         print(f"[FOLDER WATCHER ERROR] Сбой отправки Email на {to_email}: {e}")
         return False
