@@ -13,7 +13,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
-from database import token_exists, verify_access
+from database import token_exists, verify_access, init_db
 from drive_api import get_drive_service
 from rag import ask_consultant
 from folder_watcher import scan_folders
@@ -28,6 +28,9 @@ def watcher_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Гарантируем, что БД и таблицы созданы до запуска фоновых процессов
+    init_db()
+    
     thread = threading.Thread(target=watcher_loop, daemon=True)
     thread.start()
     yield
