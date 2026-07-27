@@ -31,7 +31,7 @@ def generate_random_password(length=12):
 def send_email(subject: str, body: str, to_email: str) -> bool:
     """Отправляет email через SMTP"""
     if not SMTP_LOGIN or not SMTP_PASSWORD:
-        print("ВНИМАНИЕ: Настройки SMTP (SMTP_LOGIN, SMTP_PASSWORD) не заданы в .env.")
+        print("[FOLDER WATCHER ERROR] ВНИМАНИЕ: Настройки SMTP (SMTP_LOGIN, SMTP_PASSWORD) не заданы.")
         return False
         
     msg = MIMEMultipart()
@@ -41,15 +41,17 @@ def send_email(subject: str, body: str, to_email: str) -> bool:
 
     msg.attach(MIMEText(body, 'html'))
 
+    print(f"[FOLDER WATCHER] Попытка отправки с {SMTP_LOGIN} через {SMTP_SERVER}:{SMTP_PORT} на {to_email}...")
     try:
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(SMTP_LOGIN, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
+        print(f"[FOLDER WATCHER SUCCESS] Письмо успешно отправлено на {to_email}!")
         return True
     except Exception as e:
-        print(f"Ошибка при отправке Email: {e}")
+        print(f"[FOLDER WATCHER ERROR] Сбой отправки Email на {to_email}: {e}")
         return False
 
 def scan_folders():
