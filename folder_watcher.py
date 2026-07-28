@@ -71,8 +71,23 @@ def scan_folders():
             
         # Убираем ограничение in parents, чтобы находить папки на любой глубине вложенности
         query = "mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        results = service.files().list(q=query, fields="files(id, name)").execute()
-        folders = results.get('files', [])
+        
+        folders = []
+        page_token = None
+        while True:
+            results = service.files().list(
+                q=query,
+                pageSize=100,
+                pageToken=page_token,
+                fields="nextPageToken, files(id, name)"
+            ).execute()
+            
+            folders.extend(results.get('files', []))
+            page_token = results.get('nextPageToken')
+            if not page_token:
+                break
+                
+        print(f"[FOLDER WATCHER] Всего получено элементов из Google Drive API: {len(folders)}")
         
         if not folders:
             print("[FOLDER WATCHER] Доступные папки не найдены (возможно, нет доступа).")
