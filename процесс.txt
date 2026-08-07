@@ -2,11 +2,12 @@
 Дата: 2026-08-07
 
 Текущие успехи и действия:
-1. Выполнен полный технический аудит рабочего пространства для Архитектора:
-   - Проанализирован стек (Python 3.13, FastAPI, Uvicorn, GigaChat REST API, Yandex.Disk REST API, Yandex SMTP SSL 465, PostgreSQL/SQLite, bcrypt).
-   - Описана архитектура проекта (Модульный монолит / Service Layer, REST API + SPA).
-   - Оценено техническое состояние (FastAPI TestClient, Docker-ready, dotenv, git).
-   - Сформирована сводка последних изменений (мультиарендная изоляция данных, сброс спам-блокировок, переход на GigaChat/Yandex, устранение cp1251 UnicodeEncodeError).
+1. Завершен полный аудит и очистка проекта (Cleanup):
+   - Безвозвратно удалены все хардкод-скрипты: scan_morozov.py, generate_morozov_tokens.py, test_e2e_scan.py, reset_timur.py, read_timur_file.py, test_timur_isolation.py, test_isolation.py, test_isolation_real.py, reset_and_resend.py, read_yandex_docx_files.py, debug_watcher.py, yandex_disk_diag.py.
+2. Проведена верификация динамической логики (Code Review):
+   - Модуль rag.py переведен на 100% динамическое извлечение документов (DOCX, PDF, TXT) напрямую с Яндекс.Диска через REST API без каких-либо захардкоженных имен пациентов или статических текстов.
+   - Воркер folder_watcher.py опрашивает ресурс Яндекс.Диска, генерирует уникальный случайный токен и пароль, заносит запись в БД и отправляет защищенное уведомление на Yandex SMTP.
+3. Сервер успешно перезапущен:
+   - Запущен чистый продакшн процесс Uvicorn на http://0.0.0.0:8000. Фоновый воркер FolderWatcher активен и сканирует новые поступления.
 
-Следующие действия:
-- Ожидание дальнейших архитектурных поручений от Архитектора/Продюсера.
+Система 100% готова к E2E-тестированию Продюсера с любой новой пакой пациента!

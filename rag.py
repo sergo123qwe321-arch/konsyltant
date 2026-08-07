@@ -6,6 +6,7 @@ import requests
 import urllib3
 import xml.etree.ElementTree as ET
 from dotenv import load_dotenv
+from PyPDF2 import PdfReader
 
 load_dotenv()
 
@@ -21,10 +22,10 @@ SYSTEM_PROMPT_TEMPLATE = """
 Ты — ИИ-Консультант, виртуальный медицинский помощник пациента.
 Твоя задача — отвечать на вопросы пациента, опираясь ИСКЛЮЧИТЕЛЬНО на предоставленный ниже контекст из его РЕАЛЬНЫХ медицинских документов.
 
-ЖЕСТКИЕ ПРАВИЛА (ZERO-HALLUCINATION & STRICT MULTI-TENANT ISOLATION):
+ЖЕСТКИЕ ПРАВИЛА (ZERO-HALLUCINATION & DYNAMIC MULTI-TENANT ISOLATION):
 1. Ты ОБЯЗАН отвечать только на основе фактов из предоставленных документов данного конкретного пациента.
 2. Если в документах нет информации, достаточной для ответа, ты ДОЛЖЕН ПРЯМО ОТВЕТИТЬ: "Извините, но в ваших документах нет информации об этом." Никаких выдуманных цифр и показателей!
-3. Категорически запрещено выдумывать показатели или цитировать данные чужих пациентов.
+3. Категорически запрещено выдумывать показатели или цитировать данные других людей.
 
 КОНТЕКСТ ДОКУМЕНТОВ ДАННОГО ПАЦИЕНТА:
 {context}
@@ -58,7 +59,7 @@ def get_gigachat_token() -> str:
         return None
 
 def extract_docx_text(docx_bytes: bytes) -> str:
-    """Извлекает открытый текст из структуры docx файла"""
+    """Извлекает текста из файла docx"""
     try:
         with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
             xml_content = z.read("word/document.xml")
@@ -71,9 +72,23 @@ def extract_docx_text(docx_bytes: bytes) -> str:
     except Exception as e:
         return f"[Ошибка чтения docx: {e}]"
 
+def extract_pdf_text(pdf_bytes: bytes) -> str:
+    """Извлекает текст из файла pdf"""
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        extracted = []
+        for page in reader.pages:
+            t = page.extract_text()
+            if t:
+                extracted.append(t)
+        return "\n".join(extracted)
+    except Exception as e:
+        return f"[Ошибка чтения pdf: {e}]"
+
 def fetch_yandex_folder_text(folder_id: str) -> str:
     """
-    Динамически выкачивает и парсит файлы строго из заданной папки folder_id на Яндекс.Диске.
+    100% Динамическая выкачка и парсинг медицинских файлов напрямую с Яндекс.Диска
+    для указанной папки folder_id. Без использования хардкод-имен!
     """
     if not YANDEX_DISK_TOKEN:
         return ""
@@ -84,21 +99,31 @@ def fetch_yandex_folder_text(folder_id: str) -> str:
 
     parsed_texts = []
     try:
-        res = requests.get(url, headers=headers, params=params, timeout=10)
+        res = requests.get(url, headers=headers, params=params, timeout=15)
         if res.status_code == 200:
             items = res.json().get("_embedded", {}).get("items", [])
             for item in items:
-                if item.get("type") == "file" and item.get("name", "").endswith(".docx"):
-                    file_path = item.get("path")
-                    # Запрос прямой ссылки на скачивание
-                    down_res = requests.get(url, headers=headers, params={"path": file_path}, timeout=10)
-                    if down_res.status_code == 200:
-                        down_url = down_res.json().get("file")
-                        if down_url:
-                            file_content = requests.get(down_url, timeout=15).content
-                            doc_text = extract_docx_text(file_content)
-                            if doc_text.strip():
-                                parsed_texts.append(f"--- Файл: {item.get('name')} ---\n{doc_text}")
+                if item.get("type") == "file":
+                    fname = item.get("name", "")
+                    fpath = item.get("path")
+                    
+                    # Фильтруем интересующие медицинские форматы
+                    if fname.endswith(".docx") or fname.endswith(".pdf") or fname.endswith(".txt"):
+                        down_res = requests.get(url, headers=headers, params={"path": fpath}, timeout=10)
+                        if down_res.status_code == 200:
+                            down_url = down_res.json().get("file")
+                            if down_url:
+                                file_content = requests.get(down_url, timeout=20).content
+                                doc_text = ""
+                                if fname.endswith(".docx"):
+                                    doc_text = extract_docx_text(file_content)
+                                elif fname.endswith(".pdf"):
+                                    doc_text = extract_pdf_text(file_content)
+                                elif fname.endswith(".txt"):
+                                    doc_text = file_content.decode("utf-8", errors="ignore")
+                                
+                                if doc_text.strip():
+                                    parsed_texts.append(f"--- Файл: {fname} ---\n{doc_text}")
     except Exception as e:
         print(f"[RAG DYNAMIC YANDEX DISK ERROR] {e}")
 
@@ -106,63 +131,21 @@ def fetch_yandex_folder_text(folder_id: str) -> str:
 
 def build_patient_context(folder_id: str) -> str:
     """
-    Автоматическая динамическая загрузка документов строго из папки folder_id с fallback-изоляцией.
+    Чисто динамический контекст: только реальные документы с Яндекс.Диска.
     """
-    # 1. Пробуем получить живой текст файлов с Яндекс.Диска
     dynamic_text = fetch_yandex_folder_text(folder_id)
     if dynamic_text.strip():
         return dynamic_text
 
-    # 2. Изолированный fallback-контекст, если API в данный момент недоступно
-    folder_str = str(folder_id).lower()
-
-    if "тимур" in folder_str or "родригес" in folder_str:
-        return (
-            "--- Документ: Тимур Нэк.docx (Яндекс.Диск) ---\n"
-            "Пациент: Тимур Родригес, 15 лет.\n"
-            "Текст заключения:\n"
-            "Тимуру 15 лет. Анализы МЭК показали, что у него окисления уродные были. "
-            "Правое полушарие стимулируется слабо, левое полушарие забирает для себя часть нагрузки и поэтому быстро утомляется. "
-            "Рекомендовано делать периодические перерывы. Лейкоциты в норме, тромбоциты отсутствуют, гемоглобин повышен, "
-            "и замедление речи рекомендуется лечить."
-        )
-
-    elif "зоя" in folder_str or "космодемьянская" in folder_str:
-        return (
-            "--- Документ: Зоя.docx (Яндекс.Диск) ---\n"
-            "Пациент: Зоя Космодемьянская.\n"
-            "Текст заключения:\n"
-            "У Космодемьянской Зои выявлено нарушение левого полушария мозга. Правым полушарием все хорошо. "
-            "Затылочная часть немного окислена. Гемоглобин сливка повышен. Анализ мочи отличный."
-        )
-
-    elif "александр" in folder_str:
-        return (
-            "--- Документ: Морозов.docx (Яндекс.Диск) ---\n"
-            "Пациент: Александр Морозов.\n"
-            "Текст заключения:\n"
-            "Так как Александр Морозов совершал подвиг на морозе и закрыл своим телом вражескую амбразуру, он сильно простудился. "
-            "Головным мозгом все в порядке. Левая часть немного окислилась. Кровь красная, моча желтая."
-        )
-
-    elif "павлик" in folder_str or "павел" in folder_str:
-        return (
-            "--- Документ: ИИ-Заключение_ПавликМорозов.docx (Яндекс.Диск) ---\n"
-            "Пациент: Морозов Павел Иванович (Павлик Морозов).\n"
-            "Общий анализ крови: Гемоглобин 138 г/л, Лейкоциты 6.5 x10^9/л, Эритроциты 4.6 x10^12/л, СОЭ 7 мм/ч."
-        )
-
-    else:
-        clean_name = folder_id.replace("disk:/", "").strip()
-        return (
-            f"--- Документ: Карта_Пациента_{clean_name}.docx ---\n"
-            f"Пациент: {clean_name}.\n"
-            "Документы пациента подгружены."
-        )
+    clean_name = folder_id.replace("disk:/", "").strip()
+    return (
+        f"--- Карта Пациента: {clean_name} ---\n"
+        f"В вашей папке '{clean_name}' на Яндекс.Диске пока нет доступных текстовых медицинских файлов."
+    )
 
 def ask_consultant(user_message: str, folder_id: str) -> str:
     """
-    Формирует строго изолированный контекст из документов конкретной папки folder_id и запрашивает ответ у GigaChat.
+    Формирует динамический изолированный контекст из документов конкретной папки folder_id и запрашивает ответ у GigaChat.
     """
     token = get_gigachat_token()
     if not token:
