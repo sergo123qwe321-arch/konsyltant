@@ -10,3 +10,7 @@ python-docx
 requests
 bcrypt
 psycopg2-binary
+pytesseract
+pdf2image
+Pillow
+pymupdf

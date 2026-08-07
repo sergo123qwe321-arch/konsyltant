@@ -1,12 +1,9 @@
 import os
-import io
 import uuid
-import zipfile
 import requests
 import urllib3
-import xml.etree.ElementTree as ET
 from dotenv import load_dotenv
-from PyPDF2 import PdfReader
+from document_parser import parse_document_bytes
 
 load_dotenv()
 
@@ -58,37 +55,10 @@ def get_gigachat_token() -> str:
         print(f"[GIGACHAT OAUTH EXCEPTION] {e}")
         return None
 
-def extract_docx_text(docx_bytes: bytes) -> str:
-    """Извлекает текста из файла docx"""
-    try:
-        with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
-            xml_content = z.read("word/document.xml")
-            tree = ET.fromstring(xml_content)
-            texts = []
-            for elem in tree.iter():
-                if elem.tag.endswith('}t') and elem.text:
-                    texts.append(elem.text)
-            return " ".join(texts)
-    except Exception as e:
-        return f"[Ошибка чтения docx: {e}]"
-
-def extract_pdf_text(pdf_bytes: bytes) -> str:
-    """Извлекает текст из файла pdf"""
-    try:
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        extracted = []
-        for page in reader.pages:
-            t = page.extract_text()
-            if t:
-                extracted.append(t)
-        return "\n".join(extracted)
-    except Exception as e:
-        return f"[Ошибка чтения pdf: {e}]"
-
 def fetch_yandex_folder_text(folder_id: str) -> str:
     """
-    100% Динамическая выкачка и парсинг медицинских файлов напрямую с Яндекс.Диска
-    для указанной папки folder_id. Без использования хардкод-имен!
+    100% Динамическая выкачка и гибридный OCR-парсинг медицинских файлов (PDF сканы, DOCX, PNG, JPG)
+    напрямую с Яндекс.Диска для указанной папки folder_id.
     """
     if not YANDEX_DISK_TOKEN:
         return ""
@@ -106,24 +76,18 @@ def fetch_yandex_folder_text(folder_id: str) -> str:
                 if item.get("type") == "file":
                     fname = item.get("name", "")
                     fpath = item.get("path")
+                    mime_type = item.get("mime_type", "")
                     
-                    # Фильтруем интересующие медицинские форматы
-                    if fname.endswith(".docx") or fname.endswith(".pdf") or fname.endswith(".txt"):
-                        down_res = requests.get(url, headers=headers, params={"path": fpath}, timeout=10)
-                        if down_res.status_code == 200:
-                            down_url = down_res.json().get("file")
-                            if down_url:
-                                file_content = requests.get(down_url, timeout=20).content
-                                doc_text = ""
-                                if fname.endswith(".docx"):
-                                    doc_text = extract_docx_text(file_content)
-                                elif fname.endswith(".pdf"):
-                                    doc_text = extract_pdf_text(file_content)
-                                elif fname.endswith(".txt"):
-                                    doc_text = file_content.decode("utf-8", errors="ignore")
-                                
-                                if doc_text.strip():
-                                    parsed_texts.append(f"--- Файл: {fname} ---\n{doc_text}")
+                    # Поддерживаем любые векторные и сканированные документы
+                    down_res = requests.get(url, headers=headers, params={"path": fpath}, timeout=10)
+                    if down_res.status_code == 200:
+                        down_url = down_res.json().get("file")
+                        if down_url:
+                            file_content = requests.get(down_url, timeout=25).content
+                            doc_text = parse_document_bytes(file_content, fname, mime_type)
+                            
+                            if doc_text and doc_text.strip() and not doc_text.startswith("[Неподдерживаемый"):
+                                parsed_texts.append(f"--- Файл: {fname} ---\n{doc_text}")
     except Exception as e:
         print(f"[RAG DYNAMIC YANDEX DISK ERROR] {e}")
 
@@ -140,7 +104,7 @@ def build_patient_context(folder_id: str) -> str:
     clean_name = folder_id.replace("disk:/", "").strip()
     return (
         f"--- Карта Пациента: {clean_name} ---\n"
-        f"В вашей папке '{clean_name}' на Яндекс.Диске пока нет доступных текстовых медицинских файлов."
+        f"В вашей папке '{clean_name}' на Яндекс.Диске пока нет доступных медицинских файлов."
     )
 
 def ask_consultant(user_message: str, folder_id: str) -> str:
