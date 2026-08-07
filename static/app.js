@@ -15,10 +15,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendBtn = document.getElementById('send-btn');
 
     let sessionToken = localStorage.getItem('session_token');
+    const activeUrlToken = localStorage.getItem('active_url_token');
 
-    // Автозаполнение токена из URL
+    // Проверка токена в URL для изоляции мультитенантности
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get('token');
+
+    // Если открыли ссылку с новым токеном, сбрасываем старую сессию чужого пациента
+    if (urlToken && urlToken !== activeUrlToken) {
+        console.log("[MULTI-TENANT SAFETY] Сброс сессии чужого пациента. Новый токен из URL:", urlToken);
+        localStorage.removeItem('session_token');
+        localStorage.setItem('active_url_token', urlToken);
+        sessionToken = null;
+    }
+
     if (urlToken) {
         tokenInput.value = urlToken;
     }
@@ -26,6 +36,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Проверяем сессию при загрузке
     if (sessionToken) {
         showScreen('chat');
+    } else {
+        showScreen('login');
     }
 
     function showScreen(screen) {
@@ -84,7 +96,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await loginRes.json();
             sessionToken = data.session_token;
             localStorage.setItem('session_token', sessionToken);
+            localStorage.setItem('active_url_token', token);
             
+            // Очищаем историю старого чата
+            chatHistory.innerHTML = `
+                <div class="message bot-message">
+                    <div class="msg-avatar">ИИ</div>
+                    <div class="msg-content">Здравствуйте! Я ваш медицинский ИИ-Консультант. Я проанализировал документы из вашей папки и готов ответить на вопросы. Чем могу помочь?</div>
+                </div>
+            `;
+
             showScreen('chat');
         } catch (err) {
             loginError.textContent = err.message || 'Ошибка подключения к серверу.';
@@ -95,11 +116,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     logoutBtn.addEventListener('click', () => {
         localStorage.removeItem('session_token');
+        localStorage.removeItem('active_url_token');
         sessionToken = null;
         chatHistory.innerHTML = `
             <div class="message bot-message">
                 <div class="msg-avatar">ИИ</div>
-                <div class="msg-content">Здравствуйте! Я ваш медицинский ИИ-Консультант. Я проанализировал ваши документы и готов ответить на вопросы. Обратите внимание, я не даю самостоятельных диагнозов, а опираюсь строго на факты из ваших файлов. Чем могу помочь?</div>
+                <div class="msg-content">Здравствуйте! Я ваш медицинский ИИ-Консультант. Чем могу помочь?</div>
             </div>
         `;
         passwordInput.value = '';
