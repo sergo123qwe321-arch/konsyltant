@@ -1,0 +1,28 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "{env:ctx7sk-5f0dc0a2-e190-4425-bc10-8b71309d9263}"
+      }
+    },
+    "beget-vps": {
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-ssh",
+        "--host",
+        "159.194.232.74",
+        "--port",
+        "22",
+        "--username",
+        "root",
+        "--password",
+        "{env:BEGET_SSH_PASSWORD}"
+      ]
+    }
+  }
+}

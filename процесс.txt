@@ -24,3 +24,5 @@
 8. Реализован Шаг 2: ETL-пайплайн (скачивание документов папки, гибридный OCR-парсер, разбиение на чанки chunk_text, упаковка в JSON _{folder_name}_cache.json, двухэтапный upload на Яндекс.Диск через API href, публикация ссылки и полная перенастройка rag.py на сбор контекста строго из _cache.json файла).
 9. Реализован Шаг 3: созданы docker-compose.yml (сервис db postgres:15-alpine с постоянным volume postgres_data, сервис web с сборкой Dockerfile) и .env.example. Файлы .py не изменялись.
 10. Подготовлен деплой на Beget VPS: copy.env скопирован в .env, проверен .gitignore (.env, copy.env), сделан коммит и выполнен git push origin main в GitHub. Подготовлена пошаговая bash-инструкция для VPS.
+11. Проанализирован opencode.json. Сформированы инструкции и спецификация для Продюсера по подключению MCP SSH-сервера (mcp-server-ssh / ssh connector) для автоматического выполнения команд деплоя на VPS 159.194.232.74.
+12. Программно изменен opencode.json: в mcp добавлена конфигурация beget-vps (@modelcontextprotocol/server-ssh) с безопасной ссылкой на переменную {env:BEGET_SSH_PASSWORD}. Сформирована краткая 2-шаговая инструкция для Продюсера.
