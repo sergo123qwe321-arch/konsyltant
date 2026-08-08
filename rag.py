@@ -1,9 +1,9 @@
 import os
 import uuid
+import json
 import requests
 import urllib3
 from dotenv import load_dotenv
-from document_parser import parse_document_bytes
 
 load_dotenv()
 
@@ -55,71 +55,85 @@ def get_gigachat_token() -> str:
         print(f"[GIGACHAT OAUTH EXCEPTION] {e}")
         return None
 
-def fetch_yandex_folder_text(folder_id: str) -> str:
+def fetch_yandex_cache_json(folder_id: str) -> tuple[dict | None, bool]:
     """
-    100% Динамическая выкачка и гибридный OCR-парсинг медицинских файлов (PDF сканы, DOCX, PNG, JPG)
-    напрямую с Яндекс.Диска для указанной папки folder_id.
+    Ищет внутри папки пациента (folder_id) единственный файл, заканчивающийся на '_cache.json'.
+    Возвращает (json_data, cache_found_flag).
+    - Если кэш-файл не найден, возвращает (None, False).
+    - Если кэш-файл найден и успешно выкачан, возвращает (cache_data, True).
     """
     if not YANDEX_DISK_TOKEN:
-        return ""
+        print("[RAG ERROR] YANDEX_DISK_TOKEN не задан.")
+        return None, False
 
     headers = {"Authorization": f"OAuth {YANDEX_DISK_TOKEN}", "Accept": "application/json"}
     url = "https://cloud-api.yandex.net/v1/disk/resources"
     params = {"path": folder_id, "limit": 100}
 
-    parsed_texts = []
     try:
         res = requests.get(url, headers=headers, params=params, timeout=15)
         if res.status_code == 200:
             items = res.json().get("_embedded", {}).get("items", [])
+            cache_item = None
             for item in items:
-                if item.get("type") == "file":
-                    fname = item.get("name", "")
-                    # Фильтрация системных/кэш-файлов, начинающихся с '_'
-                    if fname.startswith("_"):
-                        print(f"[RAG IGNORE] Пропуск системного файла: '{fname}'")
-                        continue
-                    fpath = item.get("path")
-                    mime_type = item.get("mime_type", "")
-                    
-                    # Поддерживаем любые векторные и сканированные документы
-                    down_res = requests.get(url, headers=headers, params={"path": fpath}, timeout=10)
-                    if down_res.status_code == 200:
-                        down_url = down_res.json().get("file")
-                        if down_url:
-                            file_content = requests.get(down_url, timeout=25).content
-                            doc_text = parse_document_bytes(file_content, fname, mime_type)
-                            
-                            if doc_text and doc_text.strip() and not doc_text.startswith("[Неподдерживаемый"):
-                                parsed_texts.append(f"--- Файл: {fname} ---\n{doc_text}")
+                fname = item.get("name", "")
+                if fname.endswith("_cache.json"):
+                    cache_item = item
+                    break
+
+            if not cache_item:
+                print(f"[RAG ETL STATUS] Файл кэша *_cache.json в папке '{folder_id}' не найден.")
+                return None, False
+
+            fpath = cache_item.get("path")
+            file_url = cache_item.get("file")
+            
+            if not file_url:
+                down_res = requests.get(url, headers=headers, params={"path": fpath}, timeout=10)
+                if down_res.status_code == 200:
+                    file_url = down_res.json().get("file")
+
+            if file_url:
+                content_res = requests.get(file_url, timeout=20)
+                if content_res.status_code == 200:
+                    cache_data = json.loads(content_res.content.decode('utf-8'))
+                    print(f"[RAG CACHE SUCCESS] Загружен JSON-кэш для '{folder_id}' (Чанков в кэше: {len(cache_data.get('chunks', []))})")
+                    return cache_data, True
     except Exception as e:
-        print(f"[RAG DYNAMIC YANDEX DISK ERROR] {e}")
+        print(f"[RAG CACHE FETCH EXCEPTION] Ошибка загрузки кэша для '{folder_id}': {e}")
 
-    return "\n\n".join(parsed_texts)
+    return None, False
 
-def build_patient_context(folder_id: str) -> str:
+def build_patient_context(folder_id: str) -> tuple[str, bool]:
     """
-    Чисто динамический контекст: только реальные документы с Яндекс.Диска.
+    Формирует контекст исключительно из готового JSON-кэша.
+    Возвращает (context_text, cache_exists).
     """
-    dynamic_text = fetch_yandex_folder_text(folder_id)
-    if dynamic_text.strip():
-        return dynamic_text
+    cache_data, cache_exists = fetch_yandex_cache_json(folder_id)
+    if not cache_exists:
+        return "", False
 
-    clean_name = folder_id.replace("disk:/", "").strip()
-    return (
-        f"--- Карта Пациента: {clean_name} ---\n"
-        f"В вашей папке '{clean_name}' на Яндекс.Диске пока нет доступных медицинских файлов."
-    )
+    chunks = cache_data.get("chunks", [])
+    if not chunks:
+        clean_name = folder_id.replace("disk:/", "").strip()
+        return f"--- Карта Пациента: {clean_name} ---\nВ обработанном кэше пока нет содержательного текста.", True
+
+    return "\n\n".join(chunks), True
 
 def ask_consultant(user_message: str, folder_id: str) -> str:
     """
-    Формирует динамический изолированный контекст из документов конкретной папки folder_id и запрашивает ответ у GigaChat.
+    Формирует контекст из массива "chunks" файла _cache.json конкретной папки folder_id и запрашивает ответ у GigaChat.
+    Если файл кэша еще не создан, возвращает технический ответ.
     """
+    context_text, cache_exists = build_patient_context(folder_id)
+    
+    if not cache_exists:
+        return "Документы пациента еще обрабатываются. Пожалуйста, подождите пару минут и повторите вопрос."
+
     token = get_gigachat_token()
     if not token:
         return "ВНИМАНИЕ: Ошибка авторизации GigaChat (проверьте GIGACHAT_CREDENTIALS в .env)."
 
-    context_text = build_patient_context(folder_id)
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
 
     headers = {

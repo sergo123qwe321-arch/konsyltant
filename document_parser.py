@@ -21,6 +21,37 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> list[str]:
+    """
+    Разбивает текст на смысловые фрагменты (чанки) с учетом границ строк и пробелов.
+    """
+    if not text or not text.strip():
+        return []
+    cleaned_text = text.strip()
+    if len(cleaned_text) <= chunk_size:
+        return [cleaned_text]
+
+    chunks = []
+    start = 0
+    while start < len(cleaned_text):
+        end = start + chunk_size
+        if end < len(cleaned_text):
+            # Разрыв по символу переноса строки или пробелу
+            last_newline = cleaned_text.rfind('\n', start, end)
+            if last_newline > start + chunk_size // 2:
+                end = last_newline + 1
+            else:
+                last_space = cleaned_text.rfind(' ', start, end)
+                if last_space > start + chunk_size // 2:
+                    end = last_space + 1
+
+        chunk = cleaned_text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end - overlap if end < len(cleaned_text) else len(cleaned_text)
+
+    return chunks
+
 def parse_document_bytes(file_bytes: bytes, file_name: str, mime_type: str = "") -> str:
     """
     Гибридный парсер медицинских документов с поддержкой Tesseract OCR.

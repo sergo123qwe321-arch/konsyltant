@@ -77,19 +77,31 @@ class NotificationService:
             return False
 
     @staticmethod
-    def send_welcome_email(recipient_email: str, access_token: str, passcode: str, folder_name: str, base_url: str = "http://127.0.0.1:8000", folder_public_url: str = None) -> bool:
+    def send_welcome_email(
+        recipient_email: str, 
+        access_token: str, 
+        passcode: str, 
+        folder_name: str, 
+        base_url: str = "http://127.0.0.1:8000", 
+        folder_public_url: str = None,
+        cache_public_url: str = None
+    ) -> bool:
         login_link = f"{base_url}/?token={access_token}"
         
         # БЕЗОПАСНОЕ ЛОГИРОВАНИЕ (CWE-532 REDACTION)
         masked_link = mask_url(login_link)
         masked_pass = mask_credential(passcode)
         masked_folder_url = mask_url(folder_public_url) if folder_public_url else "N/A"
-        print(f"[SECURE LOG] Подготовка отправки доступов для '{folder_name}' | URL: {masked_link} | Passcode: {masked_pass} | Folder Public URL: {masked_folder_url}")
+        masked_cache_url = mask_url(cache_public_url) if cache_public_url else "N/A"
+        print(f"[SECURE LOG] Подготовка отправки доступов для '{folder_name}' | URL: {masked_link} | Passcode: {masked_pass} | Folder Public URL: {masked_folder_url} | Cache Public URL: {masked_cache_url}")
 
         subject = f"Доступ к ИИ-Консультанту: Пациент {folder_name}"
         
         folder_link_html = f'<p><b>Ссылка на папку на Яндекс.Диске:</b> <a href="{folder_public_url}">{folder_public_url}</a></p>' if folder_public_url else ''
-        cache_placeholder_html = '<p><b>Ссылка на кэш-файл:</b> Ссылка на кэш-файл будет сформирована после обработки</p>'
+        if cache_public_url:
+            cache_link_html = f'<p><b>Ссылка на кэш-файл:</b> <a href="{cache_public_url}">{cache_public_url}</a></p>'
+        else:
+            cache_link_html = '<p><b>Ссылка на кэш-файл:</b> Ссылка на кэш-файл будет сформирована после обработки</p>'
 
         body = f"""
         <html>
@@ -99,7 +111,7 @@ class NotificationService:
             <p><b>Ссылка для входа:</b> <a href="{login_link}">{login_link}</a></p>
             <p><b>Пароль:</b> <code>{passcode}</code></p>
             {folder_link_html}
-            {cache_placeholder_html}
+            {cache_link_html}
             <br>
             <p><i>С уважением,<br>Система ИИ-Консультант</i></p>
         </body>
