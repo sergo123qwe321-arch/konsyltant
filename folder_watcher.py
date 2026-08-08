@@ -30,7 +30,7 @@ def download_yandex_file_bytes(fpath: str, direct_download_url: str = None) -> b
     """Скачивает содержимое файла с Яндекс.Диска."""
     if direct_download_url:
         try:
-            res = requests.get(direct_download_url, timeout=30)
+            res = requests.get(direct_download_url, timeout=15)
             if res.status_code == 200:
                 return res.content
         except Exception as e:
@@ -43,7 +43,7 @@ def download_yandex_file_bytes(fpath: str, direct_download_url: str = None) -> b
         if res.status_code == 200:
             down_url = res.json().get("file")
             if down_url:
-                file_res = requests.get(down_url, timeout=30)
+                file_res = requests.get(down_url, timeout=15)
                 if file_res.status_code == 200:
                     return file_res.content
     except Exception as e:
@@ -81,7 +81,7 @@ def upload_json_to_yandex_disk(disk_path: str, payload: dict) -> bool:
         json_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8')
         put_headers = {"Content-Type": "application/json; charset=utf-8"}
         
-        put_res = requests.put(upload_href, data=json_bytes, headers=put_headers, timeout=30)
+        put_res = requests.put(upload_href, data=json_bytes, headers=put_headers, timeout=15)
         if put_res.status_code in (200, 201):
             print(f"[YANDEX DISK UPLOAD] Файл кэша '{disk_path}' загружен (Размер: {len(json_bytes)} байт)")
             return True
@@ -112,23 +112,28 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str) -> str:
     all_chunks = []
 
     for item in items:
-        if item.get("type") != "file":
-            continue
-        fname = item.get("name", "")
-        if fname.startswith("_"):
-            continue
+        try:
+            if item.get("type") != "file":
+                continue
+            fname = item.get("name", "")
+            if fname.startswith("_"):
+                continue
+                
+            fpath = item.get("path")
+            mime_type = item.get("mime_type", "")
             
-        fpath = item.get("path")
-        mime_type = item.get("mime_type", "")
-        
-        print(f"[ETL PIPELINE] Парсинг документа: '{fname}'")
-        file_bytes = download_yandex_file_bytes(fpath, item.get("file"))
-        if file_bytes:
-            text = parse_document_bytes(file_bytes, fname, mime_type)
-            if text and text.strip() and not text.startswith("[Неподдерживаемый") and not text.startswith("[Ошибка"):
-                chunks = chunk_text(text, chunk_size=1000, overlap=100)
-                for chunk in chunks:
-                    all_chunks.append(f"--- Файл: {fname} ---\n{chunk}")
+            print(f"[ETL PIPELINE] Парсинг документа: '{fname}'")
+            file_bytes = download_yandex_file_bytes(fpath, item.get("file"))
+            if file_bytes:
+                text = parse_document_bytes(file_bytes, fname, mime_type)
+                if text and text.strip() and not text.startswith("[Неподдерживаемый") and not text.startswith("[Ошибка"):
+                    chunks = chunk_text(text, chunk_size=1000, overlap=100)
+                    for chunk in chunks:
+                        all_chunks.append(f"--- Файл: {fname} ---\n{chunk}")
+        except Exception as file_err:
+            err_msg = f"[ETL PARSE ERROR] Сбой обработки файла '{item.get('name', 'N/A')}': {file_err}"
+            print(err_msg)
+            logging.error(err_msg)
 
     payload = {
         "patient_folder": folder_name,
@@ -285,15 +290,16 @@ def scan_folders():
                 try:
                     info_url = "https://cloud-api.yandex.net/v1/disk/resources"
                     headers = {"Authorization": f"OAuth {YANDEX_DISK_TOKEN}", "Accept": "application/json"}
-                    check_res = requests.get(info_url, headers=headers, params={"path": cache_check_path}, timeout=5)
+                    check_res = requests.get(info_url, headers=headers, params={"path": cache_check_path}, timeout=15)
                     if check_res.status_code == 404:
                         print(f"[FOLDER WATCHER ETL] Обнаружена существующая папка '{item_name}' без кэша. Запуск фонового ETL...")
                         build_and_upload_folder_cache(item_path, item_name)
                 except Exception as ex:
                     pass
         except Exception as e:
-            logging.error(f"[FOLDER WATCHER ERROR] Ошибка обработки объекта '{item.get('name')}': {e}")
-            print(f"[FOLDER WATCHER ERROR] Ошибка обработки папки '{item.get('name')}': {e}")
+            err_log = f"[ETL ERROR] Сбой обработки папки '{item.get('name', 'N/A')}': {e}"
+            logging.error(err_log)
+            print(err_log)
             continue
 
     if new_count == 0:

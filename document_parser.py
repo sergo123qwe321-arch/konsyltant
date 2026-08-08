@@ -85,11 +85,11 @@ def parse_document_bytes(file_bytes: bytes, file_name: str, mime_type: str = "")
             return f"[Отказ OCR: pytesseract не доступен в среде]"
         try:
             image = Image.open(io.BytesIO(file_bytes))
-            ocr_text = pytesseract.image_to_string(image, lang='rus')
+            ocr_text = pytesseract.image_to_string(image, lang='rus', timeout=60)
             print(f"[SECURE PARSER LOG] Извлечено {len(ocr_text)} символов через Image OCR (pytesseract lang=rus) из '{file_name}'")
             return ocr_text
         except Exception as e:
-            print(f"[PARSER ERROR] Сбой Image OCR для {file_name}: {e}")
+            print(f"[PARSER ERROR] Сбой/таймаут Image OCR для {file_name}: {e}")
             return f"[Ошибка OCR изображения {file_name}: {e}]"
 
     # 4. Гибридный парсинг PDF (Текстовый слой -> OCR скан)
@@ -125,10 +125,13 @@ def parse_document_bytes(file_bytes: bytes, file_name: str, mime_type: str = "")
                 images = pdf2image.convert_from_bytes(file_bytes)
                 ocr_pages = []
                 for idx, img in enumerate(images):
-                    page_text = pytesseract.image_to_string(img, lang='rus')
-                    if page_text.strip():
-                        ocr_pages.append(page_text)
-                
+                    try:
+                        page_text = pytesseract.image_to_string(img, lang='rus', timeout=60)
+                        if page_text.strip():
+                            ocr_pages.append(page_text)
+                    except Exception as page_err:
+                        print(f"[PARSER WARNING] Страница {idx+1} в '{file_name}' была пропущена из-за ошибки/таймаута OCR: {page_err}")
+
                 ocr_full = "\n".join(ocr_pages)
                 print(f"[SECURE PARSER LOG] Извлечено {len(ocr_full)} символов через PDF OCR Engine (pdf2image + pytesseract lang=rus, страниц: {len(images)}) из '{file_name}'")
                 return ocr_full
