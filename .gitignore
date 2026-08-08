@@ -1,5 +1,8 @@
 .env
+copy.env
+*.env
 __pycache__/
 *.pyc
 konsyltant.db
 credentials.json
+
