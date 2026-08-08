@@ -75,6 +75,10 @@ def fetch_yandex_folder_text(folder_id: str) -> str:
             for item in items:
                 if item.get("type") == "file":
                     fname = item.get("name", "")
+                    # Фильтрация системных/кэш-файлов, начинающихся с '_'
+                    if fname.startswith("_"):
+                        print(f"[RAG IGNORE] Пропуск системного файла: '{fname}'")
+                        continue
                     fpath = item.get("path")
                     mime_type = item.get("mime_type", "")
                     

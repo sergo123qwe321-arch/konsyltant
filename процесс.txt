@@ -2,12 +2,22 @@
 Дата: 2026-08-07
 
 Текущие успехи и действия:
-1. Завершен полный аудит и очистка проекта (Cleanup):
-   - Безвозвратно удалены все хардкод-скрипты: scan_morozov.py, generate_morozov_tokens.py, test_e2e_scan.py, reset_timur.py, read_timur_file.py, test_timur_isolation.py, test_isolation.py, test_isolation_real.py, reset_and_resend.py, read_yandex_docx_files.py, debug_watcher.py, yandex_disk_diag.py.
-2. Проведена верификация динамической логики (Code Review):
-   - Модуль rag.py переведен на 100% динамическое извлечение документов (DOCX, PDF, TXT) напрямую с Яндекс.Диска через REST API без каких-либо захардкоженных имен пациентов или статических текстов.
-   - Воркер folder_watcher.py опрашивает ресурс Яндекс.Диска, генерирует уникальный случайный токен и пароль, заносит запись в БД и отправляет защищенное уведомление на Yandex SMTP.
-3. Сервер успешно перезапущен:
-   - Запущен чистый продакшн процесс Uvicorn на http://0.0.0.0:8000. Фоновый воркер FolderWatcher активен и сканирует новые поступления.
+1. Сохранена версия программы v2.0 (вторая модификация) и закомичена в Git:
+   - Сообщение: "feat: release version 2.0 modification (clean dynamic RAG, yandex disk & gigachat integration)"
+   - Репозиторий очищен от хардкод-скриптов и приватных данных.
+2. Внедрен гибридный парсер документов с OCR (document_parser.py):
+   - PDF обработка: Сначала извлекается текстовый слой (через PyMuPDF / PyPDF2). Если текст не найден или меньше 30 символов (сканированный документ), выполняется перевод страниц в изображения через pdf2image с последующим распознаванием Tesseract OCR (pytesseract, lang='rus').
+   - Изображения (.png, .jpg, .jpeg): Прямое распознавание через pytesseract с русским языковым пакетом.
+   - Word (.docx) и Текст (.txt): Извлечение открытого текста через python-docx / UTF-8 декодер.
+3. Подготовлено Docker-окружение для Ubuntu (VPS Beget):
+   - Создан Dockerfile на базе python:3.13-slim.
+   - Внедрена команда установки системных библиотек: tesseract-ocr, tesseract-ocr-rus (русский язык OCR), poppler-utils (библиотека для рендеринга PDF страниц в картинки) и ffmpeg/libsm6.
+4. Обновлены зависимости (requirements.txt):
+   - Добавлены пакеты pytesseract, pdf2image, Pillow, pymupdf.
+5. Выполнен коммит гибридного OCR и Dockerfile:
+   - Сообщение: "feat: add Dockerfile with Tesseract OCR (tesseract-ocr-rus, poppler-utils) and hybrid PDF/Image parser"
 
-Система 100% готова к E2E-тестированию Продюсера с любой новой пакой пациента!
+Следующие действия:
+- Готовность контейнера к развертыванию на Ubuntu (VPS Beget) через docker build / docker-compose.
+6. Обновлена архитектурная документация в process.md (указаны Docker/PostgreSQL, расписан ETL-пайплайн и кэширование на Яндекс.Диск). Изменения зафиксированы коммитом.
+7. Реализован Шаг 1: фильтрация системных файлов (префикс '_'), генерация публичных ссылок Yandex Disk API (PUT/POST + GET /v1/disk/resources), маскирование URL в логах и передача ссылок в notification_service.py.
