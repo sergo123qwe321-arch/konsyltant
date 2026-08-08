@@ -124,43 +124,50 @@ def ask_consultant(user_message: str, folder_id: str) -> str:
     """
     Формирует контекст из массива "chunks" файла _cache.json конкретной папки folder_id и запрашивает ответ у GigaChat.
     Если файл кэша еще не создан, возвращает технический ответ.
+    В случае сетевой ошибки, таймаута или исчерпания квоты (401/403) возвращает пользовательское сообщение о сбое.
     """
     context_text, cache_exists = build_patient_context(folder_id)
     
     if not cache_exists:
         return "Документы пациента еще обрабатываются. Пожалуйста, подождите пару минут и повторите вопрос."
 
-    token = get_gigachat_token()
-    if not token:
-        return "ВНИМАНИЕ: Ошибка авторизации GigaChat (проверьте GIGACHAT_CREDENTIALS в .env)."
-
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
-
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Authorization": f"Bearer {token}"
-    }
-
-    payload = {
-        "model": MODEL,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
-        ],
-        "temperature": 0.2
-    }
+    ERROR_MESSAGE = "⚠️ Ошибка: Сбой связи с ИИ или закончились токены. Пожалуйста, обратитесь к администратору."
 
     try:
+        token = get_gigachat_token()
+        if not token:
+            return ERROR_MESSAGE
+
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+
+        payload = {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            "temperature": 0.2
+        }
+
         response = requests.post(GIGACHAT_COMPLETIONS_URL, headers=headers, json=payload, verify=False, timeout=30)
+        
+        if response.status_code in (401, 403):
+            print(f"[GIGACHAT API ERROR] {response.status_code} Quota/Auth issue: {response.text}")
+            return ERROR_MESSAGE
+
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
-    except requests.exceptions.SSLError:
-        return "Ошибка SSL-соединения с сервером GigaChat."
-    except requests.exceptions.Timeout:
-        return "Время ожидания ответа от GigaChat истекло. Попробуйте еще раз."
     except requests.exceptions.RequestException as e:
-        return f"Сетевая ошибка при обращении к GigaChat: {str(e)}"
+        print(f"[GIGACHAT REQUEST ERROR] {e}")
+        return ERROR_MESSAGE
     except Exception as e:
-        return f"Непредвиденная ошибка GigaChat: {str(e)}"
+        print(f"[GIGACHAT EXCEPTION] {e}")
+        return ERROR_MESSAGE
+
