@@ -78,7 +78,7 @@ antigravKONSYLTANT/
    - Административная CMS-панель: Эндпоинты `/api/v1/admin/*` защищены JWT с верификацией роли `ADMIN`.
    - Автоматический таймаут неактивности (30 минут).
    - Публичные REST API (`/api/v1/public/services`, `/doctors`, `/posts`, `/events`, `/leads`).
-   - Домен: `цмз.site` (Punycode `xn--g1a2b.site`, `www.xn--g1a2b.site`), VPS IP `159.194.232.74`.
+   - Домен: `цмз.site` (Punycode `xn--g1aj3a.site`, `www.xn--g1aj3a.site`), VPS IP `159.194.232.74`.
 
 3. **Background ETL & Storage Layer:**
    - `folder_watcher.py` отслеживает появление медицинских карт на Яндекс.Диске.
