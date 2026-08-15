@@ -30,6 +30,7 @@ def execute_query(cursor, query, params=()):
 def init_db():
     """
     Инициализирует базу данных (PostgreSQL или SQLite) и создает таблицы.
+    Включает автоматическую миграцию схемы для существующих баз данных.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -51,6 +52,15 @@ def init_db():
                 is_verified BOOLEAN DEFAULT FALSE
             )
         """)
+        # Гарантируем миграцию колонок для существующих таблиц на сервере
+        cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'PATIENT'")
+        cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS full_name VARCHAR(100) DEFAULT ''")
+        cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS specialization VARCHAR(100) DEFAULT ''")
+        cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS experience_years INTEGER DEFAULT 0")
+        cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(255) DEFAULT ''")
+        cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE")
+        conn.commit()
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS public_services (
                 id SERIAL PRIMARY KEY,
@@ -91,6 +101,7 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.commit()
     else:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS patient_access (
@@ -107,6 +118,24 @@ def init_db():
                 is_verified BOOLEAN DEFAULT 0
             )
         """)
+        cursor.execute("PRAGMA table_info(patient_access)")
+        existing_cols = [row[1] for row in cursor.fetchall()]
+        sqlite_cols = [
+            ("role", "TEXT DEFAULT 'PATIENT'"),
+            ("full_name", "TEXT DEFAULT ''"),
+            ("specialization", "TEXT DEFAULT ''"),
+            ("experience_years", "INTEGER DEFAULT 0"),
+            ("avatar_url", "TEXT DEFAULT ''"),
+            ("is_verified", "BOOLEAN DEFAULT 0")
+        ]
+        for col_name, col_def in sqlite_cols:
+            if col_name not in existing_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE patient_access ADD COLUMN {col_name} {col_def}")
+                except Exception:
+                    pass
+        conn.commit()
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS public_services (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,6 +176,7 @@ def init_db():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.commit()
     
     # 1. Сидирование врачей
     cursor.execute("SELECT COUNT(*) FROM patient_access WHERE role = 'DOCTOR'")
