@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Центр ментального здоровья «Маленькая Страна»</title>
+<!-- Google Fonts: Rubik (идеально округлый, дружелюбный и современный шрифт) -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..900;1,300..900&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="/static/css/style.css" rel="stylesheet"/>
+</head>
+<body>
+<!-- БЛОК 1: ШАПКА САЙТА (HEADER) -->
+<header id="main-header">
+<div class="header-container">
+<div class="logo" onclick="window.scrollTo({top:0, behavior:'smooth'})">
+<div class="logo-icon">
+<svg height="24" viewbox="0 0 24 24" width="24">
+<path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4M12,18C8.69,18 6,15.31 6,12C6,10.96 6.26,10 6.74,9.13L11.5,13.88C11.6,14.5 12,15 12.6,15.2C13.2,15.4 13.9,15.2 14.3,14.7L18.1,10.9C18.1,11.26 18.1,11.63 18.1,12C18.1,15.31 15.31,18 12,18Z" fill="#fff"></path>
+</svg>
+</div>
+<div class="logo-text">Маленькая<span>Страна</span></div>
+</div>
+<div class="burger" id="burger">
+<span></span>
+<span></span>
+<span></span>
+</div>
+<nav id="nav-menu">
+<ul class="nav-links">
+<li><a href="#about">О центре</a></li>
+<li><a href="#services">Услуги</a></li>
+<li><a href="#doctors">Специалисты</a></li>
+<li><a href="#blog">Полезное</a></li>
+<li><a href="#events">Мероприятия</a></li>
+<li><a href="#contacts">Контакты</a></li>
+</ul>
+<div class="auth-actions">
+<a class="btn btn-turquoise" href="/app/" id="parent-login" style="padding: 10px 20px; font-size: 0.9rem;">
+                        🤖 Вход для родителей
+                    </a>
+<button class="btn btn-outline" onclick="openModal('doctor-modal')" style="padding: 10px 20px; font-size: 0.9rem;">
+                        🩺 Для специалистов
+                    </button>
+</div>
+</nav>
+</div>
+</header>
+<!-- БЛОК 2: ПЕРВЫЙ ЭКРАН (HERO SECTION) + CANVAS DREAM BUBBLES -->
+<section class="hero">
+<canvas id="hero-canvas"></canvas>
+<div class="hero-container">
+<div class="hero-content">
+<div class="demo-badge" id="app-demo-badge">
+<span>✨</span> Детская музыкальная вселенная «Маленькая Страна»
+                </div>
+<h1>Пространство бережной поддержки и развития вашего ребёнка</h1>
+<p>Профессиональная помощь нейропсихологов, логопедов и детских психотерапевтов с персональным цифровым сопровождением.</p>
+<div class="hero-btns">
+<a class="btn btn-purple" href="#contacts">
+                        📅 Записаться на консультацию
+                    </a>
+<a class="btn btn-outline" href="/app/" id="hero-ai-chat">
+                        💬 Задать вопрос ИИ-Консультанту
+                    </a>
+</div>
+</div>
+<div class="hero-visual">
+<!-- Встроенный интерактивный Pixar-шоукейс с персонажами-звуками -->
+<div class="character-showcase">
+<div class="mascot-glow" id="showcase-glow"></div>
+<div class="showcase-main">
+<img alt="Басист Алик" id="showcase-img" onerror="this.src='/static/images/char_a.jpg'; this.onerror=function(){ this.style.display='none'; document.getElementById('showcase-ph').style.display='flex'; }" src="char_a.jpg"/>
+<div class="showcase-placeholder" id="showcase-ph" style="display: none;">🧸</div>
+</div>
+<div class="showcase-info">
+<h4 id="showcase-name">Звук «А» — Гитарист Алик</h4>
+<p id="showcase-desc">Весёлый гитарист, который помогает ребятам открыто выражать свои эмоции, развивает общую моторику и смелость в общении.</p>
+</div>
+<div class="showcase-selector">
+<div class="selector-thumb active" data-char="a" style="background: #EF4444;" title="Алик">А</div>
+<div class="selector-thumb" data-char="o" style="background: #FBBF24;" title="Оля">О</div>
+<div class="selector-thumb" data-char="u" style="background: #10B981;" title="Уля">У</div>
+<div class="selector-thumb" data-char="i" style="background: #3B82F6;" title="Игорь">И</div>
+<div class="selector-thumb" data-char="y" style="background: #8B5CF6;" title="Ырыс">Ы</div>
+<div class="selector-thumb" data-char="e" style="background: #F97316;" title="Эрик">Э</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- БЛОК 4: О ЦЕНТРЕ -->
+<section id="about">
+<div class="about-wrapper">
+<div class="about-text">
+<div class="demo-badge">🏫 О нашей Стране</div>
+<h3>Почему родители выбирают нас</h3>
+<p>Мы верим, что каждый ребёнок уникален. В «Маленькой Стране» мы не просто проводим занятия, мы бережно сопровождаем развитие малыша от первых шагов до школы, помогая преодолевать любые сложности мягко и играючи.</p>
+<p>Наш подход объединяет классическую доказательную нейропсихологию и передовые цифровые технологии, которые облегчают общение родителей с экспертами.</p>
+</div>
+<div class="card-glass" style="display: flex; flex-direction: column; gap: 20px;">
+<div class="info-card">
+<div class="info-card-icon" style="background: rgba(124, 58, 237, 0.15); border-color: var(--accent-purple);">🦄</div>
+<div class="info-card-details">
+<h5>Индивидуальный игровой подход</h5>
+<p>Никакого стресса и оценок. Все занятия строятся в формате захватывающих игр.</p>
+</div>
+</div>
+<div class="info-card">
+<div class="info-card-icon" style="background: rgba(6, 182, 212, 0.15); border-color: var(--accent-turquoise);">🛡️</div>
+<div class="info-card-details">
+<h5>Полная безопасность данных</h5>
+<p>Ваша приватность — наш закон. Безопасные каналы общения и хранения информации.</p>
+</div>
+</div>
+<div class="info-card">
+<div class="info-card-icon" style="background: rgba(124, 58, 237, 0.15); border-color: var(--accent-purple);">⚡</div>
+<div class="info-card-details">
+<h5>ИИ-Помощник родителя 24/7</h5>
+<p>Круглосуточный ассистент, готовый дать совет по развитию и поведению ребёнка.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- БЛОК 4: КАРТОЧКИ УСЛУГ (ДИНАМИЧЕСКИЕ ЧЕРЕЗ API) -->
+<section id="services">
+<h2>Направления заботы</h2>
+<div class="services-grid" id="services-container">
+<div class="card-glass service-card skeleton-card">
+<div class="skeleton skeleton-img" style="width: 60px; height: 60px; border-radius: 18px;"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+<div class="skeleton skeleton-text" style="width: 80%;"></div>
+</div>
+<div class="card-glass service-card skeleton-card">
+<div class="skeleton skeleton-img" style="width: 60px; height: 60px; border-radius: 18px;"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+<div class="skeleton skeleton-text" style="width: 80%;"></div>
+</div>
+<div class="card-glass service-card skeleton-card">
+<div class="skeleton skeleton-img" style="width: 60px; height: 60px; border-radius: 18px;"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+<div class="skeleton skeleton-text" style="width: 80%;"></div>
+</div>
+</div>
+</section>
+<!-- БЛОК 5: НАША КОМАНДА (ДИНАМИЧЕСКИЕ ЧЕРЕЗ API) -->
+<section id="doctors">
+<h2>Волшебники Центра</h2>
+<div class="doctors-grid" id="doctors-container">
+<div class="card-glass doctor-card skeleton-card">
+<div class="skeleton skeleton-img" style="width: 130px; height: 130px; border-radius: 50%; margin: 0 auto 20px auto;"></div>
+<div class="skeleton skeleton-title" style="width: 60%; margin: 0 auto 12px auto;"></div>
+<div class="skeleton skeleton-text" style="width: 40%; margin: 0 auto 20px auto;"></div>
+<div class="skeleton skeleton-text" style="width: 80%; height: 36px; border-radius: 20px; margin: 0 auto;"></div>
+</div>
+</div>
+</section>
+<!-- БЛОК 3: БИБЛИОТЕКА РОДИТЕЛЬСКОГО ОПЫТА (Блог, Теги) -->
+<section id="blog">
+<h2>Полезная Библиотека</h2>
+<div class="chips-container" id="blog-tags-container">
+<button class="chip active" data-tag="Все">🧸 Все статьи</button>
+<button class="chip" data-tag="Развитие речи">🗣️ Развитие речи</button>
+<button class="chip" data-tag="Эмоции и поведение">🧠 Эмоции и поведение</button>
+<button class="chip" data-tag="Сон и режим">🌙 Сон и режим</button>
+<button class="chip" data-tag="Игры">🎲 Игры</button>
+</div>
+<div class="blog-grid" id="blog-container">
+<div class="card-glass blog-card skeleton-card">
+<div class="skeleton skeleton-img"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+</div>
+</div>
+</section>
+<!-- БЛОК 6: ЖИЗНЬ ЦЕНТРА (Мероприятия & Живые фото) -->
+<section id="events">
+<h2>События &amp; Жизнь центра</h2>
+<div class="events-layout">
+<div class="card-glass" style="display: flex; flex-direction: column; gap: 24px;">
+<h3 style="font-size: 1.5rem; color: var(--accent-turquoise);">🔮 Афиша событий</h3>
+<div class="events-list" id="events-container">
+<div class="event-item skeleton-card">
+<div class="skeleton" style="width: 80px; height: 80px; border-radius: 18px; flex-shrink: 0;"></div>
+<div style="flex-grow: 1;">
+<div class="skeleton skeleton-title" style="width: 50%; height: 20px;"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="card-glass" style="display: flex; flex-direction: column; justify-content: space-between;">
+<h3 style="font-size: 1.5rem; color: var(--accent-purple); margin-bottom: 20px;">📸 Фото нашей Страны</h3>
+<div class="gallery-container">
+<div class="gallery-img-wrapper" onclick="alert('Мы заботимся о детях! Фотографии защищены политикой конфиденциальности центра.')">
+<div class="gallery-img"></div>
+</div>
+<div class="gallery-img-wrapper" onclick="alert('Мы заботимся о детях! Фотографии защищены политикой конфиденциальности центра.')">
+<div class="gallery-img"></div>
+</div>
+<div class="gallery-img-wrapper" onclick="alert('Мы заботимся о детях! Фотографии защищены политикой конфиденциальности центра.')">
+<div class="gallery-img"></div>
+</div>
+<div class="gallery-img-wrapper" onclick="alert('Мы заботимся о детях! Фотографии защищены политикой конфиденциальности центра.')">
+<div class="gallery-img"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- БЛОК 7: РАЗДЕЛ "ОСОБАЯ ЗАБОТА" -->
+<section id="special-care-section" style="padding-top: 0; padding-bottom: 50px;">
+<div class="special-care">
+<div class="care-content">
+<div class="care-icon">👼</div>
+<h3>Особая забота</h3>
+<p>Мы предлагаем методическую, педагогическую и цифровую поддержку семей на деликатных этапах развития ребенка. Вы можете абсолютно безопасно делиться медицинскими документами с нашими специалистами через зашифрованные протоколы нашей экосистемы.</p>
+<button class="btn btn-turquoise" onclick="openModal('documents-modal')">🛡️ Узнать о защите данных</button>
+</div>
+</div>
+</section>
+<!-- БЛОК 8: КОНТАКТЫ & ФОРМА ОБРАТНОЙ СВЯЗИ -->
+<section id="contacts">
+<h2>Ждем вас в гости!</h2>
+<div class="contacts-wrapper">
+<form class="feedback-form" id="consultation-form" onsubmit="handleFormSubmit(event)">
+<h3 style="margin-bottom: 24px; font-size: 1.5rem; color: var(--accent-purple);">✍️ Записаться к волшебнику</h3>
+<div class="form-group">
+<label class="form-label" for="user-name">Как вас зовут?</label>
+<input class="form-input" id="user-name" placeholder="Ваше имя" required="" type="text"/>
+</div>
+<div class="form-group">
+<label class="form-label" for="user-phone">Телефон для быстрой связи</label>
+<input class="form-input" id="user-phone" placeholder="+7 (___) ___-__-__" required="" type="tel"/>
+</div>
+<div class="form-group">
+<label class="form-label" for="select-service">Какое направление интересует?</label>
+<select class="form-input" id="select-service" required="">
+<option disabled="" selected="" value="">Выберите направление</option>
+<option value="Нейропсихология">🧠 Нейропсихология</option>
+<option value="Логопедия">🗣️ Логопедия</option>
+<option value="Детская терапия">🧸 Детская психотерапия</option>
+<option value="Диагностика">🔍 Общая диагностика</option>
+</select>
+</div>
+<div class="form-group">
+<label class="form-label" for="user-msg">Расскажите немного о малыше (необязательно)</label>
+<textarea class="form-input" id="user-msg" placeholder="Возраст, особенности, вопросы..." rows="3"></textarea>
+</div>
+<button class="btn btn-purple" style="width: 100%; margin-top: 10px;" type="submit">
+                    🚀 Отправить волшебную заявку
+                </button>
+</form>
+<div class="contact-info-block">
+<div class="info-cards">
+<div class="card-glass info-card">
+<div class="info-card-icon">📍</div>
+<div class="info-card-details">
+<h5>Наш Уютный Адрес</h5>
+<p>ул. Детских Открытий, дом 7, Санкт-Петербург</p>
+</div>
+</div>
+<div class="card-glass info-card">
+<div class="info-card-icon">📞</div>
+<div class="info-card-details">
+<h5>Служба заботы (Администратор)</h5>
+<p>+7 (812) 555-33-22</p>
+</div>
+</div>
+</div>
+<div class="map-mock">
+<div style="position: relative; z-index: 1;">
+<h4 style="margin-bottom: 6px;">Интерактивная карта Страны</h4>
+<p style="font-size: 0.85rem; color: var(--text-muted);">Нажмите, чтобы проложить маршрут</p>
+</div>
+</div>
+<div class="messengers">
+<a class="messenger-btn telegram-btn" href="https://t.me/" target="_blank">
+                        ✈️ Telegram
+                    </a>
+<a class="messenger-btn whatsapp-btn" href="https://wa.me/" target="_blank">
+                        💬 WhatsApp
+                    </a>
+</div>
+</div>
+</div>
+</section>
+<!-- БЛОК 9: ПОДВАЛ (FOOTER) -->
+<footer>
+<div class="footer-container">
+<div class="footer-top">
+<div class="footer-logo">🧸 МаленькаяСтрана</div>
+<ul class="footer-nav">
+<li><a href="#about">О центре</a></li>
+<li><a href="#services">Услуги</a></li>
+<li><a href="#doctors">Специалисты</a></li>
+<li><a href="#blog">Полезное</a></li>
+<li><a href="#events">Мероприятия</a></li>
+</ul>
+</div>
+<div class="footer-divider"></div>
+<div class="footer-bottom">
+<div>
+<p>© 2026 ООО «Центр ментального здоровья "Маленькая Страна"».</p>
+<p class="disclaimer">Вся информация, представленная на сайте, носит ознакомительный характер и не является публичной офертой. Лицензия на медицинскую деятельность № ЛО-78-01-011223.</p>
+</div>
+<div class="legal-links">
+<a href="#privacy">Политика конфиденциальности</a>
+<a href="#terms">Защита персональных данных</a>
+</div>
+</div>
+</div>
+</footer>
+<!-- МОДАЛЬНЫЕ ОКНА -->
+<div class="modal" id="doctor-modal">
+<div class="modal-content">
+<button class="close-modal" onclick="closeModal('doctor-modal')">×</button>
+<h3>🔑 Вход для специалистов</h3>
+<form onsubmit="event.preventDefault(); alert('Авторизация успешна! Перенаправление в кабинет...'); closeModal('doctor-modal');">
+<div class="form-group">
+<label class="form-label" for="doc-email">Рабочая почта врача</label>
+<input class="form-input" id="doc-email" placeholder="doctor@littlecountry.ru" required="" type="email"/>
+</div>
+<div class="form-group">
+<label class="form-label" for="doc-pass">Секретный ключ (пароль)</label>
+<input class="form-input" id="doc-pass" placeholder="••••••••" required="" type="password"/>
+</div>
+<button class="btn btn-purple" style="width: 100%; margin-top: 10px;" type="submit">
+                    🩺 Войти в кабинет
+                </button>
+</form>
+</div>
+</div>
+<div class="modal" id="documents-modal">
+<div class="modal-content" style="max-width: 550px;">
+<button class="close-modal" onclick="closeModal('documents-modal')">×</button>
+<h3>🛡️ Защита медицинских тайн</h3>
+<div style="font-size: 0.95rem; line-height: 1.6; color: var(--text-gray); display: flex; flex-direction: column; gap: 15px;">
+<p>Мы уделяем максимальное внимание безопасности данных вашей семьи:</p>
+<div style="background: rgba(6, 182, 212, 0.1); border-left: 4px solid var(--accent-turquoise); padding: 12px; border-radius: 8px;">
+<strong>Зашифрованные каналы:</strong> Все загруженные файлы и анкеты проходят сквозное шифрование (AES-256) и доступны исключительно вашему лечащему специалисту.
+                </div>
+<div style="background: rgba(124, 58, 237, 0.1); border-left: 4px solid var(--accent-purple); padding: 12px; border-radius: 8px;">
+<strong>Локальная инфраструктура:</strong> Серверы находятся на территории РФ, полностью сертифицированы и соответствуют требованиям Федерального закона № 152-ФЗ «О персональных данных».
+                </div>
+</div>
+<button class="btn btn-turquoise" onclick="closeModal('documents-modal')" style="width: 100%; margin-top: 24px;">
+                Понячно, спасибо!
+            </button>
+</div>
+</div>
+<!-- ИНТЕРАКТИВНЫЙ JS -->
+<script src="/static/js/bubbles.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

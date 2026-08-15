@@ -2,11 +2,12 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-import secrets
 from typing import Optional
 
 import threading
@@ -14,10 +15,11 @@ import time
 import requests
 from contextlib import asynccontextmanager
 
-from database import token_exists, verify_access, init_db
+from database import token_exists, verify_access, init_db, get_public_services, get_public_events, get_public_posts, get_public_doctors
 from drive_api import get_drive_service
 from rag import ask_consultant
 from folder_watcher import scan_folders
+from security_utils import create_access_token, verify_token
 
 def keep_awake_loop():
     """Фоновый пинг сервера, чтобы Render не засыпал (раз в 10 минут)"""
@@ -61,7 +63,34 @@ STATIC_DIR = "static"
 os.makedirs(STATIC_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-SESSIONS = {}
+templates = Jinja2Templates(directory="templates")
+
+# Bearer аутентификация для OpenAPI и FastApi Dependency
+security = HTTPBearer(auto_error=False)
+
+async def get_current_patient(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    authorization: Optional[str] = Header(None)
+) -> dict:
+    """
+    Проверяет Stateless JWT токен из заголовка Authorization (Bearer <token>).
+    Возвращает payload с ID пациента ('sub') и 'allowed_folder'.
+    Если токен отсутствует, просрочен или невалиден, возвращает HTTP 401 Unauthorized.
+    """
+    token = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        
+    if not token:
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
+        
+    payload = verify_token(token)
+    if not payload or not payload.get("allowed_folder"):
+        raise HTTPException(status_code=401, detail="Сессия недействительна или истекла")
+        
+    return payload
 
 class TokenVerifyRequest(BaseModel):
     token: str
@@ -85,21 +114,19 @@ async def login_api(req: LoginRequest):
     if not folder_id:
         raise HTTPException(status_code=401, detail="Неверный пароль")
     
-    session_token = secrets.token_hex(32)
-    SESSIONS[session_token] = folder_id
+    # Генерация Stateless JWT токена со временем жизни 30 минут
+    jwt_token = create_access_token(data={"sub": req.token, "allowed_folder": folder_id})
     
-    return {"message": "Успешная авторизация", "session_token": session_token}
+    return {
+        "message": "Успешная авторизация",
+        "session_token": jwt_token,
+        "access_token": jwt_token,
+        "token_type": "bearer"
+    }
 
 @app.get("/api/patient/files")
-async def get_patient_files(authorization: Optional[str] = Header(None)):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
-        
-    session_token = authorization.split(" ")[1]
-    folder_id = SESSIONS.get(session_token)
-    
-    if not folder_id:
-        raise HTTPException(status_code=401, detail="Сессия недействительна или истекла")
+async def get_patient_files(patient: dict = Depends(get_current_patient)):
+    folder_id = patient.get("allowed_folder")
         
     service = get_drive_service()
     if not service:
@@ -116,30 +143,43 @@ async def get_patient_files(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=503, detail=error_msg)
 
 @app.post("/api/chat")
-def chat_api(req: ChatRequest, authorization: Optional[str] = Header(None)):
+def chat_api(req: ChatRequest, patient: dict = Depends(get_current_patient)):
     """
     Эндпоинт чата. Принимает сообщение пользователя, извлекает контекст файлов 
-    и обращается к OpenRouter.
+    и обращается к консультанту.
     """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
-        
-    session_token = authorization.split(" ")[1]
-    folder_id = SESSIONS.get(session_token)
-    
-    if not folder_id:
-        raise HTTPException(status_code=401, detail="Сессия недействительна или истекла")
+    folder_id = patient.get("allowed_folder")
         
     # Передаем запрос в ИИ Консультанта
     reply = ask_consultant(req.message, folder_id)
     return {"reply": reply}
 
-@app.get("/")
-async def read_index():
+@app.get("/api/v1/public/services")
+def public_services_api():
+    return get_public_services()
+
+@app.get("/api/v1/public/doctors")
+def public_doctors_api():
+    return get_public_doctors()
+
+@app.get("/api/v1/public/posts")
+def public_posts_api(tag: Optional[str] = None):
+    return get_public_posts(tag)
+
+@app.get("/api/v1/public/events")
+def public_events_api():
+    return get_public_events()
+
+@app.get("/app/")
+async def read_app_index():
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"message": "Фронтенд не найден."}
+    return {"message": "Чат не найден."}
+
+@app.get("/")
+async def read_index(request: Request):
+    return templates.TemplateResponse(request=request, name="index.html")
 
 if __name__ == "__main__":
     import uvicorn

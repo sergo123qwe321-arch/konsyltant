@@ -14,3 +14,7 @@ pytesseract
 pdf2image
 Pillow
 pymupdf
+
+cryptography
+PyJWT
+jinja2
