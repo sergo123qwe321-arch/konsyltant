@@ -109,10 +109,11 @@
     - Полный CRUD статей блога (`POST/PUT/DELETE /api/v1/admin/posts`).
   - Привязан домен `цмз.site` (Punycode `xn--g1a2b.site`, `www.xn--g1a2b.site`) и внешний IP `159.194.232.74` в конфигурации Nginx (`nginx/default.conf`).
   - Докер-компоуз оптимизирован: Nginx привязан к `0.0.0.0:80:80`, PostgreSQL переведен во внутреннюю сеть контейнеров без конфликта портов на хосте.
-  - Контейнеры пересобраны и запущены (`konsyltant_db`, `konsyltant_web`, `konsyltant_nginx`), все интеграционные тесты пройдены на 100%.
+  - Добавлена автоматическая миграция схемы PostgreSQL/SQLite в `init_db()` (`ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS ...`), предотвращающая ошибки `UndefinedColumn` на существующих базах данных VPS.
 - **Что в процессе:**
-  - Все поставленные задачи спринта успешно выполнены и зафиксированы.
+  - Ожидание применения обновления на VPS через `git pull origin main && docker compose up -d --build`.
 - **Что предстоит:**
   - Настройка SSL/TLS (Let's Encrypt / Certbot) для домена `цмз.site`.
   - Формирование задач следующего спринта (Кабинет врача, Voice-to-Text).
+
 
