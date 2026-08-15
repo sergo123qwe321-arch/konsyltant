@@ -27,6 +27,32 @@ window.addEventListener('mouseleave', function() {
     mouse.y = null;
 });
 
+// Поддержка Touch-событий на Android без перехвата и блокировки скролла страницы
+window.addEventListener('touchstart', function(e) {
+    if (e.touches && e.touches.length > 0) {
+        mouse.x = e.touches[0].clientX;
+        mouse.y = e.touches[0].clientY;
+    }
+}, { passive: true });
+
+window.addEventListener('touchmove', function(e) {
+    if (e.touches && e.touches.length > 0) {
+        mouse.x = e.touches[0].clientX;
+        mouse.y = e.touches[0].clientY;
+    }
+}, { passive: true });
+
+window.addEventListener('touchend', function() {
+    mouse.x = null;
+    mouse.y = null;
+}, { passive: true });
+
+window.addEventListener('touchcancel', function() {
+    mouse.x = null;
+    mouse.y = null;
+}, { passive: true });
+
+
 class DreamBubble {
     constructor() {
         this.reset(true);

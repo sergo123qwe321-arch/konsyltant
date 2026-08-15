@@ -715,21 +715,32 @@
         const showcaseGlow = document.getElementById('showcase-glow');
         const selectorThumbs = document.querySelectorAll('.selector-thumb');
 
+        function playCharSound(charId) {
+            try {
+                let audio = new Audio(`/static/audio/sound_${charId}.mp3`);
+                audio.volume = 0.5;
+                let playPromise = audio.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => console.log('Android audio autoplay check:', e));
+                }
+            } catch (err) {
+                console.log('Android audio init check:', err);
+            }
+        }
+
         selectorThumbs.forEach(thumb => {
             thumb.addEventListener('mouseenter', () => {
                 const charId = thumb.getAttribute('data-char');
-                const charData = CHARACTERS[charId];
-                if (!charData) return;
-
-                let audio = new Audio(`/static/audio/sound_${charId}.mp3`);
-                audio.volume = 0.5;
-                audio.play().catch(e => console.log('Audio autoplay prevented'));
+                if (charId) playCharSound(charId);
             });
 
             thumb.addEventListener('click', () => {
                 const charId = thumb.getAttribute('data-char');
                 const charData = CHARACTERS[charId];
                 if (!charData) return;
+
+                // Гарантированное воспроизведение звука при тапе на мобильном
+                playCharSound(charId);
 
                 selectorThumbs.forEach(t => t.classList.remove('active'));
                 thumb.classList.add('active');
