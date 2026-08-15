@@ -12,6 +12,8 @@
 <link href="/static/css/style.css" rel="stylesheet"/>
 </head>
 <body>
+<!-- ГЛОБАЛЬНЫЙ ФОН: CANVAS DREAM BUBBLES -->
+<canvas id="hero-canvas"></canvas>
 <!-- БЛОК 1: ШАПКА САЙТА (HEADER) -->
 <header id="main-header">
 <div class="header-container">
@@ -48,9 +50,8 @@
 </nav>
 </div>
 </header>
-<!-- БЛОК 2: ПЕРВЫЙ ЭКРАН (HERO SECTION) + CANVAS DREAM BUBBLES -->
+<!-- БЛОК 2: ПЕРВЫЙ ЭКРАН (HERO SECTION) -->
 <section class="hero">
-<canvas id="hero-canvas"></canvas>
 <div class="hero-container">
 <div class="hero-content">
 <div class="demo-badge" id="app-demo-badge">
@@ -228,34 +229,36 @@
 <section id="contacts">
 <h2>Ждем вас в гости!</h2>
 <div class="contacts-wrapper">
-<form class="feedback-form" id="consultation-form" onsubmit="handleFormSubmit(event)">
-<h3 style="margin-bottom: 24px; font-size: 1.5rem; color: var(--accent-purple);">✍️ Записаться к волшебнику</h3>
+<form class="feedback-form" id="contact-form" onsubmit="handleLeadSubmit(event)">
+<h3 style="margin-bottom: 24px; font-size: 1.5rem; color: var(--accent-purple);">✍️ Записаться к специалисту</h3>
 <div class="form-group">
 <label class="form-label" for="user-name">Как вас зовут?</label>
 <input class="form-input" id="user-name" placeholder="Ваше имя" required="" type="text"/>
 </div>
 <div class="form-group">
-<label class="form-label" for="user-phone">Телефон для быстрой связи</label>
-<input class="form-input" id="user-phone" placeholder="+7 (___) ___-__-__" required="" type="tel"/>
+<label class="form-label" for="user-phone">Телефон для связи (Telegram/WhatsApp)</label>
+<input class="form-input" id="user-phone" placeholder="+7 (999) 000-00-00" required="" type="tel"/>
 </div>
 <div class="form-group">
-<label class="form-label" for="select-service">Какое направление интересует?</label>
-<select class="form-input" id="select-service" required="">
-<option disabled="" selected="" value="">Выберите направление</option>
-<option value="Нейропсихология">🧠 Нейропсихология</option>
-<option value="Логопедия">🗣️ Логопедия</option>
-<option value="Детская терапия">🧸 Детская психотерапия</option>
-<option value="Диагностика">🔍 Общая диагностика</option>
+<label class="form-label" for="select-service">Интересующее направление</label>
+<select class="form-input" id="select-service">
+<option value="Нейропсихология">🧠 Нейропсихологическая диагностика</option>
+<option value="Логопедия">🗣️ Запуск и коррекция речи (Логопед)</option>
+<option value="Детская психотерапия">🧸 Детская психотерапия</option>
+<option value="Развивающие группы">🎵 Музыкально-развивающие группы</option>
+<option value="Другое">❓ Другой вопрос</option>
 </select>
 </div>
 <div class="form-group">
-<label class="form-label" for="user-msg">Расскажите немного о малыше (необязательно)</label>
-<textarea class="form-input" id="user-msg" placeholder="Возраст, особенности, вопросы..." rows="3"></textarea>
+<label class="form-label" for="user-msg">Расскажите о ребенке и ваших вопросах</label>
+<textarea class="form-input" id="user-msg" placeholder="Возраст, особенности, пожелания..." rows="3"></textarea>
 </div>
-<button class="btn btn-purple" style="width: 100%; margin-top: 10px;" type="submit">
-                    🚀 Отправить волшебную заявку
-                </button>
+<div id="lead-form-status" style="display: none; padding: 10px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 10px;"></div>
+<button class="btn btn-purple" id="lead-submit-btn" style="width: 100%; margin-top: 10px;" type="submit">
+    🚀 Отправить волшебную заявку
+</button>
 </form>
+
 <div class="contact-info-block">
 <div class="info-cards">
 <div class="card-glass info-card">
@@ -312,6 +315,7 @@
 <div class="legal-links">
 <a href="#privacy">Политика конфиденциальности</a>
 <a href="#terms">Защита персональных данных</a>
+<a href="#admin" onclick="openAdminModal(); return false;" style="color: var(--accent-turquoise); font-weight: 500;">🔐 Панель управления (CMS)</a>
 </div>
 </div>
 </div>
@@ -350,12 +354,117 @@
                 </div>
 </div>
 <button class="btn btn-turquoise" onclick="closeModal('documents-modal')" style="width: 100%; margin-top: 24px;">
-                Понячно, спасибо!
+                Понятно, спасибо!
             </button>
 </div>
 </div>
+
+<!-- МОДАЛЬНОЕ ОКНО: ЧТЕНИЕ СТАТЬИ БЛОГА -->
+<div class="modal" id="article-modal">
+<div class="modal-content" style="max-width: 680px; max-height: 85vh; overflow-y: auto;">
+<button class="close-modal" onclick="closeModal('article-modal')">×</button>
+<div id="article-modal-tags" style="margin-bottom: 8px;"></div>
+<h2 id="article-modal-title" style="font-size: 1.4rem; color: #fff; margin-bottom: 10px; line-height: 1.3;"></h2>
+<div id="article-modal-date" style="font-size: 0.85rem; color: var(--accent-turquoise); margin-bottom: 16px;"></div>
+<div id="article-modal-body" style="font-size: 0.95rem; line-height: 1.7; color: var(--text-gray); white-space: pre-line;"></div>
+<button class="btn btn-turquoise" onclick="closeModal('article-modal')" style="width: 100%; margin-top: 24px;">
+    Закрыть статью
+</button>
+</div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО: ВХОД АДМИНИСТРАТОРА (CMS) -->
+<div class="modal" id="admin-login-modal">
+<div class="modal-content" style="max-width: 440px;">
+<button class="close-modal" onclick="closeModal('admin-login-modal')">×</button>
+<h3>🔐 Панель Управления (CMS)</h3>
+<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Управление заявками и статьями экспертного блога</p>
+<form id="admin-login-form" onsubmit="handleAdminLogin(event)">
+<div class="form-group">
+<label class="form-label" for="admin-user">Логин администратора</label>
+<input class="form-input" id="admin-user" placeholder="admin" required="" type="text" value="admin"/>
+</div>
+<div class="form-group">
+<label class="form-label" for="admin-pass">Пароль</label>
+<input class="form-input" id="admin-pass" placeholder="••••••••" required="" type="password"/>
+</div>
+<div id="admin-login-error" style="color: #EF4444; font-size: 0.85rem; margin-bottom: 10px; display: none;"></div>
+<button class="btn btn-purple" id="admin-login-btn" style="width: 100%; margin-top: 10px;" type="submit">
+    Войти в CMS 🚀
+</button>
+</form>
+</div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО: ДАШБОРД АДМИНИСТРАТОРА (CMS) -->
+<div class="modal" id="admin-dashboard-modal">
+<div class="modal-content" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; padding: 24px;">
+<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 16px;">
+<div style="display: flex; align-items: center; gap: 12px;">
+<h3 style="margin: 0; font-size: 1.3rem;">🎛️ CMS «Маленькая Страна»</h3>
+<span style="background: rgba(6,182,212,0.2); color: var(--accent-turquoise); padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">Admin Mode</span>
+</div>
+<div style="display: flex; gap: 10px;">
+<button class="btn btn-outline" onclick="logoutAdmin()" style="padding: 6px 12px; font-size: 0.8rem;">Выйти</button>
+<button class="close-modal" onclick="closeModal('admin-dashboard-modal')" style="position: static;">×</button>
+</div>
+</div>
+<div class="admin-tabs" style="display: flex; gap: 10px; margin-bottom: 16px;">
+<button class="btn btn-turquoise" id="tab-btn-leads" onclick="switchAdminTab('leads')" style="padding: 8px 16px; font-size: 0.85rem;">📋 Заявки с сайта (<span id="leads-counter">0</span>)</button>
+<button class="btn btn-outline" id="tab-btn-posts" onclick="switchAdminTab('posts')" style="padding: 8px 16px; font-size: 0.85rem;">✍️ Управление блогом</button>
+</div>
+<!-- Вкладка 1: Заявки с сайта -->
+<div id="admin-tab-leads" style="overflow-y: auto; flex: 1; padding-right: 4px;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+<h4 style="margin: 0; font-size: 1.05rem;">Входящие заявки от родителей</h4>
+<button class="btn btn-outline" onclick="loadAdminLeads()" style="padding: 4px 10px; font-size: 0.75rem;">🔄 Обновить</button>
+</div>
+<div id="admin-leads-list" style="display: flex; flex-direction: column; gap: 10px;">
+<div style="text-align: center; color: var(--text-muted); padding: 20px;">Загрузка заявок...</div>
+</div>
+</div>
+<!-- Вкладка 2: Статьи блога -->
+<div id="admin-tab-posts" style="display: none; overflow-y: auto; flex: 1; padding-right: 4px;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+<h4 style="margin: 0; font-size: 1.05rem;">Публикации и статьи</h4>
+<button class="btn btn-purple" onclick="openPostEditor()" style="padding: 6px 14px; font-size: 0.85rem;">+ Добавить статью</button>
+</div>
+<div id="admin-post-editor" style="display: none; background: rgba(30,30,46,0.9); border: 1px solid rgba(124,58,237,0.3); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+<h5 id="editor-title-heading" style="margin-bottom: 12px; color: var(--accent-turquoise); font-size: 1rem;">Создать новую статью</h5>
+<form id="post-editor-form" onsubmit="handleSavePost(event)">
+<input id="edit-post-id" type="hidden" value=""/>
+<div class="form-group">
+<label class="form-label" for="edit-post-title">Заголовок статьи</label>
+<input class="form-input" id="edit-post-title" placeholder="Например: Как мягко подтолкнуть речь..." required=""/>
+</div>
+<div class="form-group">
+<label class="form-label" for="edit-post-tags">Теги (через запятую)</label>
+<input class="form-input" id="edit-post-tags" placeholder="Развитие речи, Игры"/>
+</div>
+<div class="form-group">
+<label class="form-label" for="edit-post-summary">Краткий анонс</label>
+<textarea class="form-input" id="edit-post-summary" placeholder="Краткое описание статьи для карточки..." required="" rows="2"></textarea>
+</div>
+<div class="form-group">
+<label class="form-label" for="edit-post-content">Полный текст статьи</label>
+<textarea class="form-input" id="edit-post-content" placeholder="Подробный текст статьи с практическими упражнениями..." required="" rows="6"></textarea>
+</div>
+<div style="display: flex; gap: 10px; justify-content: flex-end;">
+<button class="btn btn-outline" onclick="closePostEditor()" style="padding: 8px 14px;" type="button">Отмена</button>
+<button class="btn btn-turquoise" id="save-post-btn" style="padding: 8px 16px;" type="submit">Сохранить статью 💾</button>
+</div>
+</form>
+</div>
+<div id="admin-posts-list" style="display: flex; flex-direction: column; gap: 10px;">
+<!-- Список статей админки -->
+</div>
+</div>
+</div>
+</div>
+
 <!-- ИНТЕРАКТИВНЫЙ JS -->
 <script src="/static/js/bubbles.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
-</html>
+</html>
+

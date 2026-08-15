@@ -15,7 +15,12 @@ import time
 import requests
 from contextlib import asynccontextmanager
 
-from database import token_exists, verify_access, init_db, get_public_services, get_public_events, get_public_posts, get_public_doctors
+from database import (
+    token_exists, verify_access, init_db, get_public_services, 
+    get_public_events, get_public_posts, get_public_doctors,
+    get_post_by_id, create_lead, get_all_leads, create_public_post,
+    update_public_post, delete_public_post, verify_admin_credentials
+)
 from drive_api import get_drive_service
 from rag import ask_consultant
 from folder_watcher import scan_folders
@@ -49,23 +54,29 @@ async def lifespan(app: FastAPI):
     # Гарантируем, что БД и таблицы созданы до запуска фоновых процессов
     init_db()
     
-    thread = threading.Thread(target=watcher_loop, daemon=True)
-    thread.start()
+    # Запуск фонового пинга для Render
+    threading.Thread(target=keep_awake_loop, daemon=True).start()
     
-    awake_thread = threading.Thread(target=keep_awake_loop, daemon=True)
-    awake_thread.start()
+    # Запуск фонового сканирования папок для автоматической регистрации
+    threading.Thread(target=watcher_loop, daemon=True).start()
     
     yield
 
 app = FastAPI(title="ИИ-Консультант RAG API", lifespan=lifespan)
 
-STATIC_DIR = "static"
-os.makedirs(STATIC_DIR, exist_ok=True)
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Статические файлы (чат и UI)
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR, exist_ok=True)
+if not os.path.exists(TEMPLATES_DIR):
+    os.makedirs(TEMPLATES_DIR, exist_ok=True)
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Bearer аутентификация для OpenAPI и FastApi Dependency
+# Схема Bearer авторизации для Swagger UI и валидации заголовков
 security = HTTPBearer(auto_error=False)
 
 async def get_current_patient(
@@ -92,6 +103,28 @@ async def get_current_patient(
         
     return payload
 
+async def get_current_admin(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    authorization: Optional[str] = Header(None)
+) -> dict:
+    """
+    Проверяет наличие прав администратора (роль 'ADMIN' в Stateless JWT).
+    """
+    token = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        
+    if not token:
+        raise HTTPException(status_code=401, detail="Отсутствует токен администратора")
+        
+    payload = verify_token(token)
+    if not payload or payload.get("role") != "ADMIN":
+        raise HTTPException(status_code=403, detail="Доступ запрещен: требуются права администратора")
+        
+    return payload
+
 class TokenVerifyRequest(BaseModel):
     token: str
 
@@ -101,6 +134,28 @@ class LoginRequest(BaseModel):
     
 class ChatRequest(BaseModel):
     message: str
+
+class LeadCreateRequest(BaseModel):
+    name: str
+    phone: str
+    child_age: Optional[str] = ""
+    message: Optional[str] = ""
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+class PostCreateRequest(BaseModel):
+    title: str
+    summary: str
+    content: str
+    tags: Optional[list] = []
+
+class PostUpdateRequest(BaseModel):
+    title: str
+    summary: str
+    content: str
+    tags: Optional[list] = []
 
 @app.post("/api/verify-token")
 async def verify_token_api(req: TokenVerifyRequest):
@@ -115,7 +170,7 @@ async def login_api(req: LoginRequest):
         raise HTTPException(status_code=401, detail="Неверный пароль")
     
     # Генерация Stateless JWT токена со временем жизни 30 минут
-    jwt_token = create_access_token(data={"sub": req.token, "allowed_folder": folder_id})
+    jwt_token = create_access_token(data={"sub": req.token, "allowed_folder": folder_id, "role": "PATIENT"})
     
     return {
         "message": "Успешная авторизация",
@@ -154,6 +209,8 @@ def chat_api(req: ChatRequest, patient: dict = Depends(get_current_patient)):
     reply = ask_consultant(req.message, folder_id)
     return {"reply": reply}
 
+# --- Публичные эндпоинты лендинга ---
+
 @app.get("/api/v1/public/services")
 def public_services_api():
     return get_public_services()
@@ -166,9 +223,61 @@ def public_doctors_api():
 def public_posts_api(tag: Optional[str] = None):
     return get_public_posts(tag)
 
+@app.get("/api/v1/public/posts/{post_id}")
+def public_post_details_api(post_id: int):
+    post = get_post_by_id(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Статья не найдена")
+    return post
+
 @app.get("/api/v1/public/events")
 def public_events_api():
     return get_public_events()
+
+@app.post("/api/v1/public/leads")
+def public_create_lead_api(req: LeadCreateRequest):
+    if not req.name.strip() or not req.phone.strip():
+        raise HTTPException(status_code=400, detail="Пожалуйста, укажите имя и телефон для связи")
+    create_lead(req.name.strip(), req.phone.strip(), req.child_age.strip() if req.child_age else "", req.message.strip() if req.message else "")
+    return {"status": "ok", "message": "Заявка успешно отправлена! Наш специалист свяжется с вами."}
+
+# --- Эндпоинты Администратора (CMS) ---
+
+@app.post("/api/v1/admin/login")
+def admin_login_api(req: AdminLoginRequest):
+    if not verify_admin_credentials(req.username.strip(), req.password):
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль администратора")
+    
+    token = create_access_token(data={"sub": req.username.strip(), "role": "ADMIN", "allowed_folder": "admin_vault"})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": "ADMIN",
+        "username": req.username.strip()
+    }
+
+@app.get("/api/v1/admin/leads")
+def admin_leads_api(admin: dict = Depends(get_current_admin)):
+    return get_all_leads()
+
+@app.post("/api/v1/admin/posts")
+def admin_create_post_api(req: PostCreateRequest, admin: dict = Depends(get_current_admin)):
+    if not req.title.strip():
+        raise HTTPException(status_code=400, detail="Заголовок статьи не может быть пустым")
+    create_public_post(req.title.strip(), req.summary.strip(), req.content.strip(), req.tags or [])
+    return {"status": "ok", "message": "Статья успешно создана"}
+
+@app.put("/api/v1/admin/posts/{post_id}")
+def admin_update_post_api(post_id: int, req: PostUpdateRequest, admin: dict = Depends(get_current_admin)):
+    if not req.title.strip():
+        raise HTTPException(status_code=400, detail="Заголовок статьи не может быть пустым")
+    update_public_post(post_id, req.title.strip(), req.summary.strip(), req.content.strip(), req.tags or [])
+    return {"status": "ok", "message": "Статья успешно обновлена"}
+
+@app.delete("/api/v1/admin/posts/{post_id}")
+def admin_delete_post_api(post_id: int, admin: dict = Depends(get_current_admin)):
+    delete_public_post(post_id)
+    return {"status": "ok", "message": "Статья успешно удалена"}
 
 @app.get("/app/")
 async def read_app_index():

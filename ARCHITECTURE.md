@@ -75,8 +75,10 @@ antigravKONSYLTANT/
 
 2. **API & Security Layer (FastAPI):**
    - Stateless JWT-аутентификация: Защищенные эндпоинты `/api/chat` и `/api/patient/files` требуют заголовок `Authorization: Bearer <token>`.
+   - Административная CMS-панель: Эндпоинты `/api/v1/admin/*` защищены JWT с верификацией роли `ADMIN`.
    - Автоматический таймаут неактивности (30 минут).
-   - Публичные REST API (`/api/v1/public/services`, `/doctors`, `/posts`, `/events`).
+   - Публичные REST API (`/api/v1/public/services`, `/doctors`, `/posts`, `/events`, `/leads`).
+   - Домен: `цмз.site` (Punycode `xn--g1a2b.site`, `www.xn--g1a2b.site`), VPS IP `159.194.232.74`.
 
 3. **Background ETL & Storage Layer:**
    - `folder_watcher.py` отслеживает появление медицинских карт на Яндекс.Диске.
@@ -96,15 +98,18 @@ antigravKONSYLTANT/
 ## 🚀 Roadmap & Status
 
 ### ✅ Phase 1: Infrastructure & Security Core (Завершена)
-- [x] **Nginx Reverse Proxy:** Маршрутизация на 80 порту, изоляция сервиса web во внутренней сети Docker.
+- [x] **Nginx Reverse Proxy:** Маршрутизация на 80 порту, изоляция сервиса web во внутренней сети Docker, привязка домена `цмз.site`.
 - [x] **Data at Rest Encryption:** Модуль `crypto_utils.py` (Fernet) для шифрования медицинских данных.
-- [x] **RBAC Foundation:** Таблицы ролей (`PATIENT`, `DOCTOR`, `ADMIN`) и таблица шеринга `patient_share_grants`.
+- [x] **RBAC Foundation:** Таблицы ролей (`PATIENT`, `DOCTOR`, `ADMIN`) и таблица заявок `public_leads`.
 - [x] **Stateless JWT Migration:** Полный отказ от серверной памяти сессий, время жизни токена 30 минут.
 
-### ✅ Phase 2: Public Portal & UI Development (Завершена)
+### ✅ Phase 2: Public Portal, Expert Blog & Admin CMS (Завершена)
 - [x] **Модуляризация фронтенда:** Выделение `templates/index.html`, `style.css`, `bubbles.js`, `app.js`.
+- [x] **Анимация снов (Bubbles):** Полноэкранный отзывчивый Canvas с градиентами и эффектом отталкивания курсора.
+- [x] **Экспертный блог:** 3 практические статьи от нейропсихологов и логопедов, модальный просмотр статей.
+- [x] **Сбор заявок (Leads):** Интерактивная форма записи родителей с валидацией и сохранением в БД.
+- [x] **Административная CMS:** Веб-панель управления заявками клиентов и публикациями статей блога (CRUD).
 - [x] **Интерактивный блок персонажей Pixar:** 6 героев звуков, анимация Pixar Bounce, звуковые эффекты инструментов.
-- [x] **Публичные эндпоинты:** Услуги, врачи, блог, мероприятия с автоматическим сидированием в БД.
 - [x] **Отказоустойчивость UI:** Офлайн-моки и резервные эмодзи при отсутствии соединения.
 
 ### ⏳ Phase 3: Doctor's Dashboard & Data Sharing (Следующий этап)
@@ -114,4 +119,5 @@ antigravKONSYLTANT/
 ### ⏳ Phase 4: AI Enhancements (Client App)
 - [ ] **Voice-to-Text:** Интеграция Native Web Speech API на фронтенде чата.
 - [ ] **Medical Analytics:** Пайплайн суммаризации и модуль проверки противопоказаний на базе LLM.
+
 
