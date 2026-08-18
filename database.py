@@ -2,6 +2,7 @@ import sqlite3
 import bcrypt
 import secrets
 import os
+from datetime import datetime, timedelta, timezone
 
 try:
     import psycopg2
@@ -101,6 +102,39 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS doctors (
+                id SERIAL PRIMARY KEY,
+                full_name VARCHAR(150) NOT NULL,
+                specialty VARCHAR(150) NOT NULL,
+                license_number VARCHAR(100) UNIQUE,
+                is_verified BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS full_name VARCHAR(150) NOT NULL DEFAULT ''")
+        cursor.execute("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS specialty VARCHAR(150) NOT NULL DEFAULT ''")
+        cursor.execute("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS license_number VARCHAR(100)")
+        cursor.execute("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE")
+        cursor.execute("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patient_share_grants (
+                id SERIAL PRIMARY KEY,
+                patient_folder_id VARCHAR(100) NOT NULL,
+                doctor_id INTEGER REFERENCES doctors(id) ON DELETE CASCADE,
+                share_token VARCHAR(100) UNIQUE NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+        cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS patient_folder_id VARCHAR(100)")
+        cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS doctor_id INTEGER")
+        cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS share_token VARCHAR(100)")
+        cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE")
+        cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP")
         conn.commit()
     else:
         cursor.execute("""
@@ -176,6 +210,67 @@ def init_db():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS doctors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL,
+                specialty TEXT NOT NULL,
+                license_number TEXT UNIQUE,
+                is_verified BOOLEAN DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("PRAGMA table_info(doctors)")
+        doc_existing_cols = [row[1] for row in cursor.fetchall()]
+        doc_cols = [
+            ("full_name", "TEXT NOT NULL DEFAULT ''"),
+            ("specialty", "TEXT NOT NULL DEFAULT ''"),
+            ("license_number", "TEXT UNIQUE"),
+            ("is_verified", "BOOLEAN DEFAULT 0"),
+            ("created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP")
+        ]
+        for col_name, col_def in doc_cols:
+            if col_name not in doc_existing_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE doctors ADD COLUMN {col_name} {col_def}")
+                except Exception:
+                    pass
+
+        cursor.execute("PRAGMA table_info(patient_share_grants)")
+        grant_existing_cols = [row[1] for row in cursor.fetchall()]
+        if grant_existing_cols and ("id" not in grant_existing_cols or "patient_id" in grant_existing_cols):
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS patient_share_grants_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    patient_folder_id TEXT NOT NULL,
+                    doctor_id INTEGER REFERENCES doctors(id) ON DELETE CASCADE,
+                    share_token TEXT UNIQUE NOT NULL,
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME NOT NULL
+                )
+            """)
+            id_col = "grant_id" if "grant_id" in grant_existing_cols else "id"
+            folder_col = "patient_folder_id" if "patient_folder_id" in grant_existing_cols else "'legacy'"
+            cursor.execute(f"""
+                INSERT OR IGNORE INTO patient_share_grants_new (id, patient_folder_id, doctor_id, share_token, is_active, created_at, expires_at)
+                SELECT {id_col}, COALESCE({folder_col}, 'legacy'), doctor_id, share_token, is_active, created_at, expires_at
+                FROM patient_share_grants
+            """)
+            cursor.execute("DROP TABLE patient_share_grants")
+            cursor.execute("ALTER TABLE patient_share_grants_new RENAME TO patient_share_grants")
+        else:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS patient_share_grants (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    patient_folder_id TEXT NOT NULL,
+                    doctor_id INTEGER REFERENCES doctors(id) ON DELETE CASCADE,
+                    share_token TEXT UNIQUE NOT NULL,
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME NOT NULL
+                )
+            """)
         conn.commit()
     
     # 1. Сидирование врачей
@@ -502,3 +597,153 @@ def verify_admin_credentials(username: str, password: str) -> bool:
         if bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
             return True
     return False
+
+# ==========================================
+# ДОКТОРСКИЕ ПРОФИЛИ И ШЕРИНГ ДОСТУПОВ (PHASE 3)
+# ==========================================
+
+def create_doctor(full_name: str, specialty: str, license_number: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = bool(DATABASE_URL and psycopg2)
+    val_verified = False if is_postgres else 0
+    if is_postgres:
+        execute_query(cursor, """
+            INSERT INTO doctors (full_name, specialty, license_number, is_verified)
+            VALUES (?, ?, ?, ?)
+            RETURNING id, full_name, specialty, license_number, is_verified, created_at
+        """, (full_name, specialty, license_number, val_verified))
+        row = cursor.fetchone()
+        conn.commit()
+        conn.close()
+        return {
+            "id": row[0],
+            "full_name": row[1],
+            "specialty": row[2],
+            "license_number": row[3],
+            "is_verified": bool(row[4]),
+            "created_at": str(row[5])
+        }
+    else:
+        execute_query(cursor, """
+            INSERT INTO doctors (full_name, specialty, license_number, is_verified)
+            VALUES (?, ?, ?, ?)
+        """, (full_name, specialty, license_number, val_verified))
+        doc_id = cursor.lastrowid
+        conn.commit()
+        execute_query(cursor, "SELECT id, full_name, specialty, license_number, is_verified, created_at FROM doctors WHERE id = ?", (doc_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return {
+            "id": row[0],
+            "full_name": row[1],
+            "specialty": row[2],
+            "license_number": row[3],
+            "is_verified": bool(row[4]),
+            "created_at": str(row[5])
+        }
+
+def get_doctor_by_id(doctor_id: int) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "SELECT id, full_name, specialty, license_number, is_verified, created_at FROM doctors WHERE id = ?", (doctor_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "full_name": row[1],
+        "specialty": row[2],
+        "license_number": row[3],
+        "is_verified": bool(row[4]),
+        "created_at": str(row[5])
+    }
+
+def verify_doctor(doctor_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = bool(DATABASE_URL and psycopg2)
+    val_verified = True if is_postgres else 1
+    execute_query(cursor, "UPDATE doctors SET is_verified = ? WHERE id = ?", (val_verified, doctor_id))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+
+def create_share_grant(patient_folder_id: str, doctor_id: int, ttl_hours: int = 72) -> str:
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = bool(DATABASE_URL and psycopg2)
+    share_token = f"grant_{secrets.token_urlsafe(32)}"
+    now_utc = datetime.now(timezone.utc)
+    expires_at = now_utc + timedelta(hours=ttl_hours)
+    
+    expires_at_val = expires_at if is_postgres else expires_at.strftime("%Y-%m-%d %H:%M:%S")
+    is_active_val = True if is_postgres else 1
+    
+    execute_query(cursor, """
+        INSERT INTO patient_share_grants (patient_folder_id, doctor_id, share_token, is_active, expires_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (patient_folder_id, doctor_id, share_token, is_active_val, expires_at_val))
+    conn.commit()
+    conn.close()
+    return share_token
+
+def _parse_db_datetime(dt_val):
+    if dt_val is None:
+        return None
+    if isinstance(dt_val, datetime):
+        return dt_val
+    if isinstance(dt_val, str):
+        cleaned = dt_val.replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(cleaned)
+        except Exception:
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+                try:
+                    return datetime.strptime(cleaned, fmt)
+                except ValueError:
+                    pass
+    return None
+
+def validate_share_grant(share_token: str) -> dict:
+    if not share_token:
+        return None
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        SELECT id, patient_folder_id, doctor_id, share_token, is_active, created_at, expires_at
+        FROM patient_share_grants
+        WHERE share_token = ?
+    """, (share_token,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    
+    grant_id, patient_folder_id, doctor_id, token, is_active, created_at, expires_at = row
+    if not bool(is_active):
+        return None
+    
+    exp_dt = _parse_db_datetime(expires_at)
+    if not exp_dt:
+        return None
+    
+    now_utc = datetime.now(timezone.utc)
+    if exp_dt.tzinfo is not None:
+        if exp_dt < now_utc:
+            return None
+    else:
+        if exp_dt < now_utc.replace(tzinfo=None):
+            return None
+            
+    return {
+        "id": grant_id,
+        "patient_folder_id": patient_folder_id,
+        "doctor_id": doctor_id,
+        "share_token": token,
+        "is_active": bool(is_active),
+        "created_at": str(created_at),
+        "expires_at": str(expires_at)
+    }

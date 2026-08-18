@@ -53,7 +53,7 @@ antigravKONSYLTANT/
 ├── crypto_utils.py             # Data at Rest Encryption (Fernet) + реэкспорт security_utils
 ├── rag.py                      # RAG пайплайн (GigaChat API + изоляция контекста пациента)
 ├── folder_watcher.py           # Фоновый воркер синхронизации Яндекс.Диска
-├── parser.py                   # Гибридный парсер документов (DOCX, PDF, OCR Tesseract)
+├── document_parser.py          # Гибридный парсер документов (DOCX, PDF, OCR Tesseract)
 ├── notification_service.py     # Yandex SMTP сервис рассылки доступов
 │
 ├── Dockerfile                  # Контейнеризация Python 3.13 + Tesseract OCR + Poppler
@@ -82,7 +82,7 @@ antigravKONSYLTANT/
 
 3. **Background ETL & Storage Layer:**
    - `folder_watcher.py` отслеживает появление медицинских карт на Яндекс.Диске.
-   - `parser.py` извлекает текст (с поддержкой OCR и постраничной защитой от сбоев).
+   - `document_parser.py` извлекает текст (с поддержкой OCR и постраничной защитой от сбоев).
    - `rag.py` изолирует медицинский контекст строго в рамках разрешенной папки пациента (`allowed_folder`).
 
 ---

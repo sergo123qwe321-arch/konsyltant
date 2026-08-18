@@ -1536,4 +1536,283 @@
                 padding: 8px 12px;
                 font-size: 0.85rem;
             }
+        }
+
+        /* ==========================================================================
+           СЛОЙ ПЕРСОНАЖА В HERO-КАРТОЧКЕ & ПЛАВАЮЩИЙ АЛИК (FLIP WIDGET)
+           ========================================================================== */
+
+        /* 1. Hero Слой Алика */
+        .hero-alik-wrapper {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 2;
+            will-change: transform, opacity;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .hero-alik-img {
+            max-width: 82%;
+            max-height: 82%;
+            object-fit: contain;
+            filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.45));
+            user-select: none;
+            pointer-events: none;
+            will-change: transform, opacity;
+            transition: var(--transition-bounce);
+        }
+
+        .character-showcase:hover .hero-alik-img {
+            transform: scale(1.04) rotate(1.5deg);
+        }
+
+        /* 2. Плавающий Виджет Алика (Fixed Layer) */
+        .floating-alik-widget {
+            position: fixed;
+            bottom: 28px;
+            right: 28px;
+            z-index: 9999;
+            display: flex;
+            align-items: flex-end;
+            gap: 14px;
+            pointer-events: none;
+            opacity: 0;
+            will-change: transform, opacity;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        .floating-alik-widget.floating-active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .floating-alik-widget.minimized .alik-speech-bubble {
+            display: none !important;
+        }
+
+        .floating-alik-widget.minimized .alik-avatar-container {
+            transform: scale(0.65);
+            opacity: 0.85;
+        }
+
+        .floating-alik-widget.minimized .alik-avatar-container:hover {
+            transform: scale(0.8);
+            opacity: 1;
+        }
+
+        /* 3. Зеленое диалоговое облачко (Speech Bubble) */
+        .alik-speech-bubble {
+            background: linear-gradient(135deg, #059669 0%, #10B981 100%);
+            border: 2px solid #34D399;
+            box-shadow: 
+                0 14px 35px rgba(5, 150, 105, 0.35),
+                0 4px 12px rgba(0, 0, 0, 0.25),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            color: #FFFFFF;
+            border-radius: 22px 22px 4px 22px;
+            padding: 14px 22px 14px 18px;
+            max-width: 320px;
+            min-width: 200px;
+            position: relative;
+            pointer-events: auto;
+            opacity: 0;
+            transform: scale(0.85) translateY(12px);
+            transform-origin: bottom right;
+            will-change: transform, opacity;
+            transition: opacity 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .alik-speech-bubble.visible {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+
+        .alik-speech-bubble.updating {
+            opacity: 0.2;
+            transform: scale(0.96) translateY(3px);
+        }
+
+        .alik-bubble-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .alik-bubble-icon {
+            font-size: 1.2rem;
+            line-height: 1;
+            flex-shrink: 0;
+            animation: alikSparkle 2.5s ease-in-out infinite;
+        }
+
+        @keyframes alikSparkle {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(1.25) rotate(15deg); }
+        }
+
+        .alik-bubble-text {
+            font-size: 0.92rem;
+            line-height: 1.45;
+            font-weight: 500;
+            color: #FFFFFF;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        .alik-bubble-close {
+            position: absolute;
+            top: -8px;
+            left: -8px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #047857;
+            border: 1.5px solid #6EE7B7;
+            color: #FFFFFF;
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            transition: var(--transition-bounce);
+        }
+
+        .alik-bubble-close:hover {
+            background: #EF4444;
+            border-color: #FCA5A5;
+            transform: scale(1.15);
+        }
+
+        .alik-bubble-tail {
+            position: absolute;
+            bottom: 12px;
+            right: -10px;
+            width: 0;
+            height: 0;
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            border-left: 12px solid #10B981;
+        }
+
+        /* 4. Контейнер Аватара Алика */
+        .alik-avatar-container {
+            position: relative;
+            width: 130px;
+            height: 130px;
+            cursor: pointer;
+            pointer-events: auto;
+            user-select: none;
+            flex-shrink: 0;
+            transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .alik-avatar-container:hover {
+            transform: scale(1.08) translateY(-4px);
+        }
+
+        .alik-avatar-container:active {
+            transform: scale(0.96);
+        }
+
+        .alik-avatar-inner {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            will-change: transform, opacity;
+        }
+
+        .floating-alik-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.5));
+            animation: alikFloatIdle 4s ease-in-out infinite;
+            will-change: transform;
+        }
+
+        @keyframes alikFloatIdle {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-8px) rotate(2deg); }
+        }
+
+        .alik-avatar-glow {
+            position: absolute;
+            inset: -10px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.4) 0%, rgba(6, 182, 212, 0.15) 50%, transparent 70%);
+            filter: blur(14px);
+            z-index: -1;
+            animation: alikGlowPulse 4s ease-in-out infinite;
+        }
+
+        @keyframes alikGlowPulse {
+            0%, 100% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(1.2); opacity: 0.9; }
+        }
+
+        .alik-widget-toggle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(30, 30, 46, 0.85);
+            border: 1.5px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: var(--transition-smooth);
+            z-index: 10;
+        }
+
+        .alik-avatar-container:hover .alik-widget-toggle {
+            opacity: 1;
+        }
+
+        .alik-widget-toggle:hover {
+            background: var(--accent-purple);
+            color: #FFFFFF;
+            border-color: #FFFFFF;
+        }
+
+        /* 5. Мобильная адаптивность для Алика */
+        @media (max-width: 768px) {
+            .floating-alik-widget {
+                bottom: 16px;
+                right: 14px;
+                flex-direction: column-reverse;
+                align-items: flex-end;
+                gap: 8px;
+            }
+
+            .alik-avatar-container {
+                width: 82px;
+                height: 82px;
+            }
+
+            .alik-speech-bubble {
+                max-width: 230px;
+                min-width: 160px;
+                padding: 10px 14px;
+                font-size: 0.82rem;
+                border-radius: 16px 16px 4px 16px;
+            }
+
+            .alik-bubble-tail {
+                display: none;
+            }
         }

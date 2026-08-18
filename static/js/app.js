@@ -745,32 +745,291 @@
                 selectorThumbs.forEach(t => t.classList.remove('active'));
                 thumb.classList.add('active');
 
-                showcaseImg.classList.add('switching');
-                
-                setTimeout(() => {
-                    showcaseImg.setAttribute('src', charData.img);
-                    showcaseImg.onerror = function() {
-                        if (this.src.endsWith('.jpg')) {
-                            this.src = this.src.replace('.jpg', '.png');
-                        } else {
-                            this.style.display = 'none';
-                            document.getElementById('showcase-ph').style.display = 'flex';
-                        }
-                    };
-                    showcaseImg.style.display = 'block';
-                    document.getElementById('showcase-ph').style.display = 'none';
+                const heroAlikWrapper = document.getElementById('hero-alik-wrapper');
 
+                if (charId === 'a') {
+                    // Алик — отображаем выделенный слой прозрачного Алика
+                    if (heroAlikWrapper) {
+                        heroAlikWrapper.style.display = 'flex';
+                        heroAlikWrapper.style.opacity = '1';
+                    }
+                    showcaseImg.style.display = 'none';
+                    document.getElementById('showcase-ph').style.display = 'none';
                     showcaseName.textContent = charData.name;
                     showcaseDesc.textContent = charData.desc;
                     showcaseGlow.style.background = charData.glow;
+                } else {
+                    // Другие персонажи звуков
+                    if (heroAlikWrapper) {
+                        heroAlikWrapper.style.display = 'none';
+                    }
+                    showcaseImg.classList.add('switching');
                     
-                    showcaseImg.classList.remove('switching');
-                }, 250);
+                    setTimeout(() => {
+                        showcaseImg.setAttribute('src', charData.img);
+                        showcaseImg.onerror = function() {
+                            if (this.src.endsWith('.jpg')) {
+                                this.src = this.src.replace('.jpg', '.png');
+                            } else {
+                                this.style.display = 'none';
+                                document.getElementById('showcase-ph').style.display = 'flex';
+                            }
+                        };
+                        showcaseImg.style.display = 'block';
+                        document.getElementById('showcase-ph').style.display = 'none';
+
+                        showcaseName.textContent = charData.name;
+                        showcaseDesc.textContent = charData.desc;
+                        showcaseGlow.style.background = charData.glow;
+                        
+                        showcaseImg.classList.remove('switching');
+                    }, 250);
+                }
             });
         });
 
+        /* ==========================================================================
+           4. ЛОГИКА И АНИМАЦИЯ ПЛАВАЮЩЕГО ПЕРСОНАЖА «АЛИК» (FLIP & OBSERVER)
+           ========================================================================== */
+        function initFloatingAlik() {
+            const heroAlikWrapper = document.getElementById('hero-alik-wrapper');
+            const heroAlikImg = document.getElementById('hero-alik-img');
+            const heroShowcase = document.querySelector('.character-showcase') || document.querySelector('.hero');
+            const floatingWidget = document.getElementById('floating-alik-widget');
+            const floatingAlikInner = document.getElementById('alik-avatar-inner');
+            const floatingAlikImg = document.getElementById('floating-alik-img');
+            const avatarContainer = document.getElementById('alik-avatar-container');
+            const speechBubble = document.getElementById('alik-speech-bubble');
+            const bubbleText = document.getElementById('alik-bubble-text');
+            const bubbleClose = document.getElementById('alik-bubble-close');
+            const widgetToggle = document.getElementById('alik-widget-toggle');
+            const toggleIcon = document.getElementById('alik-toggle-icon');
+
+            if (!floatingWidget || !floatingAlikImg) return;
+
+            let isFloating = false;
+            let isTransitioning = false;
+            let isBubbleHiddenManually = false;
+            let isMinimized = false;
+            let currentComment = "Привет! Я Алик — весёлый музыкант и твой проводник по Маленькой Стране! 🎸";
+            const defaultHeroComment = "Привет! Я Алик — весёлый музыкант и твой проводник по Маленькой Стране! 🎸";
+
+            // Показ реплики в зеленом облачке
+            function showBubble(text) {
+                if (!speechBubble || !bubbleText || isBubbleHiddenManually || isMinimized) return;
+                const cleanText = (text || currentComment || defaultHeroComment).trim();
+                if (bubbleText.textContent === cleanText && speechBubble.classList.contains('visible')) {
+                    return;
+                }
+
+                if (speechBubble.classList.contains('visible')) {
+                    speechBubble.classList.add('updating');
+                    setTimeout(() => {
+                        bubbleText.textContent = cleanText;
+                        speechBubble.classList.remove('updating');
+                    }, 160);
+                } else {
+                    bubbleText.textContent = cleanText;
+                    speechBubble.classList.add('visible');
+                }
+            }
+
+            // Скрытие реплики
+            function hideBubble() {
+                if (speechBubble) {
+                    speechBubble.classList.remove('visible');
+                }
+            }
+
+            // FLIP: Переход из Hero в фиксированный виджет
+            function transitionToFloating() {
+                if (isFloating || isTransitioning) return;
+                isTransitioning = true;
+
+                const heroRect = heroAlikImg ? heroAlikImg.getBoundingClientRect() : null;
+                
+                // 1. Активируем контейнер виджета
+                floatingWidget.classList.add('floating-active');
+                floatingWidget.style.opacity = '1';
+                floatingWidget.style.pointerEvents = 'auto';
+
+                // 2. Вычисляем FLIP First -> Last
+                if (heroRect && heroRect.width > 0 && heroRect.bottom > 0) {
+                    const floatRect = floatingAlikImg.getBoundingClientRect();
+                    const dx = (heroRect.left + heroRect.width / 2) - (floatRect.left + floatRect.width / 2);
+                    const dy = (heroRect.top + heroRect.height / 2) - (floatRect.top + floatRect.height / 2);
+                    const scale = heroRect.width / (floatRect.width || 1);
+
+                    // Invert
+                    floatingAlikInner.style.transition = 'none';
+                    floatingAlikInner.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+                    if (heroAlikWrapper) heroAlikWrapper.style.opacity = '0';
+
+                    // Play
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            floatingAlikInner.style.transition = 'transform 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.15), opacity 0.4s ease';
+                            floatingAlikInner.style.transform = 'translate(0, 0) scale(1)';
+                        });
+                    });
+                } else {
+                    if (heroAlikWrapper) heroAlikWrapper.style.opacity = '0';
+                }
+
+                setTimeout(() => {
+                    isFloating = true;
+                    isTransitioning = false;
+                    floatingAlikInner.style.transition = '';
+                    floatingAlikInner.style.transform = '';
+                    showBubble(currentComment);
+                }, 680);
+            }
+
+            // FLIP: Возврат из фиксированного виджета в Hero
+            function transitionToHero() {
+                if (!isFloating || isTransitioning) return;
+                isTransitioning = true;
+                hideBubble();
+
+                const heroRect = heroAlikImg ? heroAlikImg.getBoundingClientRect() : null;
+                if (heroRect && heroRect.width > 0 && heroRect.top > -200) {
+                    const floatRect = floatingAlikImg.getBoundingClientRect();
+                    const dx = (heroRect.left + heroRect.width / 2) - (floatRect.left + floatRect.width / 2);
+                    const dy = (heroRect.top + heroRect.height / 2) - (floatRect.top + floatRect.height / 2);
+                    const scale = heroRect.width / (floatRect.width || 1);
+
+                    floatingAlikInner.style.transition = 'transform 0.55s cubic-bezier(0.25, 1, 0.5, 1)';
+                    floatingAlikInner.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+
+                    setTimeout(() => {
+                        floatingWidget.classList.remove('floating-active');
+                        floatingWidget.style.opacity = '0';
+                        floatingWidget.style.pointerEvents = 'none';
+                        floatingAlikInner.style.transition = '';
+                        floatingAlikInner.style.transform = '';
+                        if (heroAlikWrapper) heroAlikWrapper.style.opacity = '1';
+                        isFloating = false;
+                        isTransitioning = false;
+                    }, 560);
+                } else {
+                    floatingWidget.classList.remove('floating-active');
+                    floatingWidget.style.opacity = '0';
+                    floatingWidget.style.pointerEvents = 'none';
+                    if (heroAlikWrapper) heroAlikWrapper.style.opacity = '1';
+                    isFloating = false;
+                    isTransitioning = false;
+                }
+            }
+
+            // Отслеживание положения Hero блока
+            if ('IntersectionObserver' in window && heroShowcase) {
+                const heroObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        const scrollY = window.scrollY || document.documentElement.scrollTop;
+                        if (!entry.isIntersecting || entry.intersectionRatio < 0.3) {
+                            if (scrollY > 160 && !isFloating && !isTransitioning) {
+                                transitionToFloating();
+                            }
+                        } else {
+                            if (scrollY < 220 && isFloating && !isTransitioning) {
+                                transitionToHero();
+                            }
+                        }
+                    });
+                }, {
+                    threshold: [0, 0.25, 0.5, 0.75, 1]
+                });
+                heroObserver.observe(heroShowcase);
+            }
+
+            // Резервный скролл-триггер
+            window.addEventListener('scroll', () => {
+                const scrollY = window.scrollY || document.documentElement.scrollTop;
+                if (scrollY > 280 && !isFloating && !isTransitioning) {
+                    transitionToFloating();
+                } else if (scrollY <= 70 && isFloating && !isTransitioning) {
+                    transitionToHero();
+                }
+            }, { passive: true });
+
+            // Отслеживание смысловых секций страницы для смены реплик
+            if ('IntersectionObserver' in window) {
+                const sectionObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const comment = entry.target.getAttribute('data-alik-comment');
+                            if (comment) {
+                                currentComment = comment;
+                                if (isFloating && !isTransitioning) {
+                                    showBubble(comment);
+                                }
+                            }
+                        }
+                    });
+                }, {
+                    rootMargin: '-20% 0px -35% 0px',
+                    threshold: 0.15
+                });
+
+                document.querySelectorAll('[data-alik-comment]').forEach(sec => {
+                    sectionObserver.observe(sec);
+                });
+            }
+
+            // Клик по аватару Алика — переключение диалогового облачка
+            if (avatarContainer) {
+                avatarContainer.addEventListener('click', (e) => {
+                    if (e.target.closest('#alik-widget-toggle')) return;
+
+                    if (isMinimized) {
+                        isMinimized = false;
+                        floatingWidget.classList.remove('minimized');
+                        if (toggleIcon) toggleIcon.textContent = '−';
+                        showBubble(currentComment);
+                        return;
+                    }
+
+                    if (speechBubble && speechBubble.classList.contains('visible')) {
+                        isBubbleHiddenManually = true;
+                        hideBubble();
+                    } else {
+                        isBubbleHiddenManually = false;
+                        showBubble(currentComment);
+                    }
+                });
+            }
+
+            // Закрытие диалогового облачка
+            if (bubbleClose) {
+                bubbleClose.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    isBubbleHiddenManually = true;
+                    hideBubble();
+                });
+            }
+
+            // Сворачивание / разворачивание виджета
+            if (widgetToggle) {
+                widgetToggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    isMinimized = !isMinimized;
+                    floatingWidget.classList.toggle('minimized', isMinimized);
+                    if (toggleIcon) {
+                        toggleIcon.textContent = isMinimized ? '+' : '−';
+                    }
+                    if (isMinimized) {
+                        hideBubble();
+                    } else {
+                        isBubbleHiddenManually = false;
+                        showBubble(currentComment);
+                    }
+                });
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             preserveQueryParameters();
+            initFloatingAlik();
             if (window.location.hash === '#admin' || window.location.hash === '#cms') {
                 openAdminModal();
             }
@@ -780,6 +1039,6 @@
                 renderBlog(),
                 renderEvents()
             ]).then(() => {
-                console.log('🌌 Все сказочные блоки и CMS готовы к работе!');
+                console.log('🌌 Все сказочные блоки, CMS и помощник Алик готовы к работе!');
             });
         });

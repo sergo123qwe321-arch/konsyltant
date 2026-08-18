@@ -51,7 +51,7 @@
 </div>
 </header>
 <!-- БЛОК 2: ПЕРВЫЙ ЭКРАН (HERO SECTION) -->
-<section class="hero">
+<section class="hero" id="hero" data-alik-comment="Привет! Я Алик — весёлый музыкант и твой проводник по Маленькой Стране! 🎸">
 <div class="hero-container">
 <div class="hero-content">
 <div class="demo-badge" id="app-demo-badge">
@@ -72,8 +72,15 @@
 <!-- Встроенный интерактивный Pixar-шоукейс с персонажами-звуками -->
 <div class="character-showcase">
 <div class="mascot-glow" id="showcase-glow"></div>
-<div class="showcase-main">
-<img alt="Басист Алик" id="showcase-img" onerror="this.src='/static/images/char_a.jpg'; this.onerror=function(){ this.style.display='none'; document.getElementById('showcase-ph').style.display='flex'; }" src="char_a.jpg"/>
+<div class="showcase-main" id="showcase-main">
+<!-- Выделенный слой персонажа Алика для адаптивности и FLIP-анимации -->
+<div class="hero-alik-wrapper" id="hero-alik-wrapper">
+    <picture id="hero-alik-picture">
+        <source srcset="/static/assets/img/alik/Alik.webp" type="image/webp">
+        <img src="/static/assets/img/alik/Alik.png" alt="Гитарист Алик" id="hero-alik-img" class="hero-alik-img"/>
+    </picture>
+</div>
+<img alt="Басист Алик" id="showcase-img" class="showcase-img" style="display: none;" onerror="this.src='/static/images/char_a.jpg'; this.onerror=function(){ this.style.display='none'; document.getElementById('showcase-ph').style.display='flex'; }" src="/static/images/char_a.jpg"/>
 <div class="showcase-placeholder" id="showcase-ph" style="display: none;">🧸</div>
 </div>
 <div class="showcase-info">
@@ -93,7 +100,7 @@
 </div>
 </section>
 <!-- БЛОК 4: О ЦЕНТРЕ -->
-<section id="about">
+<section id="about" data-alik-comment="В нашей Стране всё устроено бережно: комфортные игровые залы и забота о каждом шаге малыша! 🏫">
 <div class="about-wrapper">
 <div class="about-text">
 <div class="demo-badge">🏫 О нашей Стране</div>
@@ -127,7 +134,7 @@
 </div>
 </section>
 <!-- БЛОК 4: КАРТОЧКИ УСЛУГ (ДИНАМИЧЕСКИЕ ЧЕРЕЗ API) -->
-<section id="services">
+<section id="services" data-alik-comment="Наши волшебные направления: нейропсихология, запуск речи и мягкая детская психотерапия! 🧠🗣️">
 <h2>Направления заботы</h2>
 <div class="services-grid" id="services-container">
 <div class="card-glass service-card skeleton-card">
@@ -151,7 +158,7 @@
 </div>
 </section>
 <!-- БЛОК 5: НАША КОМАНДА (ДИНАМИЧЕСКИЕ ЧЕРЕЗ API) -->
-<section id="doctors">
+<section id="doctors" data-alik-comment="Познакомьтесь с нашими волшебниками! Опытные специалисты бережно помогут раскрыть таланты ребёнка. 👩‍⚕️👨‍⚕️">
 <h2>Волшебники Центра</h2>
 <div class="doctors-grid" id="doctors-container">
 <div class="card-glass doctor-card skeleton-card">
@@ -163,7 +170,7 @@
 </div>
 </section>
 <!-- БЛОК 3: БИБЛИОТЕКА РОДИТЕЛЬСКОГО ОПЫТА (Блог, Теги) -->
-<section id="blog">
+<section id="blog" data-alik-comment="В нашей библиотеке — проверенные речевые игры и полезные советы нейропсихологов для занятий дома! 📖🧸">
 <h2>Полезная Библиотека</h2>
 <div class="chips-container" id="blog-tags-container">
 <button class="chip active" data-tag="Все">🧸 Все статьи</button>
@@ -181,7 +188,7 @@
 </div>
 </section>
 <!-- БЛОК 6: ЖИЗНЬ ЦЕНТРА (Мероприятия & Живые фото) -->
-<section id="events">
+<section id="events" data-alik-comment="Мы часто проводим интерактивные мастер-классы для родителей и тёплые встречи нашего Клуба! 🔮✨">
 <h2>События &amp; Жизнь центра</h2>
 <div class="events-layout">
 <div class="card-glass" style="display: flex; flex-direction: column; gap: 24px;">
@@ -215,7 +222,7 @@
 </div>
 </section>
 <!-- БЛОК 7: РАЗДЕЛ "ОСОБАЯ ЗАБОТА" -->
-<section id="special-care-section" style="padding-top: 0; padding-bottom: 50px;">
+<section id="special-care-section" style="padding-top: 0; padding-bottom: 50px;" data-alik-comment="Медицинские данные и анкеты надёжно зашифрованы по стандартам 152-ФЗ и доступны только вашему врачу. 🛡️">
 <div class="special-care">
 <div class="care-content">
 <div class="care-icon">👼</div>
@@ -226,7 +233,7 @@
 </div>
 </section>
 <!-- БЛОК 8: КОНТАКТЫ & ФОРМА ОБРАТНОЙ СВЯЗИ -->
-<section id="contacts">
+<section id="contacts" data-alik-comment="Заполните заявку, и наша служба заботы свяжется с вами и подберёт самое удобное время! ✍️🚀">
 <h2>Ждем вас в гости!</h2>
 <div class="contacts-wrapper">
 <form class="feedback-form" id="contact-form" onsubmit="handleLeadSubmit(event)">
@@ -294,7 +301,7 @@
 </div>
 </section>
 <!-- БЛОК 9: ПОДВАЛ (FOOTER) -->
-<footer>
+<footer data-alik-comment="Всегда рады видеть вас в Маленькой Стране! До скорых волшебных встреч! 🌟">
 <div class="footer-container">
 <div class="footer-top">
 <div class="footer-logo">🧸 МаленькаяСтрана</div>
@@ -461,6 +468,35 @@
 </div>
 </div>
 </div>
+
+<!-- ==========================================================================
+     ПЛАВАЮЩИЙ ПЕРСОНАЖ «АЛИК» (FLOATING ASSISTANT WIDGET)
+     ========================================================================== -->
+<aside class="floating-alik-widget" id="floating-alik-widget" aria-label="Интерактивный помощник Алик">
+    <!-- Зеленое диалоговое облачко (Speech Bubble) -->
+    <div class="alik-speech-bubble" id="alik-speech-bubble">
+        <div class="alik-bubble-content">
+            <span class="alik-bubble-icon">✨</span>
+            <span class="alik-bubble-text" id="alik-bubble-text">Привет! Я Алик — твой проводник по Маленькой Стране!</span>
+        </div>
+        <button class="alik-bubble-close" id="alik-bubble-close" title="Скрыть реплику" aria-label="Закрыть реплику">×</button>
+        <div class="alik-bubble-tail"></div>
+    </div>
+
+    <!-- Контейнер персонажа -->
+    <div class="alik-avatar-container" id="alik-avatar-container" role="button" tabindex="0" title="Нажмите, чтобы показать или скрыть реплику Алика">
+        <div class="alik-avatar-glow"></div>
+        <div class="alik-avatar-inner" id="alik-avatar-inner">
+            <picture>
+                <source srcset="/static/assets/img/alik/Alik.webp" type="image/webp">
+                <img src="/static/assets/img/alik/Alik.png" alt="Плавающий Алик" class="floating-alik-img" id="floating-alik-img"/>
+            </picture>
+        </div>
+        <button class="alik-widget-toggle" id="alik-widget-toggle" title="Свернуть/развернуть помощника" aria-label="Свернуть">
+            <span id="alik-toggle-icon">−</span>
+        </button>
+    </div>
+</aside>
 
 <!-- ИНТЕРАКТИВНЫЙ JS -->
 <script src="/static/js/bubbles.js"></script>
