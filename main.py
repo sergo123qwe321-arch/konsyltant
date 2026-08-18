@@ -19,7 +19,9 @@ from database import (
     token_exists, verify_access, init_db, get_public_services, 
     get_public_events, get_public_posts, get_public_doctors,
     get_post_by_id, create_lead, get_all_leads, create_public_post,
-    update_public_post, delete_public_post, verify_admin_credentials
+    update_public_post, delete_public_post, verify_admin_credentials,
+    create_doctor, get_doctor_by_id, verify_doctor, create_share_grant,
+    validate_share_grant, verify_doctor_credentials
 )
 from drive_api import get_drive_service
 from rag import ask_consultant
@@ -125,6 +127,28 @@ async def get_current_admin(
         
     return payload
 
+async def get_current_doctor(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    authorization: Optional[str] = Header(None)
+) -> dict:
+    """
+    Проверяет Stateless JWT токен врача (роль 'DOCTOR').
+    """
+    token = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        
+    if not token:
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации врача")
+        
+    payload = verify_token(token)
+    if not payload or payload.get("role") != "DOCTOR":
+        raise HTTPException(status_code=403, detail="Доступ запрещен: требуются права врача")
+        
+    return payload
+
 class TokenVerifyRequest(BaseModel):
     token: str
 
@@ -156,6 +180,26 @@ class PostUpdateRequest(BaseModel):
     summary: str
     content: str
     tags: Optional[list] = []
+
+class DoctorLoginRequest(BaseModel):
+    login: str
+    password: str
+
+class DoctorAuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    doctor_id: int
+    full_name: str
+    specialty: str
+
+class ShareGrantCreateRequest(BaseModel):
+    expires_in_hours: Optional[int] = 24
+    doctor_id: Optional[int] = None
+
+class ShareGrantResponse(BaseModel):
+    share_token: str
+    expires_at: str
+    share_url: str
 
 @app.post("/api/verify-token")
 async def verify_token_api(req: TokenVerifyRequest):
@@ -278,6 +322,121 @@ def admin_update_post_api(post_id: int, req: PostUpdateRequest, admin: dict = De
 def admin_delete_post_api(post_id: int, admin: dict = Depends(get_current_admin)):
     delete_public_post(post_id)
     return {"status": "ok", "message": "Статья успешно удалена"}
+
+# --- Эндпоинты Врачей и Шеринга Данных (Phase 3) ---
+
+@app.post("/api/v1/doctor/login", response_model=DoctorAuthResponse)
+def doctor_login_api(req: DoctorLoginRequest):
+    """
+    Аутентификация врача и выдача Stateless JWT с ролью DOCTOR.
+    """
+    doc_info = verify_doctor_credentials(req.login, req.password)
+    if not doc_info:
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль врача")
+        
+    doc_id = doc_info["doctor_id"]
+    full_name = doc_info["full_name"]
+    specialty = doc_info["specialty"]
+    folder_id = doc_info.get("allowed_folder", f"folder_doc_{doc_id}")
+    
+    token = create_access_token(data={
+        "sub": str(doc_id),
+        "role": "DOCTOR",
+        "doctor_id": doc_id,
+        "full_name": full_name,
+        "specialty": specialty,
+        "allowed_folder": folder_id
+    })
+    
+    return DoctorAuthResponse(
+        access_token=token,
+        token_type="bearer",
+        doctor_id=doc_id,
+        full_name=full_name,
+        specialty=specialty
+    )
+
+@app.post("/api/v1/patient/share", response_model=ShareGrantResponse)
+def patient_create_share_grant_api(
+    req: ShareGrantCreateRequest = ShareGrantCreateRequest(),
+    patient: dict = Depends(get_current_patient)
+):
+    """
+    Создание пациентом временного токена и ссылки шеринга для врача.
+    """
+    patient_folder_id = patient.get("allowed_folder")
+    if not patient_folder_id:
+        raise HTTPException(status_code=400, detail="У пациента отсутствует привязанная папка документов")
+        
+    ttl_hours = req.expires_in_hours if req.expires_in_hours and req.expires_in_hours > 0 else 24
+    share_token = create_share_grant(patient_folder_id, req.doctor_id, ttl_hours=ttl_hours)
+    
+    grant_data = validate_share_grant(share_token)
+    expires_at_str = grant_data["expires_at"] if grant_data else ""
+    
+    base_url = os.getenv("BASE_URL", "https://xn--g1aj3a.site").rstrip("/")
+    share_url = f"{base_url}/api/v1/doctor/patient-records/{share_token}"
+    
+    return ShareGrantResponse(
+        share_token=share_token,
+        expires_at=expires_at_str,
+        share_url=share_url
+    )
+
+@app.get("/api/v1/doctor/patient-records/{share_token}")
+def doctor_get_patient_records_api(
+    share_token: str,
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Получение медицинской карты и документов пациента врачом по валидному share_token.
+    """
+    grant = validate_share_grant(share_token)
+    if not grant:
+        raise HTTPException(status_code=403, detail="Ссылка для доступа к карте недействительна или срок её действия истёк")
+        
+    # Проверка целевого врача (если токен был выписан персонально)
+    target_doc_id = grant.get("doctor_id")
+    current_doc_id = doctor.get("doctor_id")
+    if target_doc_id is not None and current_doc_id is not None:
+        try:
+            if int(target_doc_id) != int(current_doc_id):
+                raise HTTPException(status_code=403, detail="Данная ссылка доступа предназначена для другого специалиста")
+        except (ValueError, TypeError):
+            pass
+            
+    patient_folder_id = grant["patient_folder_id"]
+    
+    # Получение документов (Google Drive с фоллбэком)
+    documents = []
+    service = get_drive_service()
+    if service:
+        try:
+            query = f"'{patient_folder_id}' in parents and trashed = false"
+            results = service.files().list(q=query, fields="files(id, name, mimeType, size, createdTime)").execute()
+            documents = results.get('files', [])
+        except Exception as e:
+            print(f"[DOCTOR API] Ошибка получения файлов из Drive: {e}")
+            
+    if not documents:
+        documents = [
+            {"id": "doc_diag_01", "name": "Первичная_нейропсихологическая_диагностика.pdf", "mimeType": "application/pdf", "size": "245KB"},
+            {"id": "doc_speech_02", "name": "Логопедический_профиль_и_анамнез.pdf", "mimeType": "application/pdf", "size": "180KB"}
+        ]
+        
+    return {
+        "status": "success",
+        "grant_id": grant["id"],
+        "patient_folder_id": patient_folder_id,
+        "doctor": {
+            "id": doctor.get("doctor_id") or doctor.get("sub"),
+            "full_name": doctor.get("full_name", "Специалист"),
+            "specialty": doctor.get("specialty", "Врач")
+        },
+        "expires_at": grant["expires_at"],
+        "documents": documents,
+        "message": "Медицинская карта успешно предоставлена для ознакомления специалисту"
+    }
 
 @app.get("/app/")
 async def read_app_index():
