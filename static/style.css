@@ -317,3 +317,137 @@ input:focus {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-4px); }
 }
+
+/* ==========================================
+   PATIENT SHARE MODAL & BUTTON STYLES
+   ========================================== */
+.btn-share {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #059669 0%, #10B981 100%);
+    color: white;
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    border-radius: 10px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-share:hover {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.modal-card {
+    width: 100%;
+    max-width: 500px;
+    padding: 28px;
+    background: rgba(30, 27, 75, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.modal-header h3 {
+    font-size: 1.3rem;
+    color: #f8fafc;
+}
+
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.2s ease;
+}
+
+.btn-icon:hover {
+    color: #ef4444;
+}
+
+.modal-desc {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+
+.form-select {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 0.95rem;
+    outline: none;
+}
+
+.form-select option {
+    background: #1e1b4b;
+    color: #f8fafc;
+}
+
+.share-result {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.share-result label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.share-url-container {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.share-url-container input {
+    font-size: 0.85rem;
+    color: #34d399;
+}
+
+.copy-success {
+    color: #34d399;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.share-info-text {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+

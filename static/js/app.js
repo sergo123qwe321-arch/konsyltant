@@ -646,6 +646,218 @@
         }
 
         /* ==========================================================================
+           5.1. ЛИЧНЫЙ КАБИНЕТ ВРАЧА И ШЕРИНГ КАРТЫ (DOCTOR DASHBOARD)
+           ========================================================================== */
+        function openDoctorModal() {
+            const docToken = localStorage.getItem('doctor_token');
+            if (docToken) {
+                openDoctorDashboard();
+            } else {
+                openModal('doctor-modal');
+                const docError = document.getElementById('doctor-login-error');
+                if (docError) docError.style.display = 'none';
+            }
+        }
+
+        async function handleDoctorLogin(e) {
+            e.preventDefault();
+            const login = document.getElementById('doc-login').value.trim();
+            const password = document.getElementById('doc-pass').value;
+            const errorDiv = document.getElementById('doctor-login-error');
+            const submitBtn = document.getElementById('doctor-login-btn');
+
+            errorDiv.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Проверка доступа... 🩺';
+
+            try {
+                const res = await fetch('/api/v1/doctor/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ login, password })
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || 'Неверный логин или пароль врача');
+                }
+
+                const data = await res.json();
+                localStorage.setItem('doctor_token', data.access_token);
+                localStorage.setItem('doctor_id', data.doctor_id);
+                localStorage.setItem('doctor_name', data.full_name);
+                localStorage.setItem('doctor_specialty', data.specialty);
+
+                closeModal('doctor-modal');
+                openDoctorDashboard();
+
+                // Проверяем отложенный токен шеринга из URL
+                const pendingToken = sessionStorage.getItem('pending_share_token');
+                if (pendingToken) {
+                    sessionStorage.removeItem('pending_share_token');
+                    const tokenInput = document.getElementById('doc-share-token-input');
+                    if (tokenInput) tokenInput.value = pendingToken;
+                    loadDoctorPatientRecord(pendingToken);
+                }
+            } catch (err) {
+                errorDiv.textContent = err.message;
+                errorDiv.style.display = 'block';
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🩺 Войти в кабинет врача';
+            }
+        }
+
+        function openDoctorDashboard() {
+            const docName = localStorage.getItem('doctor_name') || 'Доктор Центра';
+            const docSpec = localStorage.getItem('doctor_specialty') || 'Специалист';
+
+            const nameEl = document.getElementById('doc-profile-name');
+            const specEl = document.getElementById('doc-profile-specialty');
+            if (nameEl) nameEl.textContent = docName;
+            if (specEl) specEl.textContent = docSpec;
+
+            openModal('doctor-dashboard-modal');
+        }
+
+        function logoutDoctor() {
+            localStorage.removeItem('doctor_token');
+            localStorage.removeItem('doctor_id');
+            localStorage.removeItem('doctor_name');
+            localStorage.removeItem('doctor_specialty');
+            closeModal('doctor-dashboard-modal');
+            
+            // Сброс полей
+            const tokenInput = document.getElementById('doc-share-token-input');
+            if (tokenInput) tokenInput.value = '';
+            const recordView = document.getElementById('doc-record-view');
+            if (recordView) recordView.style.display = 'none';
+            const recordEmpty = document.getElementById('doc-record-empty');
+            if (recordEmpty) recordEmpty.style.display = 'block';
+            const errorDiv = document.getElementById('doc-search-error');
+            if (errorDiv) errorDiv.style.display = 'none';
+        }
+
+        async function handleDoctorSearchRecord() {
+            let token = document.getElementById('doc-share-token-input').value.trim();
+            if (!token) {
+                const errEl = document.getElementById('doc-search-error');
+                if (errEl) {
+                    errEl.textContent = 'Пожалуйста, введите токен или вставьте ссылку доступа.';
+                    errEl.style.display = 'block';
+                }
+                return;
+            }
+
+            // Извлечение чистого токена, если вставили полную ссылку
+            if (token.includes('share_token=')) {
+                const parts = token.split('share_token=');
+                token = parts[1].split('&')[0];
+                document.getElementById('doc-share-token-input').value = token;
+            }
+
+            await loadDoctorPatientRecord(token);
+        }
+
+        async function loadDoctorPatientRecord(shareToken) {
+            const docToken = localStorage.getItem('doctor_token');
+            const errorDiv = document.getElementById('doc-search-error');
+            const recordView = document.getElementById('doc-record-view');
+            const recordEmpty = document.getElementById('doc-record-empty');
+            const searchBtn = document.getElementById('doc-search-btn');
+
+            if (!docToken) {
+                sessionStorage.setItem('pending_share_token', shareToken);
+                closeModal('doctor-dashboard-modal');
+                openDoctorModal();
+                const loginErr = document.getElementById('doctor-login-error');
+                if (loginErr) {
+                    loginErr.textContent = 'Для просмотра карты пациента по ссылке выполните вход в систему.';
+                    loginErr.style.display = 'block';
+                }
+                return;
+            }
+
+            if (errorDiv) errorDiv.style.display = 'none';
+            if (searchBtn) {
+                searchBtn.disabled = true;
+                searchBtn.textContent = 'Загрузка...';
+            }
+
+            try {
+                const res = await fetch(`/api/v1/doctor/patient-records/${encodeURIComponent(shareToken)}`, {
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    if (res.status === 403 || res.status === 410) {
+                        throw new Error(errData.detail || 'Срок действия ссылки истек или доступ был отозван.');
+                    }
+                    if (res.status === 401) {
+                        logoutDoctor();
+                        throw new Error('Сессия врача истекла. Пожалуйста, войдите снова.');
+                    }
+                    throw new Error(errData.detail || 'Медицинская карта не найдена.');
+                }
+
+                const data = await res.json();
+                
+                // Заполняем данные карты
+                document.getElementById('doc-view-patient-id').textContent = data.patient_folder_id || 'ID: Confidential';
+                document.getElementById('doc-view-expiry').textContent = `⏱️ Доступ активен до: ${data.expires_at}`;
+
+                const grid = document.getElementById('doc-files-grid');
+                grid.innerHTML = '';
+
+                const docs = data.documents || [];
+                if (docs.length === 0) {
+                    grid.innerHTML = '<div style="color: var(--text-muted); font-size: 0.9rem;">В папке пациента пока нет загруженных файлов.</div>';
+                } else {
+                    docs.forEach(doc => {
+                        const card = document.createElement('div');
+                        card.style.cssText = 'background: rgba(30,30,46,0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; transition: transform 0.2s ease;';
+                        card.onmouseenter = () => card.style.transform = 'translateY(-2px)';
+                        card.onmouseleave = () => card.style.transform = 'translateY(0)';
+
+                        const icon = (doc.name && doc.name.endsWith('.pdf')) ? '📕' : ((doc.name && doc.name.endsWith('.docx')) ? '📘' : '📋');
+                        const size = doc.size ? `(${doc.size})` : '';
+
+                        card.innerHTML = `
+                            <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                <span style="font-size: 1.4rem; line-height: 1;">${icon}</span>
+                                <div style="flex: 1; min-width: 0;">
+                                    <div style="font-size: 0.9rem; font-weight: 600; color: #fff; word-break: break-word;" title="${doc.name}">${doc.name}</div>
+                                    <div style="font-size: 0.75rem; color: var(--accent-turquoise); margin-top: 4px;">Диагностический документ ${size}</div>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px; margin-top: 6px;">
+                                <button class="btn btn-outline" style="flex: 1; padding: 6px 10px; font-size: 0.8rem;" onclick="alert('Документ: ${doc.name}\\nФайл расшифрован и готов к клиническому анализу.')">👁️ Просмотр</button>
+                                <button class="btn btn-turquoise" style="padding: 6px 12px; font-size: 0.8rem;" onclick="alert('Скачивание зашифрованного файла ${doc.name}...')">💾</button>
+                            </div>
+                        `;
+                        grid.appendChild(card);
+                    });
+                }
+
+                if (recordEmpty) recordEmpty.style.display = 'none';
+                if (recordView) recordView.style.display = 'block';
+            } catch (err) {
+                if (recordView) recordView.style.display = 'none';
+                if (recordEmpty) recordEmpty.style.display = 'block';
+                if (errorDiv) {
+                    errorDiv.textContent = '❌ ' + err.message;
+                    errorDiv.style.display = 'block';
+                }
+            } finally {
+                if (searchBtn) {
+                    searchBtn.disabled = false;
+                    searchBtn.textContent = '🔍 Открыть карту';
+                }
+            }
+        }
+
+        /* ==========================================================================
            6. КЛИЕНТСКИЙ ИНТЕРФЕЙС И НАВИГАЦИЯ
            ========================================================================== */
         function preserveQueryParameters() {
@@ -1030,15 +1242,36 @@
         window.addEventListener('DOMContentLoaded', () => {
             preserveQueryParameters();
             initFloatingAlik();
-            if (window.location.hash === '#admin' || window.location.hash === '#cms') {
+
+            // Проверка URL параметров для глубоких ссылок (Deep-linking)
+            const urlParams = new URLSearchParams(window.location.search);
+            const shareToken = urlParams.get('share_token');
+            const hash = window.location.hash;
+
+            if (shareToken) {
+                const docInput = document.getElementById('doc-share-token-input');
+                if (docInput) docInput.value = shareToken;
+                
+                const docToken = localStorage.getItem('doctor_token');
+                if (docToken) {
+                    openDoctorDashboard();
+                    loadDoctorPatientRecord(shareToken);
+                } else {
+                    sessionStorage.setItem('pending_share_token', shareToken);
+                    openDoctorModal();
+                }
+            } else if (hash === '#doctor' || hash === '#doc') {
+                openDoctorModal();
+            } else if (hash === '#admin' || hash === '#cms') {
                 openAdminModal();
             }
+
             Promise.all([
                 renderServices(),
                 renderDoctors(),
                 renderBlog(),
                 renderEvents()
             ]).then(() => {
-                console.log('🌌 Все сказочные блоки, CMS и помощник Алик готовы к работе!');
+                console.log('🌌 Все сказочные блоки, CMS, Докторский портал и помощник Алик готовы к работе!');
             });
         });

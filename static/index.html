@@ -39,7 +39,12 @@
         <div class="chat-container glass-card">
             <header class="chat-header">
                 <div class="logo">🧬 ИИ-Консультант</div>
-                <button id="logout-btn" class="btn-secondary">Выйти</button>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button id="share-record-btn" class="btn-share" title="Предоставить временный доступ специалисту">
+                        🔗 Поделиться картой с врачом
+                    </button>
+                    <button id="logout-btn" class="btn-secondary">Выйти</button>
+                </div>
             </header>
             
             <div id="chat-history" class="chat-history">
@@ -53,6 +58,46 @@
                 <input type="text" id="chat-input" placeholder="Задайте ваш вопрос..." required autocomplete="off">
                 <button type="submit" class="btn-primary" id="send-btn">Отправить</button>
             </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно шеринга карты пациентом -->
+    <div id="share-modal" class="modal-overlay hidden">
+        <div class="glass-card modal-card">
+            <div class="modal-header">
+                <h3>🔗 Безопасный шеринг карты</h3>
+                <button id="close-share-modal" class="btn-icon">×</button>
+            </div>
+            <p class="modal-desc">
+                Сгенерируйте защищенную ссылку для временного доступа вашего лечащего врача к диагностическим документам и истории консультаций.
+            </p>
+            
+            <div class="input-group">
+                <label for="share-ttl-select">Срок действия доступа:</label>
+                <select id="share-ttl-select" class="form-select">
+                    <option value="24" selected>24 часа (1 сутки)</option>
+                    <option value="48">48 часов (2 суток)</option>
+                    <option value="168">7 дней (1 неделя)</option>
+                </select>
+            </div>
+
+            <button id="generate-share-btn" class="btn-primary" style="margin-bottom: 15px;">
+                <span>Сгенерировать ссылку</span>
+                <div class="loader hidden" id="share-loader"></div>
+            </button>
+
+            <!-- Результат генерации ссылки -->
+            <div id="share-result-block" class="share-result hidden">
+                <label>Ваша ссылка для врача:</label>
+                <div class="share-url-container">
+                    <input type="text" id="share-url-input" readonly>
+                    <button id="copy-share-btn" class="btn-secondary" title="Скопировать в буфер">📋 Копировать</button>
+                </div>
+                <div id="copy-status" class="copy-success hidden">✅ Ссылка скопирована в буфер обмена!</div>
+                <div class="share-info-text">
+                    ⏱️ Ссылка действительна до: <strong id="share-expires-text"></strong>
+                </div>
+            </div>
         </div>
     </div>
 

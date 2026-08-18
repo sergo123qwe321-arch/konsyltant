@@ -210,4 +210,102 @@ document.addEventListener('DOMContentLoaded', () => {
             chatInput.focus();
         }
     });
+
+    // ==========================================
+    // ЛОГИКА ШЕРИНГА КАРТЫ С ВРАЧОМ
+    // ==========================================
+    const shareRecordBtn = document.getElementById('share-record-btn');
+    const shareModal = document.getElementById('share-modal');
+    const closeShareModalBtn = document.getElementById('close-share-modal');
+    const generateShareBtn = document.getElementById('generate-share-btn');
+    const shareTtlSelect = document.getElementById('share-ttl-select');
+    const shareResultBlock = document.getElementById('share-result-block');
+    const shareUrlInput = document.getElementById('share-url-input');
+    const copyShareBtn = document.getElementById('copy-share-btn');
+    const copyStatus = document.getElementById('copy-status');
+    const shareExpiresText = document.getElementById('share-expires-text');
+    const shareLoader = document.getElementById('share-loader');
+
+    if (shareRecordBtn && shareModal) {
+        shareRecordBtn.addEventListener('click', () => {
+            shareModal.classList.remove('hidden');
+            if (copyStatus) copyStatus.classList.add('hidden');
+        });
+
+        if (closeShareModalBtn) {
+            closeShareModalBtn.addEventListener('click', () => {
+                shareModal.classList.add('hidden');
+            });
+        }
+
+        // Закрытие по клику на оверлей
+        shareModal.addEventListener('click', (e) => {
+            if (e.target === shareModal) {
+                shareModal.classList.add('hidden');
+            }
+        });
+
+        if (generateShareBtn) {
+            generateShareBtn.addEventListener('click', async () => {
+                const ttlHours = parseInt(shareTtlSelect ? shareTtlSelect.value : "24", 10);
+                if (shareLoader) shareLoader.classList.remove('hidden');
+                generateShareBtn.disabled = true;
+
+                try {
+                    const res = await fetch('/api/v1/patient/share', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${sessionToken}`
+                        },
+                        body: JSON.stringify({ expires_in_hours: ttlHours })
+                    });
+
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.detail || 'Не удалось создать ссылку доступа');
+                    }
+
+                    const data = await res.json();
+                    
+                    // Формируем красивую веб-ссылку на портал
+                    const hostUrl = window.location.origin;
+                    const directUrl = `${hostUrl}/?share_token=${data.share_token}`;
+
+                    if (shareUrlInput) shareUrlInput.value = directUrl;
+                    if (shareExpiresText) shareExpiresText.textContent = data.expires_at || '24 часа';
+                    if (shareResultBlock) shareResultBlock.classList.remove('hidden');
+                } catch (err) {
+                    alert('Ошибка: ' + err.message);
+                } finally {
+                    if (shareLoader) shareLoader.classList.add('hidden');
+                    generateShareBtn.disabled = false;
+                }
+            });
+        }
+
+        if (copyShareBtn && shareUrlInput) {
+            copyShareBtn.addEventListener('click', async () => {
+                const textToCopy = shareUrlInput.value;
+                if (!textToCopy) return;
+
+                try {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(textToCopy);
+                    } else {
+                        shareUrlInput.select();
+                        document.execCommand('copy');
+                    }
+
+                    if (copyStatus) {
+                        copyStatus.classList.remove('hidden');
+                        setTimeout(() => copyStatus.classList.add('hidden'), 3000);
+                    }
+                } catch (err) {
+                    console.error('Ошибка копирования:', err);
+                }
+            });
+        }
+    }
 });
+

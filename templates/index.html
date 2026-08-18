@@ -322,6 +322,7 @@
 <div class="legal-links">
 <a href="#privacy">Политика конфиденциальности</a>
 <a href="#terms">Защита персональных данных</a>
+<a href="#doctor" onclick="openDoctorModal(); return false;" style="color: var(--accent-purple); font-weight: 500;">🩺 Кабинет врача</a>
 <a href="#admin" onclick="openAdminModal(); return false;" style="color: var(--accent-turquoise); font-weight: 500;">🔐 Панель управления (CMS)</a>
 </div>
 </div>
@@ -329,24 +330,85 @@
 </footer>
 <!-- МОДАЛЬНЫЕ ОКНА -->
 <div class="modal" id="doctor-modal">
-<div class="modal-content">
+<div class="modal-content" style="max-width: 440px;">
 <button class="close-modal" onclick="closeModal('doctor-modal')">×</button>
-<h3>🔑 Вход для специалистов</h3>
-<form onsubmit="event.preventDefault(); alert('Авторизация успешна! Перенаправление в кабинет...'); closeModal('doctor-modal');">
+<h3>🩺 Вход для специалистов</h3>
+<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Личный кабинет врача и просмотр медицинских карт пациентов</p>
+<form id="doctor-login-form" onsubmit="handleDoctorLogin(event)">
 <div class="form-group">
-<label class="form-label" for="doc-email">Рабочая почта врача</label>
-<input class="form-input" id="doc-email" placeholder="doctor@littlecountry.ru" required="" type="email"/>
+<label class="form-label" for="doc-login">Логин врача / Код специалиста</label>
+<input class="form-input" id="doc-login" placeholder="doc_anna" required="" type="text" value="doc_anna"/>
 </div>
 <div class="form-group">
-<label class="form-label" for="doc-pass">Секретный ключ (пароль)</label>
+<label class="form-label" for="doc-pass">Пароль</label>
 <input class="form-input" id="doc-pass" placeholder="••••••••" required="" type="password"/>
 </div>
-<button class="btn btn-purple" style="width: 100%; margin-top: 10px;" type="submit">
-                    🩺 Войти в кабинет
-                </button>
+<div id="doctor-login-error" style="color: #EF4444; font-size: 0.85rem; margin-bottom: 10px; display: none;"></div>
+<button class="btn btn-purple" id="doctor-login-btn" style="width: 100%; margin-top: 10px;" type="submit">
+    🩺 Войти в кабинет врача
+</button>
 </form>
 </div>
 </div>
+
+<!-- МОДАЛЬНОЕ ОКНО: ДАШБОРД ВРАЧА (DOCTOR DASHBOARD) -->
+<div class="modal" id="doctor-dashboard-modal">
+<div class="modal-content" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; padding: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #7C3AED, #06B6D4); display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">🩺</div>
+            <div>
+                <h3 style="margin: 0; font-size: 1.25rem;" id="doc-profile-name">Доктор Центра</h3>
+                <div style="font-size: 0.85rem; color: var(--accent-turquoise);" id="doc-profile-specialty">Специалист</div>
+            </div>
+            <span style="background: rgba(16,185,129,0.2); color: #34D399; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">Doctor Mode</span>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-outline" onclick="logoutDoctor()" style="padding: 6px 12px; font-size: 0.8rem;">Выйти</button>
+            <button class="close-modal" onclick="closeModal('doctor-dashboard-modal')" style="position: static;">×</button>
+        </div>
+    </div>
+
+    <!-- Панель ввода / поиска токена шеринга -->
+    <div style="background: rgba(30,30,46,0.85); border: 1px solid rgba(124,58,237,0.3); border-radius: 16px; padding: 16px; margin-bottom: 20px;">
+        <h4 style="margin: 0 0 10px 0; font-size: 1rem; color: #fff;">🔑 Доступ к медицинской карте по ссылке пациента</h4>
+        <div style="display: flex; gap: 10px;">
+            <input class="form-input" id="doc-share-token-input" placeholder="Введите токен шеринга (например: grant_...)" style="flex: 1;" />
+            <button class="btn btn-purple" id="doc-search-btn" onclick="handleDoctorSearchRecord()" style="padding: 10px 18px; white-space: nowrap;">🔍 Открыть карту</button>
+        </div>
+        <div id="doc-search-error" style="color: #EF4444; font-size: 0.85rem; margin-top: 8px; display: none;"></div>
+    </div>
+
+    <!-- Контейнер просмотра медицинской карты -->
+    <div id="doc-record-view" style="display: none; overflow-y: auto; flex: 1; padding-right: 4px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(6,182,212,0.1); border: 1px solid rgba(6,182,212,0.3); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px;">
+            <div>
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Папка пациента: </span>
+                <strong id="doc-view-patient-id" style="color: #fff; font-family: monospace;">-</strong>
+            </div>
+            <div style="font-size: 0.85rem; color: #34D399;" id="doc-view-expiry">⏱️ Доступ активен</div>
+        </div>
+
+        <h4 style="margin: 0 0 12px 0; font-size: 1.05rem;">📁 Документы и результаты диагностики:</h4>
+        <div id="doc-files-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px;">
+            <!-- Карточки документов пациента -->
+        </div>
+
+        <div style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.15); border-radius: 14px; padding: 16px;">
+            <h5 style="margin: 0 0 8px 0; color: var(--accent-turquoise);">💡 Рекомендация для врача:</h5>
+            <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted); line-height: 1.5;">
+                Документы защищены сквозным шифрованием 152-ФЗ. Доступ предоставлен исключительно для клинического анализа специалистами центра «Маленькая Страна».
+            </p>
+        </div>
+    </div>
+
+    <div id="doc-record-empty" style="text-align: center; color: var(--text-muted); padding: 40px 20px;">
+        <div style="font-size: 2.5rem; margin-bottom: 12px;">📋</div>
+        <p style="margin: 0; font-size: 0.95rem;">Введите токен шеринга или перейдите по ссылке, полученной от родителя, для просмотра диагностических файлов.</p>
+    </div>
+</div>
+</div>
+
 <div class="modal" id="documents-modal">
 <div class="modal-content" style="max-width: 550px;">
 <button class="close-modal" onclick="closeModal('documents-modal')">×</button>
