@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 TARGET_EMAIL = os.getenv("DEFAULT_NOTIFICATION_EMAIL", "konsultantms@yandex.com")
 YANDEX_DISK_TOKEN = os.getenv("YANDEX_DISK_TOKEN", "")
-BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
+BASE_URL = os.getenv("BASE_URL", "https://xn--g1aj3a.site")
 
 def generate_random_password(length=12):
     characters = string.ascii_letters + string.digits + "!@#$%^&*"

@@ -5,7 +5,7 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional
@@ -438,6 +438,7 @@ def doctor_get_patient_records_api(
         "message": "Медицинская карта успешно предоставлена для ознакомления специалисту"
     }
 
+@app.get("/app")
 @app.get("/app/")
 async def read_app_index():
     index_path = os.path.join(STATIC_DIR, "index.html")
@@ -446,9 +447,13 @@ async def read_app_index():
     return {"message": "Чат не найден."}
 
 @app.get("/")
-async def read_index(request: Request):
+async def read_index(request: Request, token: Optional[str] = None):
+    # Если родитель перешел по старой ссылке с токеном вида /?token=..., бесшовно перенаправляем в приложение чата
+    if token:
+        return RedirectResponse(url=f"/app/?token={token}")
     return templates.TemplateResponse(request=request, name="index.html")
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+

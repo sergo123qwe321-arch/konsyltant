@@ -82,11 +82,14 @@ class NotificationService:
         access_token: str, 
         passcode: str, 
         folder_name: str, 
-        base_url: str = "http://127.0.0.1:8000", 
+        base_url: str = None, 
         folder_public_url: str = None,
         cache_public_url: str = None
     ) -> bool:
-        login_link = f"{base_url}/?token={access_token}"
+        if not base_url:
+            base_url = os.getenv("BASE_URL", "https://xn--g1aj3a.site")
+        base_url = base_url.rstrip("/")
+        login_link = f"{base_url}/app/?token={access_token}"
         
         # БЕЗОПАСНОЕ ЛОГИРОВАНИЕ (CWE-532 REDACTION)
         masked_link = mask_url(login_link)
