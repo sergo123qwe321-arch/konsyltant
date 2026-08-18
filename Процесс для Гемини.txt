@@ -16,5 +16,14 @@
 - Домен в Punycode: `xn--g1aj3a.site` (цмз.site).
 - SSL сертификаты: Let's Encrypt + certbot контейнер. Fallback генерация сертификата через `nginx/init-ssl.sh`.
 
+## Докторский доступ и Шеринг (Phase 3)
+- В `database.py` добавлены таблицы `doctors` (профили специалистов) и `patient_share_grants` (временные токены шеринга медкарты с поддержкой TTL и UTC).
+- Валидация токенов доступа врачей производится через `validate_share_grant(db, token)`.
+
+## Интерактивный Алик и фронтенд
+- Виджет `#floating-alik-widget` с анимацией FLIP (First, Last, Invert, Play) без внешних CDN (чистый Vanilla JS).
+- Графика: WebP с прозрачностью (`static/assets/img/alik/Alik.webp`, fallback PNG).
+- Зеленое диалоговое облачко со сменой подсказок по `IntersectionObserver` на основе `data-alik-comment` атрибутов секций.
+
 ## Откат версий (ОЧЕНЬ ВАЖНО)
 - Если пользователь пишет команду вроде "посмотри в журнале последнюю рабочую версию и откатись к ней", предложить выполнить `git checkout v6.0-stable-cms-landing` (или актуальный зафиксированный тег) для мгновенного возврата к надежному коду.
