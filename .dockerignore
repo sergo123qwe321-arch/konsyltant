@@ -25,4 +25,6 @@ gh_cli/
 # Root Diagrams & Images (Assets are in static/)
 *.png
 *.jpg
-*.txt
+*.log
+процесс*.txt
+Процесс*.txt
