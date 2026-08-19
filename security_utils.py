@@ -88,3 +88,103 @@ def mask_url(url: str) -> str:
             return f"{parts[0]}?token={mask_credential(t_val)}&{rest}"
         return f"{parts[0]}?token={mask_credential(token_part)}"
     return url
+
+def mask_ip(ip: str) -> str:
+    """
+    Маскирует IP-адрес для безопасного логирования (CWE-532).
+    Пример: '192.168.1.100' -> '192.***.***.100'
+    '127.0.0.1' -> '127.***.***.1'
+    """
+    if not ip:
+        return "unknown"
+    val = str(ip).strip()
+    if val in ("unknown", "testclient"):
+        return val
+    parts = val.split(".")
+    if len(parts) == 4:
+        return f"{parts[0]}.***.***.{parts[3]}"
+    if ":" in val:
+        colon_parts = val.split(":")
+        if len(colon_parts) > 2:
+            return f"{colon_parts[0]}:***:***:{colon_parts[-1]}"
+    return mask_credential(val)
+
+import time
+import threading
+from typing import List, Tuple
+
+class InMemoryAuthRateLimiter:
+    """
+    In-memory Rate Limiter для endpoints авторизации с защитой от brute-force атак.
+    
+    Лимиты:
+      - Максимум: 5 запросов в течение скользящего окна 60 секунд.
+      - Блокировка: 300 секунд (5 минут) при превышении лимита.
+      - Сброс: при успешной авторизации (HTTP 200).
+    """
+    def __init__(self, max_requests: int = 5, window_seconds: int = 60, lockout_seconds: int = 300):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.lockout_seconds = lockout_seconds
+        self._lock = threading.Lock()
+        self.attempts: Dict[str, List[float]] = {}
+        self.lockouts: Dict[str, float] = {}
+
+    def is_rate_limited(self, ip: str, path: str = "") -> Tuple[bool, int, int]:
+        """
+        Проверяет, заблокирован ли IP-адрес.
+        Возвращает кортеж: (is_limited: bool, retry_after: int, current_attempts: int).
+        """
+        now = time.time()
+        with self._lock:
+            # 1. Проверяем активную блокировку
+            if ip in self.lockouts:
+                lock_exp = self.lockouts[ip]
+                if now < lock_exp:
+                    retry_after = int(lock_exp - now) + 1
+                    attempts_count = len(self.attempts.get(ip, []))
+                    return True, max(1, retry_after), max(attempts_count, self.max_requests)
+                else:
+                    del self.lockouts[ip]
+                    self.attempts[ip] = []
+
+            # 2. Очищаем старые попытки за пределами окна
+            if ip in self.attempts:
+                self.attempts[ip] = [t for t in self.attempts[ip] if now - t < self.window_seconds]
+                if len(self.attempts[ip]) >= self.max_requests:
+                    self.lockouts[ip] = now + self.lockout_seconds
+                    return True, self.lockout_seconds, len(self.attempts[ip])
+
+            attempts_count = len(self.attempts.get(ip, []))
+            return False, 0, attempts_count
+
+    def record_attempt(self, ip: str, path: str = "") -> int:
+        """
+        Фиксирует попытку запроса для данного IP.
+        Возвращает текущее количество попыток в окне.
+        """
+        now = time.time()
+        with self._lock:
+            if ip not in self.attempts:
+                self.attempts[ip] = []
+            self.attempts[ip] = [t for t in self.attempts[ip] if now - t < self.window_seconds]
+            self.attempts[ip].append(now)
+            count = len(self.attempts[ip])
+            if count >= self.max_requests:
+                self.lockouts[ip] = now + self.lockout_seconds
+            return count
+
+    def reset(self, ip: str, path: str = "") -> None:
+        """
+        Сбрасывает счетчик попыток и блокировку (например, при успешной авторизации).
+        """
+        with self._lock:
+            self.attempts.pop(ip, None)
+            self.lockouts.pop(ip, None)
+
+    def clear_all(self) -> None:
+        """Очищает все счетчики и блокировки (для тестирования)."""
+        with self._lock:
+            self.attempts.clear()
+            self.lockouts.clear()
+

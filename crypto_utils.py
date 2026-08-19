@@ -58,5 +58,8 @@ def decrypt_text(cipher_text: str) -> str:
         logger.error(f"Ошибка дешифрования: {e}")
         return cipher_text
 
-# Реэкспорт JWT функций для обратной совместимости модулей безопасности
-from security_utils import create_access_token, verify_token
+# Реэкспорт функций безопасности для обратной совместимости модулей
+from security_utils import (
+    create_access_token, verify_token, mask_credential, 
+    mask_url, mask_ip, InMemoryAuthRateLimiter
+)

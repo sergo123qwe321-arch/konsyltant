@@ -2,10 +2,11 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+import logging
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional
@@ -26,7 +27,12 @@ from database import (
 from drive_api import get_drive_service
 from rag import ask_consultant
 from folder_watcher import scan_folders
-from security_utils import create_access_token, verify_token
+from security_utils import (
+    create_access_token, verify_token, mask_ip, 
+    InMemoryAuthRateLimiter
+)
+
+logger = logging.getLogger(__name__)
 
 def keep_awake_loop():
     """Фоновый пинг сервера, чтобы Render не засыпал (раз в 10 минут)"""
@@ -65,6 +71,60 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="ИИ-Консультант RAG API", lifespan=lifespan)
+
+# --- Rate Limiting Configuration (Brute-force Protection) ---
+AUTH_ENDPOINTS = {"/api/login", "/api/v1/doctor/login", "/api/v1/admin/login"}
+auth_rate_limiter = InMemoryAuthRateLimiter(max_requests=5, window_seconds=60, lockout_seconds=300)
+
+@app.middleware("http")
+async def auth_rate_limiting_middleware(request: Request, call_next):
+    """
+    Middleware ограничения частоты запросов (Rate Limiting) для endpoints авторизации.
+    Защищает /api/login, /api/v1/doctor/login, /api/v1/admin/login от brute-force атак.
+    Лимит: максимум 5 попыток в минуту с одного IP-адреса.
+    Период блокировки: 5 минут (300 секунд) при превышении лимита.
+    Сброс: при успешной авторизации (HTTP 200).
+    """
+    path = request.url.path.rstrip("/")
+    if request.method == "POST" and path in AUTH_ENDPOINTS:
+        # Извлекаем IP клиента (с учетом Nginx X-Forwarded-For)
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        if x_forwarded_for:
+            client_ip = x_forwarded_for.split(",")[0].strip()
+        elif request.client and request.client.host:
+            client_ip = request.client.host
+        else:
+            client_ip = "unknown"
+
+        try:
+            is_limited, retry_after, attempts = auth_rate_limiter.is_rate_limited(client_ip, path)
+            if is_limited:
+                logger.warning(f"Rate limit exceeded: IP={mask_ip(client_ip)}, endpoint={path}, attempts={attempts}")
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "detail": "Превышено количество попыток входа. Повторите попытку через 5 минут.",
+                        "retry_after": retry_after
+                    },
+                    headers={"Retry-After": str(retry_after)}
+                )
+
+            # Фиксируем попытку
+            auth_rate_limiter.record_attempt(client_ip, path)
+            
+            response = await call_next(request)
+            
+            # При успешной авторизации (HTTP 200) сбрасываем счетчик для данного IP
+            if response.status_code == 200:
+                auth_rate_limiter.reset(client_ip, path)
+                
+            return response
+        except Exception as e:
+            # Стратегия Fail-Open: при непредвиденной ошибке в ограничителе не блокируем пользователей
+            logger.error(f"[RATE LIMITER ERROR] Ошибка при проверке лимитов: {e}", exc_info=True)
+            return await call_next(request)
+
+    return await call_next(request)
 
 # Статические файлы (чат и UI)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
