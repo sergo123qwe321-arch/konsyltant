@@ -185,6 +185,26 @@ sequenceDiagram
     end
 ```
 
+6. **Medical Report PDF Generation Engine (`pdf_generator.py`):**
+   - **Эндпоинт:** `GET /api/v1/doctor/patient/{patient_folder_id}/summary/pdf`
+   - **Конвейер формирования документа:**
+     1. Врач запрашивает PDF через интерфейс или внешний МИС.
+     2. FastAPI проверяет JWT роль `DOCTOR` и активный грант в `patient_share_grants`.
+     3. RAG-движок (`rag.py`) формирует структурированное резюме пациента.
+     4. `pdf_generator.py` компилирует профессиональный PDF с использованием ReportLab и UTF-8 шрифтов (`DejaVuSans`).
+     5. Двухпроходный `NumberedCanvas` рассчитывает точное количество страниц (`Стр. X из Y`), рисует акцентную шапку клиники, карточки противопоказаний (`Alert Box`) и юридический дисклеймер.
+     6. Сервер возвращает `Response(content=pdf_bytes, media_type="application/pdf")` с заголовком скачивания `Content-Disposition: attachment; filename="medical_summary_...pdf"`.
+
+```mermaid
+graph LR
+    A[Doctor Dashboard / МИС] -->|GET /summary/pdf + JWT| B[FastAPI Endpoint]
+    B -->|Check Grant| C[(PostgreSQL / SQLite)]
+    B -->|Fetch & Summarize| D[RAG Engine]
+    D -->|Structured Data| E[pdf_generator.py]
+    E -->|ReportLab + UTF-8 Fonts| F[PDF Binary Stream]
+    F -->|HTTP 200 attachment| A
+```
+
 ---
 
 ## 🛡️ Fault Tolerance, Security & Rate Limiting Policy

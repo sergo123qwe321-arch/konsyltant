@@ -699,11 +699,26 @@ def verify_admin_credentials(username: str, password: str) -> bool:
 # ДОКТОРСКИЕ ПРОФИЛИ И ШЕРИНГ ДОСТУПОВ (PHASE 3)
 # ==========================================
 
-def create_doctor(full_name: str, specialty: str, license_number: str) -> dict:
+def create_doctor(full_name: str, specialty: str, license_number: str, is_verified: bool = False) -> dict:
     conn = get_connection()
     cursor = conn.cursor()
     is_postgres = bool(DATABASE_URL and psycopg2)
-    val_verified = False if is_postgres else 0
+    val_verified = is_verified if is_postgres else (1 if is_verified else 0)
+
+    # Проверяем, существует ли уже врач с таким номером лицензии
+    execute_query(cursor, "SELECT id, full_name, specialty, license_number, is_verified, created_at FROM doctors WHERE license_number = ?", (license_number,))
+    existing = cursor.fetchone()
+    if existing:
+        conn.close()
+        return {
+            "id": existing[0],
+            "full_name": existing[1],
+            "specialty": existing[2],
+            "license_number": existing[3],
+            "is_verified": bool(existing[4]),
+            "created_at": str(existing[5])
+        }
+
     if is_postgres:
         execute_query(cursor, """
             INSERT INTO doctors (full_name, specialty, license_number, is_verified)

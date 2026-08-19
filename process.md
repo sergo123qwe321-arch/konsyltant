@@ -156,13 +156,13 @@
   - Проведен аудит зависимостей: подтверждено 100% отсутствие импортов отладочных скриптов в production-коде.
   - Реорганизована структура репозитория: созданы каталоги `scripts/admin/` (перемещен `reset_db.py`), `scripts/debug/` (перемещены скрипты инспекции Диска), удалены устаревшие временные файлы (`extract.py`, `split_js.py`, `temp_script.js`, `index.html.лендинг`).
   - Создан документ `scripts/README.md` и сформирован `.dockerignore` для исключения служебных скриптов из production-сборок.
-- [2026-08-19] Создание тестового доступа для Продюсера и реализация API генерации медицинских резюме:
-  - Разработан идемпотентный скрипт `scripts/admin/seed_producer_doctor.py`, создающий учетную запись врача-продюсера (`full_name`: «Тестовый Продюсер», `license_number`: `PRODUCER-001`, `email`: `producer@cmz.site`, `password`: `TestAccess2026!`, `role`: `DOCTOR`, `is_verified`: `TRUE`).
-  - В `database.py` реализована функция `check_doctor_patient_grant(doctor_id, patient_folder_id)` с использованием B-tree индексов.
-  - В `rag.py` реализован системный промпт `SUMMARY_SYSTEM_PROMPT_TEMPLATE` и функция `generate_medical_summary(folder_id)` для генерации строгого структурированного JSON-резюме (`anamnesis`, `diagnoses`, `contraindications`, `drug_interactions`, `recommendations`) без галлюцинаций.
-  - В `main.py` разработан защищенный эндпоинт `POST /api/v1/doctor/patient/{patient_folder_id}/summary` с двухфакторной проверкой RBAC (`get_current_doctor`) и активного TTL-гранта.
-  - Разработан тестовый набор `test_doctor_summary_api.py` (6/6 тестов PASS: 401 при отсутствии токена, 403 при роли не DOCTOR, 403 без гранта, 403 при истекшем гранте, 404 при отсутствии кэша, 200 при успешной генерации).
-  - Все 25 тестов в репозитории пройдены на 100%.
+- [2026-08-19] Реализация эндпоинта экспорта PDF-резюме пациента:
+  - Создан модуль `pdf_generator.py` с использованием ReportLab, настроена автоматическая регистрация TrueType шрифтов с поддержкой кириллицы (UTF-8 DejaVuSans).
+  - Разработан двухпроходный `NumberedCanvas` для динамической нумерации страниц («Стр. X из Y»), шапки клиники, карточек противопоказаний и лекарственных взаимодействий (Alert Boxes), а также юридического дисклеймера.
+  - В `main.py` реализован эндпоинт `GET /api/v1/doctor/patient/{patient_folder_id}/summary/pdf` с проверкой JWT (`DOCTOR`), проверкой активного гранта доступа и корректным формированием заголовка `Content-Disposition`.
+  - В `Dockerfile` добавлена установка шрифтового пакета `fonts-dejavu-core`, в `requirements.txt` добавлены `reportlab` и `pypdf`.
+  - Разработан тестовый набор `test_pdf_generation.py` (5/5 тестов PASS: 401, 403, 200, Content-Type/Disposition, кириллический рендеринг).
+  - 100% прохождение всех 30 тестов системы.
 
 ## План
 - **Что сделано:**
@@ -193,10 +193,11 @@
   - Выполнена оптимизация производительности БД: созданы B-tree индексы с автомиграцией (`ensure_indexes`).
   - Задокументирован сквозной бизнес-процесс Яндекс.Диска, директива технологического суверенитета и реорганизована структура `scripts/`.
   - Выполнен Seed тестового доступа Продюсера и внедрен REST API генерации структурированных медицинских резюме (`POST /api/v1/doctor/patient/{folder_id}/summary`).
+  - Разработан и внедрен эндпоинт экспорта клинического резюме в PDF (`GET /api/v1/doctor/patient/{folder_id}/summary/pdf`).
 - **Что в процессе:**
-  - Подготовка к Phase 4: Интеграция Voice-to-Text (Web Speech API) и AI-суммаризация на фронтенде.
+  - Подготовка к Phase 4: Интеграция Voice-to-Text (Web Speech API) и кнопка скачивания PDF в Doctor Dashboard.
 - **Что предстоит:**
-  - Phase 4: Интеграция голосового ввода (Web Speech API) и вывод клинического резюме в интерфейсе Doctor Dashboard.
+  - Phase 4: Интеграция голосового ввода (Web Speech API) и UI кнопки скачивания PDF в интерфейсе Doctor Dashboard.
 
 
 

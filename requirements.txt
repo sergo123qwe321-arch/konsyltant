@@ -19,4 +19,7 @@ cryptography
 PyJWT
 jinja2
 httpx
+reportlab
+pypdf
+
 

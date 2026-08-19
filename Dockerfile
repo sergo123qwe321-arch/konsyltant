@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-rus \
     poppler-utils \
+    fonts-dejavu-core \
     ffmpeg \
     libsm6 \
     libxext6 \

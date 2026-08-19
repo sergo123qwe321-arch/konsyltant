@@ -16,7 +16,8 @@ class TestDoctorSummaryAPI(unittest.TestCase):
         doc = create_doctor(
             full_name="Др. Айболит Тестовый",
             specialty="Педиатр-Нейропсихолог",
-            license_number="TEST-DOC-SUMMARY-99"
+            license_number="TEST-DOC-SUMMARY-99",
+            is_verified=True
         )
         cls.doctor_id = doc["id"]
         cls.doctor_token = create_access_token({

@@ -3,13 +3,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import logging
-from fastapi import FastAPI, HTTPException, Header, Depends, Request
+from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
 
 import threading
 import time
@@ -26,6 +27,7 @@ from database import (
 )
 from drive_api import get_drive_service
 from rag import ask_consultant, generate_medical_summary
+from pdf_generator import generate_summary_pdf
 from folder_watcher import scan_folders
 from security_utils import (
     create_access_token, verify_token, mask_ip, 
@@ -537,6 +539,61 @@ async def doctor_generate_patient_summary(
         "doctor_id": doc_id,
         "summary": summary_data
     }
+
+@app.get("/api/v1/doctor/patient/{patient_folder_id}/summary/pdf")
+async def doctor_download_patient_summary_pdf(
+    patient_folder_id: str,
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Генерация и скачивание структурированного клинического резюме пациента в формате PDF.
+    Доступ разрешен только верифицированным врачам при наличии активного гранта.
+    """
+    doc_id_raw = doctor.get("doctor_id") or doctor.get("sub")
+    doc_id = None
+    if isinstance(doc_id_raw, int):
+        doc_id = doc_id_raw
+    elif isinstance(doc_id_raw, str) and doc_id_raw.isdigit():
+        doc_id = int(doc_id_raw)
+
+    # 1. Строгая проверка RBAC и активного шеринг-гранта
+    has_grant = check_doctor_patient_grant(doc_id, patient_folder_id)
+    if not has_grant:
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ к медицинской карте пациента не предоставлен или срок действия истек"
+        )
+
+    # 2. Вызов RAG генерации медицинского резюме
+    summary_data, raw_text, cache_exists = generate_medical_summary(patient_folder_id)
+    
+    if not cache_exists:
+        raise HTTPException(
+            status_code=404,
+            detail="Медицинские данные еще обрабатываются"
+        )
+
+    # 3. Генерация PDF-документа
+    try:
+        pdf_bytes = generate_summary_pdf(summary_data, doctor, patient_folder_id)
+    except Exception as e:
+        logger.error(f"[PDF ERROR] Ошибка генерации PDF для {patient_folder_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Внутренняя ошибка при формировании PDF-документа"
+        )
+
+    clean_patient_id = patient_folder_id.replace("disk:/", "").replace("/", "_").strip()
+    date_str = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"medical_summary_{clean_patient_id}_{date_str}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 @app.get("/app")
 @app.get("/app/")
