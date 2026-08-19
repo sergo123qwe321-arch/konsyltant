@@ -147,6 +147,44 @@ antigravKONSYLTANT/
      - `idx_public_leads_status_created` на `(status, created_at)` для фильтрации заявок в CMS.
    - **Индексы сортировки и внешних ключей:** `idx_public_posts_created_at`, `idx_share_grants_doctor_id`, `idx_doctors_license_number`.
 
+5. **AI Clinical Summary Pipeline (RAG-суммаризация):**
+   - Эндпоинт `POST /api/v1/doctor/patient/{patient_folder_id}/summary` генерирует структурированное резюме на базе чанков медкарты.
+   - Строгая двухфакторная валидация: JWT роль `DOCTOR` + проверка активного TTL-гранта в `patient_share_grants`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Doctor as Врач / Продюсер (Doctor Dashboard)
+    participant API as FastAPI (main.py)
+    participant DB as PostgreSQL (database.py)
+    participant RAG as RAG Engine (rag.py)
+    participant Disk as Yandex.Disk API
+    participant LLM as GigaChat API (Сбер)
+
+    Doctor->>API: POST /api/v1/doctor/patient/{folder_id}/summary (Bearer Doctor JWT)
+    API->>API: Валидация JWT (role == 'DOCTOR')
+    API->>DB: check_doctor_patient_grant(doctor_id, folder_id)
+    alt Грант отсутствует или истек
+        DB-->>API: False
+        API-->>Doctor: 403 Forbidden
+    else Грант активен (is_active=True, expires_at > now)
+        DB-->>API: True
+        API->>RAG: generate_medical_summary(folder_id)
+        RAG->>Disk: Загрузка _{folder_id}_cache.json
+        alt Кэш документов не найден
+            Disk-->>RAG: 404 / None
+            RAG-->>API: cache_exists = False
+            API-->>Doctor: 404 Not Found ("Данные еще обрабатываются")
+        else Кэш загружен
+            Disk-->>RAG: Чанки документов
+            RAG->>LLM: Запрос с промптом (Strict JSON, No Hallucinations)
+            LLM-->>RAG: JSON ответ (anamnesis, diagnoses, contraindications...)
+            RAG-->>API: summary_dict, raw_response, True
+            API-->>Doctor: 200 OK (Structured Summary)
+        end
+    end
+```
+
 ---
 
 ## 🛡️ Fault Tolerance, Security & Rate Limiting Policy

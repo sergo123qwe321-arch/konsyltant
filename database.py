@@ -893,3 +893,47 @@ def validate_share_grant(share_token: str) -> dict:
         "created_at": str(created_at),
         "expires_at": str(expires_at)
     }
+
+def check_doctor_patient_grant(doctor_id: Optional[int], patient_folder_id: str) -> bool:
+    """
+    Проверяет наличие активного, не истекшего гранта доступа у врача doctor_id к patient_folder_id.
+    Использует B-tree индексы (idx_share_grants_patient_active, idx_share_grants_doctor_id).
+    Поддерживает как персональные гранты (doctor_id = doc_id), так и общие ссылки (doctor_id IS NULL).
+    """
+    if not patient_folder_id:
+        return False
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Ищем активные гранты для данной папки пациента
+    if doctor_id is not None and isinstance(doctor_id, int):
+        execute_query(cursor, """
+            SELECT is_active, expires_at FROM patient_share_grants
+            WHERE patient_folder_id = ? AND (doctor_id = ? OR doctor_id IS NULL)
+        """, (patient_folder_id, doctor_id))
+    else:
+        execute_query(cursor, """
+            SELECT is_active, expires_at FROM patient_share_grants
+            WHERE patient_folder_id = ?
+        """, (patient_folder_id,))
+        
+    rows = cursor.fetchall()
+    conn.close()
+    
+    now_utc = datetime.now(timezone.utc)
+    for row in rows:
+        is_active, expires_at = row
+        if not bool(is_active):
+            continue
+        exp_dt = _parse_db_datetime(expires_at)
+        if not exp_dt:
+            continue
+        if exp_dt.tzinfo is not None:
+            if exp_dt >= now_utc:
+                return True
+        else:
+            if exp_dt >= now_utc.replace(tzinfo=None):
+                return True
+                
+    return False
+

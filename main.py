@@ -22,10 +22,10 @@ from database import (
     get_post_by_id, create_lead, get_all_leads, create_public_post,
     update_public_post, delete_public_post, verify_admin_credentials,
     create_doctor, get_doctor_by_id, verify_doctor, create_share_grant,
-    validate_share_grant, verify_doctor_credentials
+    validate_share_grant, verify_doctor_credentials, check_doctor_patient_grant
 )
 from drive_api import get_drive_service
-from rag import ask_consultant
+from rag import ask_consultant, generate_medical_summary
 from folder_watcher import scan_folders
 from security_utils import (
     create_access_token, verify_token, mask_ip, 
@@ -496,6 +496,46 @@ def doctor_get_patient_records_api(
         "expires_at": grant["expires_at"],
         "documents": documents,
         "message": "Медицинская карта успешно предоставлена для ознакомления специалисту"
+    }
+
+@app.post("/api/v1/doctor/patient/{patient_folder_id}/summary")
+async def doctor_generate_patient_summary(
+    patient_folder_id: str, 
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Генерация структурированного медицинского резюме (Clinical Summary) через RAG + GigaChat API.
+    Доступ разрешен только верифицированным врачам при наличии активного гранта (patient_share_grants).
+    """
+    doc_id_raw = doctor.get("doctor_id") or doctor.get("sub")
+    doc_id = None
+    if isinstance(doc_id_raw, int):
+        doc_id = doc_id_raw
+    elif isinstance(doc_id_raw, str) and doc_id_raw.isdigit():
+        doc_id = int(doc_id_raw)
+
+    # 1. Строгая проверка RBAC и активного шеринг-гранта
+    has_grant = check_doctor_patient_grant(doc_id, patient_folder_id)
+    if not has_grant:
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ к медицинской карте пациента не предоставлен или срок действия истек"
+        )
+
+    # 2. Вызов RAG генерации медицинского резюме
+    summary_data, raw_text, cache_exists = generate_medical_summary(patient_folder_id)
+    
+    if not cache_exists:
+        raise HTTPException(
+            status_code=404,
+            detail="Медицинские данные еще обрабатываются"
+        )
+
+    return {
+        "status": "success",
+        "patient_folder_id": patient_folder_id,
+        "doctor_id": doc_id,
+        "summary": summary_data
     }
 
 @app.get("/app")

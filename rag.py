@@ -171,3 +171,116 @@ def ask_consultant(user_message: str, folder_id: str) -> str:
         print(f"[GIGACHAT EXCEPTION] {e}")
         return ERROR_MESSAGE
 
+SUMMARY_SYSTEM_PROMPT_TEMPLATE = """
+Ты — ведущий медицинский эксперт и клинический аналитик центра «Маленькая Страна».
+Твоя задача — составить структурированное клиническое резюме медицинской карты пациента на основе предоставленного ниже контекста извлеченных медицинских документов.
+
+ЖЕСТКИЕ ПРАВИЛА (ZERO-HALLUCINATION CLINICAL SUMMARY):
+1. Опирайся ИСКЛЮЧИТЕЛЬНО на предоставленные документы данного пациента.
+2. Не выдумывай медицинские факты, диагнозы, аллергии или препараты! Если информации по какому-либо пункту нет в документах, возвращай null или пустой массив [].
+3. Твой ответ ДОЛЖЕН БЫТЬ СТРОГО В ФОРМАТЕ JSON без окружающего текста и блоков кода markdown со следующей структурой:
+{{
+  "anamnesis": "Краткая история болезни и текущее состояние",
+  "diagnoses": ["Список диагнозов"],
+  "contraindications": ["Критические противопоказания и аллергии"],
+  "drug_interactions": ["Несовместимые препараты и риски лекарственных взаимодействий"],
+  "recommendations": ["Краткие рекомендации по наблюдению"]
+}}
+
+КОНТЕКСТ МЕДИЦИНСКИХ ДОКУМЕНТОВ:
+{context}
+"""
+
+def generate_medical_summary(folder_id: str) -> tuple[dict | None, str | None, bool]:
+    """
+    Генерирует структурированное клиническое резюме пациента через GigaChat API.
+    Возвращает (summary_dict, raw_text, cache_exists).
+    - Если кэш документов не найден: (None, None, False)
+    - Если резюме успешно сгенерировано: (parsed_json_dict, raw_response, True)
+    """
+    context_text, cache_exists = build_patient_context(folder_id)
+    if not cache_exists:
+        return None, None, False
+
+    token = get_gigachat_token()
+    if not token:
+        return {
+            "anamnesis": "Не удалось подключиться к сервису ИИ (ошибка авторизации).",
+            "diagnoses": [],
+            "contraindications": [],
+            "drug_interactions": [],
+            "recommendations": []
+        }, "GigaChat Auth Error", True
+
+    system_prompt = SUMMARY_SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+
+    payload = {
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "Сформируй клиническое резюме в формате JSON на основе контекста документов."}
+        ],
+        "temperature": 0.1
+    }
+
+    try:
+        response = requests.post(GIGACHAT_COMPLETIONS_URL, headers=headers, json=payload, verify=False, timeout=40)
+        if response.status_code in (401, 403):
+            return {
+                "anamnesis": "Сервис ИИ временно недоступен (лимит квоты токенов).",
+                "diagnoses": [],
+                "contraindications": [],
+                "drug_interactions": [],
+                "recommendations": []
+            }, response.text, True
+
+        response.raise_for_status()
+        raw_content = response.json()["choices"][0]["message"]["content"]
+        
+        # Очистка от markdown блоков ```json ... ```
+        cleaned = raw_content.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        elif cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+
+        try:
+            parsed = json.loads(cleaned)
+            result = {
+                "anamnesis": parsed.get("anamnesis", ""),
+                "diagnoses": parsed.get("diagnoses", []) or [],
+                "contraindications": parsed.get("contraindications", []) or [],
+                "drug_interactions": parsed.get("drug_interactions", []) or [],
+                "recommendations": parsed.get("recommendations", []) or []
+            }
+            return result, raw_content, True
+        except Exception:
+            return {
+                "anamnesis": raw_content,
+                "diagnoses": [],
+                "contraindications": [],
+                "drug_interactions": [],
+                "recommendations": [],
+                "raw_response": raw_content
+            }, raw_content, True
+
+    except Exception as e:
+        print(f"[MEDICAL SUMMARY EXCEPTION] {e}")
+        return {
+            "anamnesis": f"Ошибка генерации резюме: {str(e)}",
+            "diagnoses": [],
+            "contraindications": [],
+            "drug_interactions": [],
+            "recommendations": [],
+            "raw_response": str(e)
+        }, str(e), True
+
+
