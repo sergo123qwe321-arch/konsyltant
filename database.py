@@ -385,7 +385,103 @@ def init_db():
         """, (admin_token, pwd, val_verified))
     
     conn.commit()
+
+    # 3. Автоматическая миграция и создание B-tree индексов
+    ensure_indexes(conn)
+
     conn.close()
+
+def ensure_indexes(conn=None):
+    """
+    Автоматическая миграция и создание индексов для оптимизации производительности СУБД.
+    Создает B-tree индексы для ускорения поиска по токенам (O(1)/O(log N)),
+    составные индексы для фильтрации ролей и статусов, а также индексы сортировки.
+    Идемпотентна: безопасно вызывается повторно при каждом старте приложения.
+    """
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    cursor = conn.cursor()
+
+    # Обоснование индексов:
+    # 1. idx_patient_access_token (UNIQUE) — ускоряет проверку токена при авторизации пациентов (O(log N))
+    # 2. idx_patient_access_gdrive_folder — ускоряет поиск папки при фоновой ETL-синхронизации
+    # 3. idx_patient_access_role_verified (Composite) — ускоряет выборку подтвержденных врачей (WHERE role='DOCTOR' AND is_verified=TRUE)
+    # 4. idx_patient_access_created_at — оптимизирует выборку и аудит добавления пациентов
+    # 5. idx_share_grants_token (UNIQUE) — ускоряет мгновенную валидацию временных ссылок доступа врачей
+    # 6. idx_share_grants_patient_active (Composite) — ускоряет фильтрацию и подсчет активных ссылок пациента (O(log N))
+    # 7. idx_share_grants_doctor_id — ускоряет выборку медкарт, предоставленных конкретному врачу (JOIN/WHERE)
+    # 8. idx_share_grants_expires_at — ускоряет фоновую очистку и фильтрацию истекших грантов доступа
+    # 9. idx_doctors_license_number — ускоряет поиск врача по номеру лицензии при авторизации
+    # 10. idx_doctors_full_name — ускоряет поиск специалиста по ФИО
+    # 11. idx_doctors_verified — ускоряет выборку подтвержденных специалистов клиники
+    # 12. idx_public_posts_created_at — ускоряет сортировку статей экспертного блога (ORDER BY created_at DESC)
+    # 13. idx_public_leads_status_created (Composite) — ускоряет фильтрацию новых заявок в CMS (WHERE status='NEW' ORDER BY created_at DESC)
+    # 14. idx_public_services_category — ускоряет группировку услуг центра по категориям
+    # 15. idx_public_events_date — ускоряет выборку мероприятий клиники по дате
+    INDEX_SPECS = [
+        ("idx_patient_access_token", "patient_access", "access_token", True),
+        ("idx_patient_access_gdrive_folder", "patient_access", "gdrive_folder_id", False),
+        ("idx_patient_access_role_verified", "patient_access", "role, is_verified", False),
+        ("idx_patient_access_created_at", "patient_access", "created_at", False),
+        ("idx_share_grants_token", "patient_share_grants", "share_token", True),
+        ("idx_share_grants_patient_active", "patient_share_grants", "patient_folder_id, is_active, expires_at", False),
+        ("idx_share_grants_doctor_id", "patient_share_grants", "doctor_id", False),
+        ("idx_share_grants_expires_at", "patient_share_grants", "expires_at", False),
+        ("idx_doctors_license_number", "doctors", "license_number", False),
+        ("idx_doctors_full_name", "doctors", "full_name", False),
+        ("idx_doctors_verified", "doctors", "is_verified", False),
+        ("idx_public_posts_created_at", "public_posts", "created_at", False),
+        ("idx_public_leads_status_created", "public_leads", "status, created_at", False),
+        ("idx_public_services_category", "public_services", "category", False),
+        ("idx_public_events_date", "public_events", "event_date", False),
+    ]
+
+    for idx_name, table_name, cols, is_unique in INDEX_SPECS:
+        try:
+            unique_kw = "UNIQUE " if is_unique else ""
+            sql = f"CREATE {unique_kw}INDEX IF NOT EXISTS {idx_name} ON {table_name} ({cols})"
+            cursor.execute(sql)
+        except Exception as e:
+            logger.warning(f"[DB INDEX WARNING] Не удалось создать индекс {idx_name} на {table_name}({cols}): {e}")
+
+    try:
+        conn.commit()
+    except Exception as e:
+        logger.warning(f"[DB INDEX WARNING] Ошибка коммита индексов: {e}")
+
+    if should_close:
+        conn.close()
+
+def get_db_indexes(conn=None) -> list:
+    """
+    Возвращает список имен существующих пользовательских индексов в БД.
+    """
+    should_close = False
+    if conn is None:
+        conn = get_connection()
+        should_close = True
+
+    cursor = conn.cursor()
+    is_postgres = bool(DATABASE_URL and psycopg2)
+
+    indexes = []
+    try:
+        if is_postgres:
+            cursor.execute("SELECT indexname FROM pg_indexes WHERE schemaname = 'public'")
+            indexes = [row[0] for row in cursor.fetchall()]
+        else:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%'")
+            indexes = [row[0] for row in cursor.fetchall() if row[0]]
+    except Exception as e:
+        logger.warning(f"[DB GET INDEXES ERROR] {e}")
+    finally:
+        if should_close:
+            conn.close()
+            
+    return indexes
 
 
 

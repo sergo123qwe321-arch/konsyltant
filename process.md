@@ -139,6 +139,17 @@
   - Реализован автоматический сброс счетчика попыток при успешной авторизации (HTTP 200) и маскирование IP-адресов в логах (`mask_ip`).
   - Разработан тестовый набор `test_rate_limiting.py` (6 сценариев: обычный режим, блокировка 6-й попытки, сброс по времени, отсутствие влияния на не-auth роуты, сброс при успехе, проверка заголовка `Retry-After` — 100% PASS).
   - Все регрессионные тесты (`test_e2e_doctor_share.py`, `test_doctor_api.py`, `test_jwt_auth.py` и др.) пройдены на 100%.
+- [2026-08-19] Выполнен Performance Optimization (Оптимизация производительности БД и создание индексов с автомиграцией):
+  - Проведен аудит SQL-запросов (`patient_access`, `patient_share_grants`, `doctors`, `public_posts`, `public_leads`, `public_services`, `public_events`).
+  - Разработан механизм автомиграции индексов `ensure_indexes()` в `database.py`, встроенный в жизненный цикл инициализации `init_db()`.
+  - Созданы уникальные B-tree индексы для токенов доступа (`idx_patient_access_token`, `idx_share_grants_token`), обеспечивающие $O(\log N)$ время отклика при авторизации и валидации шеринг-ссылок врачей.
+  - Созданы составные индексы (Composite Indexes) для оптимизации выборки:
+    - `idx_share_grants_patient_active` (`patient_folder_id`, `is_active`, `expires_at`) для быстрого подсчета активных ссылок пациента.
+    - `idx_patient_access_role_verified` (`role`, `is_verified`) для выборки врачей.
+    - `idx_public_leads_status_created` (`status`, `created_at`) для админ-панели CMS.
+  - Созданы индексы сортировки и внешних ключей (`idx_public_posts_created_at`, `idx_share_grants_doctor_id`, `idx_doctors_license_number`, `idx_doctors_full_name`, `idx_public_services_category`, `idx_public_events_date`).
+  - Разработан тестовый набор `test_db_indexes.py` (проверка физического наличия индексов, идемпотентность повторной миграции, проверка плана запросов `EXPLAIN` / `USING INDEX` — 100% PASS).
+  - Все 16 регрессионных тестов пройдены на 100%.
 
 ## План
 - **Что сделано:**
@@ -166,6 +177,7 @@
   - Выполнен Step 3.2: разработаны и протестированы эндпоинты авторизации врачей и шеринга данных (`/api/v1/doctor/login`, `/api/v1/patient/share`, `/api/v1/doctor/patient-records/{share_token}`).
   - Выполнен Step 3.3: созданы UI-компоненты шеринга в SPA пациента, кабинет врача с поиском и просмотром медкарты, глубокие ссылки (`?share_token=...`) и обработка ошибок доступа.
   - Внедрен Rate Limiting на всех эндпоинтах авторизации (`/api/login`, `/api/v1/doctor/login`, `/api/v1/admin/login`).
+  - Выполнена оптимизация производительности БД: созданы B-tree индексы с автомиграцией (`ensure_indexes`).
 - **Что в процессе:**
   - Подготовка к Phase 4: Интеграция Voice-to-Text (Web Speech API) и AI-суммаризация.
 - **Что предстоит:**

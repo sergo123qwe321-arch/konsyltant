@@ -85,6 +85,15 @@ antigravKONSYLTANT/
    - `document_parser.py` извлекает текст (с поддержкой OCR и постраничной защитой от сбоев).
    - `rag.py` изолирует медицинский контекст строго в рамках разрешенной папки пациента (`allowed_folder`).
 
+4. **Database Indexing & Query Optimization:**
+   - **Автомиграция индексов (`ensure_indexes`):** При каждом старте `init_db()` проверяет и идемпотентно создает B-tree индексы в PostgreSQL и SQLite.
+   - **Уникальные индексы токенов:** `idx_patient_access_token` на `patient_access(access_token)` и `idx_share_grants_token` на `patient_share_grants(share_token)` обеспечивают $O(\log N)$ валидацию токенов.
+   - **Составные индексы (Composite Indexes):**
+     - `idx_share_grants_patient_active` на `(patient_folder_id, is_active, expires_at)` для моментального подсчета активных ссылок.
+     - `idx_patient_access_role_verified` на `(role, is_verified)` для выборки врачей.
+     - `idx_public_leads_status_created` на `(status, created_at)` для фильтрации заявок в CMS.
+   - **Индексы сортировки и внешних ключей:** `idx_public_posts_created_at`, `idx_share_grants_doctor_id`, `idx_doctors_license_number`.
+
 ---
 
 ## 🛡️ Fault Tolerance, Security & Rate Limiting Policy
