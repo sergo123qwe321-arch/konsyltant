@@ -1,0 +1,28 @@
+# Git & IDE
+.git
+.gitignore
+.dockerignore
+.vscode/
+.idea/
+
+# Environment & Secrets
+.env
+copy.env
+*.env
+credentials.json
+
+# Local Databases & Cache
+konsyltant.db
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Scripts & Development Tools
+scripts/
+gh_cli/
+
+# Root Diagrams & Images (Assets are in static/)
+*.png
+*.jpg
+*.txt
