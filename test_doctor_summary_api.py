@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from main import app
-from database import init_db, create_share_grant, get_connection, execute_query
+from database import init_db, create_share_grant, create_doctor, get_connection, execute_query
 from security_utils import create_access_token
 
 class TestDoctorSummaryAPI(unittest.TestCase):
@@ -12,14 +12,19 @@ class TestDoctorSummaryAPI(unittest.TestCase):
         init_db()
         cls.client = TestClient(app)
         
-        # Создаем токен врача для тестов
-        cls.doctor_id = 99
+        # Создаем верифицированного врача в базе данных для валидации внешнего ключа в PostgreSQL
+        doc = create_doctor(
+            full_name="Др. Айболит Тестовый",
+            specialty="Педиатр-Нейропсихолог",
+            license_number="TEST-DOC-SUMMARY-99"
+        )
+        cls.doctor_id = doc["id"]
         cls.doctor_token = create_access_token({
             "sub": str(cls.doctor_id),
             "doctor_id": cls.doctor_id,
             "role": "DOCTOR",
-            "full_name": "Др. Айболит",
-            "specialty": "Педиатр"
+            "full_name": doc["full_name"],
+            "specialty": doc["specialty"]
         })
         cls.doctor_headers = {"Authorization": f"Bearer {cls.doctor_token}"}
         
