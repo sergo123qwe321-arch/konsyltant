@@ -81,6 +81,10 @@
                 </select>
             </div>
 
+            <div id="share-limit-warning" class="hidden" style="margin-bottom: 12px; padding: 10px 14px; border-radius: 10px; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; font-size: 13px; line-height: 1.4;">
+                ⚠️ <strong>Достигнут лимит:</strong> У вас уже 2 активные ссылки. Пожалуйста, отзовите одну из существующих ниже, чтобы создать новую.
+            </div>
+
             <button id="generate-share-btn" class="btn-primary" style="margin-bottom: 15px;">
                 <span>Сгенерировать ссылку</span>
                 <div class="loader hidden" id="share-loader"></div>
@@ -88,7 +92,7 @@
 
             <!-- Результат генерации ссылки -->
             <div id="share-result-block" class="share-result hidden">
-                <label>Ваша ссылка для врача:</label>
+                <label>Ваша новая ссылка для врача:</label>
                 <div class="share-url-container">
                     <input type="text" id="share-url-input" readonly>
                     <button id="copy-share-btn" class="btn-secondary" title="Скопировать в буфер">📋 Копировать</button>
@@ -96,6 +100,17 @@
                 <div id="copy-status" class="copy-success hidden">✅ Ссылка скопирована в буфер обмена!</div>
                 <div class="share-info-text">
                     ⏱️ Ссылка действительна до: <strong id="share-expires-text"></strong>
+                </div>
+            </div>
+
+            <!-- Список активных ссылок пациента -->
+            <div id="active-shares-section" style="margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <h4 style="font-size: 13px; font-weight: 600; color: #cbd5e1; margin: 0;">Активные ссылки доступа:</h4>
+                    <span id="active-shares-count-badge" style="font-size: 12px; font-weight: 600; color: #a78bfa; background: rgba(167,139,250,0.15); padding: 2px 8px; border-radius: 12px;">0 / 2</span>
+                </div>
+                <div id="active-shares-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 160px; overflow-y: auto;">
+                    <div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 8px 0;">Нет активных ссылок</div>
                 </div>
             </div>
         </div>

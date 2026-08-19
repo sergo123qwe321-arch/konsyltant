@@ -37,21 +37,21 @@ def seed_producer():
     password_hash = bcrypt.hashpw(raw_password.encode('utf-8'), salt).decode('utf-8')
 
     # 2. Создание/Обновление в таблице doctors
-    execute_query(cursor, "SELECT id FROM doctors WHERE license_number = ? OR full_name = ?", (license_number, full_name))
+    execute_query(cursor, "SELECT id FROM doctors WHERE license_number = ? OR email = ? OR full_name = ?", (license_number, email, full_name))
     doc_row = cursor.fetchone()
     if doc_row:
         doc_id = doc_row[0]
         execute_query(cursor, """
             UPDATE doctors 
-            SET full_name = ?, specialty = ?, license_number = ?, is_verified = ?
+            SET full_name = ?, specialty = ?, license_number = ?, is_verified = ?, email = ?, password_hash = ?, role = 'DOCTOR'
             WHERE id = ?
-        """, (full_name, specialty, license_number, val_verified, doc_id))
+        """, (full_name, specialty, license_number, val_verified, email, password_hash, doc_id))
         print(f"[DOCTORS] Профиль врача #{doc_id} ('{full_name}') успешно обновлен.")
     else:
         execute_query(cursor, """
-            INSERT INTO doctors (full_name, specialty, license_number, is_verified)
-            VALUES (?, ?, ?, ?)
-        """, (full_name, specialty, license_number, val_verified))
+            INSERT INTO doctors (full_name, specialty, license_number, is_verified, email, password_hash, role)
+            VALUES (?, ?, ?, ?, ?, ?, 'DOCTOR')
+        """, (full_name, specialty, license_number, val_verified, email, password_hash))
         print(f"[DOCTORS] Создан новый профиль врача '{full_name}' ({license_number}).")
 
     # 3. Создание/Обновление в таблице patient_access (для авторизации по email/токену)

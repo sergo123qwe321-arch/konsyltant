@@ -23,7 +23,9 @@ from database import (
     get_post_by_id, create_lead, get_all_leads, create_public_post,
     update_public_post, delete_public_post, verify_admin_credentials,
     create_doctor, get_doctor_by_id, verify_doctor, create_share_grant,
-    validate_share_grant, verify_doctor_credentials, check_doctor_patient_grant
+    validate_share_grant, verify_doctor_credentials, check_doctor_patient_grant,
+    count_active_shares, get_share_grant_by_id, revoke_share_grant,
+    get_active_shares_for_patient
 )
 from drive_api import get_drive_service
 from rag import ask_consultant, generate_medical_summary
@@ -244,8 +246,14 @@ class PostUpdateRequest(BaseModel):
     tags: Optional[list] = []
 
 class DoctorLoginRequest(BaseModel):
-    login: str
+    login: Optional[str] = None
+    email: Optional[str] = None
+    username: Optional[str] = None
     password: str
+
+    @property
+    def identifier(self) -> str:
+        return (self.login or self.email or self.username or "").strip()
 
 class DoctorAuthResponse(BaseModel):
     access_token: str
@@ -391,8 +399,10 @@ def admin_delete_post_api(post_id: int, admin: dict = Depends(get_current_admin)
 def doctor_login_api(req: DoctorLoginRequest):
     """
     Аутентификация врача и выдача Stateless JWT с ролью DOCTOR.
+    Поддерживает логин по email, license_number, id или full_name.
     """
-    doc_info = verify_doctor_credentials(req.login, req.password)
+    ident = req.identifier
+    doc_info = verify_doctor_credentials(ident, req.password)
     if not doc_info:
         raise HTTPException(status_code=401, detail="Неверный логин или пароль врача")
         
@@ -418,6 +428,29 @@ def doctor_login_api(req: DoctorLoginRequest):
         specialty=specialty
     )
 
+@app.get("/api/v1/patient/shares")
+def patient_list_active_shares_api(
+    patient: dict = Depends(get_current_patient)
+):
+    """
+    Получение списка всех активных шеринг-ссылок пациента.
+    """
+    patient_folder_id = patient.get("allowed_folder")
+    if not patient_folder_id:
+        raise HTTPException(status_code=400, detail="У пациента отсутствует привязанная папка документов")
+
+    shares = get_active_shares_for_patient(patient_folder_id)
+    base_url = os.getenv("BASE_URL", "https://xn--g1aj3a.site").rstrip("/")
+    for s in shares:
+        s["share_url"] = f"{base_url}/api/v1/doctor/patient-records/{s['share_token']}"
+
+    return {
+        "status": "success",
+        "active_count": len(shares),
+        "max_allowed": 2,
+        "shares": shares
+    }
+
 @app.post("/api/v1/patient/share", response_model=ShareGrantResponse)
 def patient_create_share_grant_api(
     req: ShareGrantCreateRequest = ShareGrantCreateRequest(),
@@ -425,10 +458,23 @@ def patient_create_share_grant_api(
 ):
     """
     Создание пациентом временного токена и ссылки шеринга для врача.
+    Ограничение: максимум 2 активные ссылки одновременно.
     """
     patient_folder_id = patient.get("allowed_folder")
     if not patient_folder_id:
         raise HTTPException(status_code=400, detail="У пациента отсутствует привязанная папка документов")
+
+    # Проверка лимита активных ссылок
+    active_count = count_active_shares(patient_folder_id)
+    if active_count >= 2:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": "У вас уже 2 активные ссылки. Отзовите одну из них, чтобы создать новую.",
+                "active_count": active_count,
+                "max_allowed": 2
+            }
+        )
         
     ttl_hours = req.expires_in_hours if req.expires_in_hours and req.expires_in_hours > 0 else 24
     share_token = create_share_grant(patient_folder_id, req.doctor_id, ttl_hours=ttl_hours)
@@ -444,6 +490,32 @@ def patient_create_share_grant_api(
         expires_at=expires_at_str,
         share_url=share_url
     )
+
+@app.delete("/api/v1/patient/share/{grant_id}")
+def patient_revoke_share_grant_api(
+    grant_id: int,
+    patient: dict = Depends(get_current_patient)
+):
+    """
+    Отзыв (деактивация) шеринг-ссылки пациентом.
+    """
+    patient_folder_id = patient.get("allowed_folder")
+    if not patient_folder_id:
+        raise HTTPException(status_code=400, detail="У пациента отсутствует привязанная папка документов")
+
+    grant = get_share_grant_by_id(grant_id)
+    if not grant:
+        raise HTTPException(status_code=404, detail="Шеринг-ссылка не найдена")
+
+    if grant["patient_folder_id"] != patient_folder_id:
+        raise HTTPException(status_code=403, detail="Вы не можете отозвать чужую шеринг-ссылку")
+
+    revoke_share_grant(grant_id)
+    return {
+        "status": "success",
+        "message": "Шеринг-ссылка успешно отозвана",
+        "grant_id": grant_id
+    }
 
 @app.get("/api/v1/doctor/patient-records/{share_token}")
 def doctor_get_patient_records_api(

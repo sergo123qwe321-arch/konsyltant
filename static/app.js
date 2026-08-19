@@ -225,11 +225,102 @@ document.addEventListener('DOMContentLoaded', () => {
     const copyStatus = document.getElementById('copy-status');
     const shareExpiresText = document.getElementById('share-expires-text');
     const shareLoader = document.getElementById('share-loader');
+    const shareLimitWarning = document.getElementById('share-limit-warning');
+    const activeSharesList = document.getElementById('active-shares-list');
+    const activeSharesBadge = document.getElementById('active-shares-count-badge');
+
+    async function loadActiveShares() {
+        if (!sessionToken || !activeSharesList) return;
+        try {
+            const res = await fetch('/api/v1/patient/shares', {
+                headers: { 'Authorization': `Bearer ${sessionToken}` }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const shares = data.shares || [];
+            const count = shares.length;
+
+            if (activeSharesBadge) {
+                activeSharesBadge.textContent = `${count} / 2`;
+                if (count >= 2) {
+                    activeSharesBadge.style.color = '#ef4444';
+                    activeSharesBadge.style.background = 'rgba(239, 68, 68, 0.15)';
+                } else {
+                    activeSharesBadge.style.color = '#a78bfa';
+                    activeSharesBadge.style.background = 'rgba(167, 139, 250, 0.15)';
+                }
+            }
+
+            if (count >= 2) {
+                if (shareLimitWarning) shareLimitWarning.classList.remove('hidden');
+                if (generateShareBtn) generateShareBtn.disabled = true;
+            } else {
+                if (shareLimitWarning) shareLimitWarning.classList.add('hidden');
+                if (generateShareBtn) generateShareBtn.disabled = false;
+            }
+
+            if (shares.length === 0) {
+                activeSharesList.innerHTML = '<div style="font-size: 12px; color: #94a3b8; text-align: center; padding: 8px 0;">Нет активных ссылок</div>';
+                return;
+            }
+
+            activeSharesList.innerHTML = '';
+            shares.forEach(s => {
+                const item = document.createElement('div');
+                item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); font-size: 12px;';
+                
+                const expires = s.expires_at ? s.expires_at.substring(0, 16).replace('T', ' ') : '24ч';
+                item.innerHTML = `
+                    <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%;">
+                        <div style="color: #f1f5f9; font-weight: 500;">Доступ #${s.id}</div>
+                        <div style="color: #94a3b8; font-size: 11px;">⏱️ до ${expires}</div>
+                    </div>
+                    <button class="btn-revoke-share" data-id="${s.id}" style="background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #fca5a5; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; transition: all 0.2s;">
+                        Отозвать
+                    </button>
+                `;
+                activeSharesList.appendChild(item);
+            });
+
+            // Навешиваем слушатели на кнопки отзыва
+            activeSharesList.querySelectorAll('.btn-revoke-share').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const grantId = e.currentTarget.getAttribute('data-id');
+                    if (!grantId) return;
+                    e.currentTarget.disabled = true;
+                    e.currentTarget.textContent = '...';
+                    await revokeShareGrant(grantId);
+                });
+            });
+
+        } catch (e) {
+            console.error('Ошибка загрузки активных ссылок:', e);
+        }
+    }
+
+    async function revokeShareGrant(grantId) {
+        try {
+            const res = await fetch(`/api/v1/patient/share/${grantId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${sessionToken}` }
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                alert(err.detail || 'Не удалось отозвать ссылку');
+                return;
+            }
+            if (shareResultBlock) shareResultBlock.classList.add('hidden');
+            await loadActiveShares();
+        } catch (e) {
+            alert('Ошибка сети при отзыве ссылки: ' + e.message);
+        }
+    }
 
     if (shareRecordBtn && shareModal) {
         shareRecordBtn.addEventListener('click', () => {
             shareModal.classList.remove('hidden');
             if (copyStatus) copyStatus.classList.add('hidden');
+            loadActiveShares();
         });
 
         if (closeShareModalBtn) {
@@ -261,9 +352,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         body: JSON.stringify({ expires_in_hours: ttlHours })
                     });
 
+                    if (res.status === 429) {
+                        const errData = await res.json().catch(() => ({}));
+                        const errMsg = (errData.detail && errData.detail.message) || errData.detail || 'У вас уже 2 активные ссылки. Отзовите одну из них, чтобы создать новую.';
+                        if (shareLimitWarning) {
+                            shareLimitWarning.innerHTML = `⚠️ <strong>Ограничение:</strong> ${errMsg}`;
+                            shareLimitWarning.classList.remove('hidden');
+                        }
+                        await loadActiveShares();
+                        return;
+                    }
+
                     if (!res.ok) {
                         const errData = await res.json().catch(() => ({}));
-                        throw new Error(errData.detail || 'Не удалось создать ссылку доступа');
+                        const msg = (errData.detail && typeof errData.detail === 'object' ? errData.detail.message : errData.detail) || 'Не удалось создать ссылку доступа';
+                        throw new Error(msg);
                     }
 
                     const data = await res.json();
@@ -275,6 +378,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (shareUrlInput) shareUrlInput.value = directUrl;
                     if (shareExpiresText) shareExpiresText.textContent = data.expires_at || '24 часа';
                     if (shareResultBlock) shareResultBlock.classList.remove('hidden');
+                    
+                    await loadActiveShares();
                 } catch (err) {
                     alert('Ошибка: ' + err.message);
                 } finally {

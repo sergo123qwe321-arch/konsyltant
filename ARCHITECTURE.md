@@ -205,6 +205,13 @@ graph LR
     F -->|HTTP 200 attachment| A
 ```
 
+7. **Share Link Lifecycle & Limit Management:**
+   - **Бизнес-правило:** Один пациент может иметь максимум **2 активные** шеринг-ссылки одновременно.
+   - **Подсчет:** `count_active_shares(patient_folder_id)` обращается к составному индексу `idx_share_grants_patient_active` (`WHERE patient_folder_id = ? AND is_active = TRUE AND expires_at > NOW()`).
+   - **Блокировка 3-й ссылки:** При `active_count >= 2` эндпоинт `POST /api/v1/patient/share` возвращает `HTTP 429 Too Many Requests` с понятным сообщением и метаданными (`{"active_count": 2, "max_allowed": 2}`).
+   - **Отзыв (Revocation):** Эндпоинт `DELETE /api/v1/patient/share/{grant_id}` производит мягкое удаление (`is_active = FALSE`), моментально освобождая слот для создания новой ссылки.
+   - **Список активных ссылок:** Эндпоинт `GET /api/v1/patient/shares` предоставляет список действующих доступов для рендеринга в SPA пациента.
+
 ---
 
 ## 🛡️ Fault Tolerance, Security & Rate Limiting Policy

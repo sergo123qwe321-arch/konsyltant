@@ -156,13 +156,18 @@
   - Проведен аудит зависимостей: подтверждено 100% отсутствие импортов отладочных скриптов в production-коде.
   - Реорганизована структура репозитория: созданы каталоги `scripts/admin/` (перемещен `reset_db.py`), `scripts/debug/` (перемещены скрипты инспекции Диска), удалены устаревшие временные файлы (`extract.py`, `split_js.py`, `temp_script.js`, `index.html.лендинг`).
   - Создан документ `scripts/README.md` и сформирован `.dockerignore` для исключения служебных скриптов из production-сборок.
-- [2026-08-19] Реализация эндпоинта экспорта PDF-резюме пациента:
-  - Создан модуль `pdf_generator.py` с использованием ReportLab, настроена автоматическая регистрация TrueType шрифтов с поддержкой кириллицы (UTF-8 DejaVuSans).
-  - Разработан двухпроходный `NumberedCanvas` для динамической нумерации страниц («Стр. X из Y»), шапки клиники, карточек противопоказаний и лекарственных взаимодействий (Alert Boxes), а также юридического дисклеймера.
-  - В `main.py` реализован эндпоинт `GET /api/v1/doctor/patient/{patient_folder_id}/summary/pdf` с проверкой JWT (`DOCTOR`), проверкой активного гранта доступа и корректным формированием заголовка `Content-Disposition`.
-  - В `Dockerfile` добавлена установка шрифтового пакета `fonts-dejavu-core`, в `requirements.txt` добавлены `reportlab` и `pypdf`.
-  - Разработан тестовый набор `test_pdf_generation.py` (5/5 тестов PASS: 401, 403, 200, Content-Type/Disposition, кириллический рендеринг).
-  - 100% прохождение всех 30 тестов системы.
+- [2026-08-19] Critical Fix: Doctor Login Authentication:
+  - Выявлена причина сбоя: таблица `doctors` в production PostgreSQL не содержала учетных данных `password_hash`, `email` и `role`, а `DoctorLoginRequest` требовал строго поле `login` (отклоняя `email` и `username`).
+  - Проведена автомиграция: добавлены колонки `email`, `password_hash`, `role` в таблицу `doctors` как для PostgreSQL, так и для SQLite.
+  - В `DoctorLoginRequest` добавлена универсальная поддержка полей `email`, `login`, `username` через вычисляемое свойство `identifier`.
+  - Функция `verify_doctor_credentials` расширена для поиска по `email`, `license_number`, `id`, `full_name` и проверки bcrypt-хэша пароля.
+  - Скрипт `scripts/admin/seed_producer_doctor.py` обновлен и синхронизирует учетную запись в `doctors` и `patient_access`.
+- [2026-08-19] Business Rule: Max 2 Active Share Links & Revocation:
+  - В `database.py` внедрены функции `count_active_shares`, `get_share_grant_by_id`, `revoke_share_grant`, `get_active_shares_for_patient` с использованием индекса `idx_share_grants_patient_active`.
+  - В `main.py` эндпоинт `POST /api/v1/patient/share` блокирует создание 3-й ссылки с кодом `HTTP 429 Too Many Requests`.
+  - Добавлены эндпоинты `DELETE /api/v1/patient/share/{grant_id}` (отзыв ссылки владельцем) и `GET /api/v1/patient/shares` (список активных ссылок).
+  - В клиентском SPA (`static/index.html`, `static/app.js`) реализован блок предупреждения о лимите, список действующих ссылок и кнопки отзыва.
+  - Создан тестовый набор `test_sharing_limit.py`, все 31 тест системы пройдены на 100%.
 
 ## План
 - **Что сделано:**

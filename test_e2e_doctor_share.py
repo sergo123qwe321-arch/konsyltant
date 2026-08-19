@@ -11,6 +11,12 @@ class TestE2EDoctorShareFlow(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         init_db()
+        from database import get_connection, execute_query
+        conn = get_connection()
+        cursor = conn.cursor()
+        execute_query(cursor, "DELETE FROM patient_share_grants WHERE patient_folder_id = 'folder_patient_alex_neuro'")
+        conn.commit()
+        conn.close()
 
     def test_e2e_full_patient_to_doctor_share_flow(self):
         # 1. Patient Auth

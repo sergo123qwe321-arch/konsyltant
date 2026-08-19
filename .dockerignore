@@ -19,7 +19,7 @@ __pycache__/
 *.pyd
 
 # Scripts & Development Tools
-scripts/
+scripts/debug/
 gh_cli/
 
 # Root Diagrams & Images (Assets are in static/)

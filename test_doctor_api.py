@@ -11,6 +11,12 @@ class TestDoctorDataSharingAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         init_db()
+        from database import get_connection, execute_query
+        conn = get_connection()
+        cursor = conn.cursor()
+        execute_query(cursor, "DELETE FROM patient_share_grants WHERE patient_folder_id IN ('folder_patient_vault_777', 'folder_speech_patient_888')")
+        conn.commit()
+        conn.close()
 
     def test_01_doctor_login_success(self):
         response = client.post('/api/v1/doctor/login', json={
