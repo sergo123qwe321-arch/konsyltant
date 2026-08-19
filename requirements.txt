@@ -18,3 +18,5 @@ pymupdf
 cryptography
 PyJWT
 jinja2
+httpx
+
