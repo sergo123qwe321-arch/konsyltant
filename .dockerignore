@@ -9,7 +9,6 @@
 .env
 copy.env
 *.env
-credentials.json
 
 # Local Databases & Cache
 konsyltant.db

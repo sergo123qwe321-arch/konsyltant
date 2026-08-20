@@ -162,12 +162,20 @@
   - В `DoctorLoginRequest` добавлена универсальная поддержка полей `email`, `login`, `username` через вычисляемое свойство `identifier`.
   - Функция `verify_doctor_credentials` расширена для поиска по `email`, `license_number`, `id`, `full_name` и проверки bcrypt-хэша пароля.
   - Скрипт `scripts/admin/seed_producer_doctor.py` обновлен и синхронизирует учетную запись в `doctors` и `patient_access`.
-- [2026-08-19] Business Rule: Max 2 Active Share Links & Revocation:
-  - В `database.py` внедрены функции `count_active_shares`, `get_share_grant_by_id`, `revoke_share_grant`, `get_active_shares_for_patient` с использованием индекса `idx_share_grants_patient_active`.
-  - В `main.py` эндпоинт `POST /api/v1/patient/share` блокирует создание 3-й ссылки с кодом `HTTP 429 Too Many Requests`.
-  - Добавлены эндпоинты `DELETE /api/v1/patient/share/{grant_id}` (отзыв ссылки владельцем) и `GET /api/v1/patient/shares` (список активных ссылок).
-  - В клиентском SPA (`static/index.html`, `static/app.js`) реализован блок предупреждения о лимите, список действующих ссылок и кнопки отзыва.
-  - Создан тестовый набор `test_sharing_limit.py`, все 31 тест системы пройдены на 100%.
+- [2026-08-20] Google Drive Decommission & Tech Sovereignty Enforcement:
+  - Полностью удалена интеграция с Google Drive API как нарушающая архитектурный императив технологического суверенитета.
+  - Удалено:
+    * `google-api-python-client`, `google-auth`, `google-auth-httplib2`, `google-auth-oauthlib` из `requirements.txt`.
+    * `credentials.json` из репозитория, `.gitignore` и `.dockerignore`.
+    * `drive_api.py` и `test_drive.py` (legacy код MVP).
+    * Весь fallback-код на Google Drive в `main.py` (эндпоинты `/api/patient/files` и `/api/v1/doctor/patient-records/{share_token}` переведены исключительно на Яндекс.Диск).
+    * Связанные неиспользуемые переменные окружения.
+  - Внедрен эндпоинт проверки здоровья хранилища: `GET /api/v1/health/yandex-disk` с JWT-защитой (`ADMIN`), возвращающий статус доступности, квоту Диска и маскированный токен.
+  - Платформа работает 100% автономно на российских сервисах:
+    * Yandex Disk API — хранилище документов и чанков
+    * GigaChat API — LLM для RAG-консультаций
+    * Yandex SMTP / UniSender — почтовые уведомления
+  - Создан тестовый набор `test_yandex_disk_autonomy.py` (7/7 тестов PASS). Все 38 тестов системы пройдены на 100%.
 
 ## План
 - **Что сделано:**

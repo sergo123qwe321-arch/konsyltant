@@ -27,12 +27,11 @@ from database import (
     count_active_shares, get_share_grant_by_id, revoke_share_grant,
     get_active_shares_for_patient
 )
-from drive_api import get_drive_service
 from rag import ask_consultant, generate_medical_summary
 from pdf_generator import generate_summary_pdf
 from folder_watcher import scan_folders
 from security_utils import (
-    create_access_token, verify_token, mask_ip, 
+    create_access_token, verify_token, mask_ip, mask_credential,
     InMemoryAuthRateLimiter
 )
 
@@ -295,20 +294,45 @@ async def login_api(req: LoginRequest):
 
 @app.get("/api/patient/files")
 async def get_patient_files(patient: dict = Depends(get_current_patient)):
+    """
+    Получение списка медицинских документов пациента из его защищенной папки на Яндекс.Диске.
+    """
     folder_id = patient.get("allowed_folder")
-        
-    service = get_drive_service()
-    if not service:
-        raise HTTPException(status_code=500, detail="Ошибка подключения к Google Drive")
-        
+    if not folder_id:
+        raise HTTPException(status_code=400, detail="У пациента отсутствует привязанная папка документов")
+
+    yandex_token = os.getenv("YANDEX_DISK_TOKEN", "")
+    if not yandex_token:
+        logger.error("[STORAGE ERROR] YANDEX_DISK_TOKEN не задан в переменных окружения.")
+        raise HTTPException(status_code=503, detail="Связь с хранилищем документов временно недоступна. Пожалуйста, подождите и попробуйте снова.")
+
+    headers = {"Authorization": f"OAuth {yandex_token}", "Accept": "application/json"}
+    url = "https://cloud-api.yandex.net/v1/disk/resources"
     try:
-        query = f"'{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, fields="files(id, name, mimeType)").execute()
-        files = results.get('files', [])
-        return {"files": files}
+        res = requests.get(url, headers=headers, params={"path": folder_id, "limit": 100}, timeout=15)
+        if res.status_code == 200:
+            items = res.json().get("_embedded", {}).get("items", [])
+            files = [
+                {
+                    "id": item.get("name"),
+                    "name": item.get("name"),
+                    "mimeType": item.get("mime_type", "application/octet-stream"),
+                    "size": item.get("size", 0)
+                }
+                for item in items
+                if not item.get("name", "").endswith("_cache.json")
+            ]
+            return {"files": files}
+        elif res.status_code == 404:
+            return {"files": []}
+        else:
+            logger.error(f"[YANDEX DISK ERROR] Ошибка API {res.status_code}: {res.text}")
+            raise HTTPException(status_code=503, detail="Связь с Яндекс.Диском временно недоступна. Пожалуйста, подождите и попробуйте снова.")
+    except HTTPException:
+        raise
     except Exception as e:
-        # Понятное сообщение для UI при таймаутах (WinError 10060) и сетевых сбоях
-        error_msg = f"Связь с Google Drive временно недоступна. Пожалуйста, подождите и попробуйте снова. (Детали: {str(e)})"
+        logger.error(f"[YANDEX DISK EXCEPTION] Сбой подключения к Яндекс.Диску (токен: {mask_credential(yandex_token)}): {e}")
+        error_msg = f"Связь с Яндекс.Диском временно недоступна. Пожалуйста, подождите и попробуйте снова. (Детали: {str(e)})"
         raise HTTPException(status_code=503, detail=error_msg)
 
 @app.post("/api/chat")
@@ -541,16 +565,30 @@ def doctor_get_patient_records_api(
             
     patient_folder_id = grant["patient_folder_id"]
     
-    # Получение документов (Google Drive с фоллбэком)
+    # Получение документов из Яндекс.Диска
     documents = []
-    service = get_drive_service()
-    if service:
+    yandex_token = os.getenv("YANDEX_DISK_TOKEN", "")
+    if yandex_token and patient_folder_id:
         try:
-            query = f"'{patient_folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, fields="files(id, name, mimeType, size, createdTime)").execute()
-            documents = results.get('files', [])
+            headers = {"Authorization": f"OAuth {yandex_token}", "Accept": "application/json"}
+            url = "https://cloud-api.yandex.net/v1/disk/resources"
+            res = requests.get(url, headers=headers, params={"path": patient_folder_id, "limit": 100}, timeout=15)
+            if res.status_code == 200:
+                items = res.json().get("_embedded", {}).get("items", [])
+                for item in items:
+                    fname = item.get("name", "")
+                    if not fname.endswith("_cache.json"):
+                        size_val = item.get("size", 0)
+                        size_str = f"{round(size_val / 1024)}KB" if size_val else "100KB"
+                        documents.append({
+                            "id": item.get("resource_id", fname),
+                            "name": fname,
+                            "mimeType": item.get("mime_type", "application/pdf"),
+                            "size": size_str,
+                            "createdTime": item.get("created", "")
+                        })
         except Exception as e:
-            print(f"[DOCTOR API] Ошибка получения файлов из Drive: {e}")
+            logger.warning(f"[DOCTOR API] Ошибка получения файлов из Яндекс.Диска (токен {mask_credential(yandex_token)}): {e}")
             
     if not documents:
         documents = [
@@ -666,6 +704,55 @@ async def doctor_download_patient_summary_pdf(
             "Content-Disposition": f'attachment; filename="{filename}"'
         }
     )
+
+@app.get("/api/v1/health/yandex-disk")
+def yandex_disk_health_check(admin: dict = Depends(get_current_admin)):
+    """
+    Проверка доступности Яндекс.Диска и статуса квоты хранилища.
+    Доступно администраторам платформы.
+    """
+    yandex_token = os.getenv("YANDEX_DISK_TOKEN", "")
+    if not yandex_token:
+        logger.error("[HEALTHCHECK] YANDEX_DISK_TOKEN не настроен в .env")
+        return {
+            "status": "ERROR",
+            "detail": "Токен Яндекс.Диска (YANDEX_DISK_TOKEN) не задан в конфигурации .env",
+            "yandex_disk": {"status": "unavailable"}
+        }
+
+    try:
+        headers = {"Authorization": f"OAuth {yandex_token}", "Accept": "application/json"}
+        res = requests.get("https://cloud-api.yandex.net/v1/disk", headers=headers, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            total_space = data.get("total_space", 0)
+            used_space = data.get("used_space", 0)
+            trash_size = data.get("trash_size", 0)
+            logger.info(f"[HEALTHCHECK] Яндекс.Диск доступен. Занято {used_space}/{total_space} байт.")
+            return {
+                "status": "OK",
+                "yandex_disk": {
+                    "status": "available",
+                    "total_space_bytes": total_space,
+                    "used_space_bytes": used_space,
+                    "trash_size_bytes": trash_size,
+                    "token_masked": mask_credential(yandex_token)
+                }
+            }
+        else:
+            logger.error(f"[HEALTHCHECK] Ошибка Яндекс.Диска {res.status_code}: {res.text} (токен: {mask_credential(yandex_token)})")
+            return {
+                "status": "ERROR",
+                "detail": f"Яндекс.Диск вернул HTTP статус {res.status_code}",
+                "yandex_disk": {"status": "error", "http_code": res.status_code}
+            }
+    except Exception as e:
+        logger.error(f"[HEALTHCHECK] Исключение при обращении к Яндекс.Диску (токен: {mask_credential(yandex_token)}): {e}")
+        return {
+            "status": "ERROR",
+            "detail": f"Сетевая ошибка при обращении к Яндекс.Диску: {str(e)}",
+            "yandex_disk": {"status": "unreachable"}
+        }
 
 @app.get("/app")
 @app.get("/app/")
