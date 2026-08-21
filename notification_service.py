@@ -86,8 +86,10 @@ class NotificationService:
         folder_public_url: str = None,
         cache_public_url: str = None
     ) -> bool:
-        if not base_url:
+        if not base_url or ":8000" in base_url:
             base_url = os.getenv("BASE_URL", "https://xn--g1aj3a.site")
+            if ":8000" in base_url:
+                base_url = "https://xn--g1aj3a.site"
         base_url = base_url.rstrip("/")
         login_link = f"{base_url}/app/?token={access_token}"
         

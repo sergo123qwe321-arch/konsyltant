@@ -25,11 +25,11 @@ from database import (
     create_doctor, get_doctor_by_id, verify_doctor, create_share_grant,
     validate_share_grant, verify_doctor_credentials, check_doctor_patient_grant,
     count_active_shares, get_share_grant_by_id, revoke_share_grant,
-    get_active_shares_for_patient
+    get_active_shares_for_patient, get_patient_access_by_folder
 )
 from rag import ask_consultant, generate_medical_summary
 from pdf_generator import generate_summary_pdf
-from folder_watcher import scan_folders
+from folder_watcher import scan_folders, get_last_etl_logs
 from security_utils import (
     create_access_token, verify_token, mask_ip, mask_credential,
     InMemoryAuthRateLimiter
@@ -754,6 +754,82 @@ def yandex_disk_health_check(admin: dict = Depends(get_current_admin)):
             "yandex_disk": {"status": "unreachable"}
         }
 
+@app.get("/api/v1/admin/diagnose/folder/{folder_name:path}")
+def admin_diagnose_folder(folder_name: str, admin: dict = Depends(get_current_admin)):
+    """
+    Диагностический эндпоинт для администратора:
+    - Проверка наличия записи в patient_access
+    - Проверка наличия и структуры кэш-файла на Яндекс.Диске
+    - Подсчет чанков и извлечение образца данных
+    - Получение последних строк лога ETL
+    """
+    clean_folder_name = folder_name.replace("disk:/", "").strip("/").strip()
+    
+    # 1. Поиск записи в БД
+    db_record = get_patient_access_by_folder(clean_folder_name)
+    exists_in_db = db_record is not None
+
+    # 2. Проверка Яндекс.Диска
+    yandex_token = os.getenv("YANDEX_DISK_TOKEN", "")
+    cache_exists_on_disk = False
+    cache_chunk_count = 0
+    cache_size_bytes = 0
+    cache_sample = ""
+
+    if yandex_token:
+        clean_file_name = clean_folder_name.replace(" ", "_")
+        cache_paths = [
+            f"disk:/{clean_folder_name}/_{clean_file_name}_cache.json",
+            f"/{clean_folder_name}/_{clean_file_name}_cache.json"
+        ]
+        headers = {"Authorization": f"OAuth {yandex_token}", "Accept": "application/json"}
+        
+        for cp in cache_paths:
+            try:
+                res = requests.get("https://cloud-api.yandex.net/v1/disk/resources", headers=headers, params={"path": cp}, timeout=10)
+                if res.status_code == 200:
+                    cache_exists_on_disk = True
+                    cache_size_bytes = res.json().get("size", 0)
+                    
+                    # Скачиваем кэш для анализа
+                    down_res = requests.get("https://cloud-api.yandex.net/v1/disk/resources/download", headers=headers, params={"path": cp}, timeout=10)
+                    if down_res.status_code == 200:
+                        href = down_res.json().get("href")
+                        if href:
+                            f_res = requests.get(href, timeout=10)
+                            if f_res.status_code == 200:
+                                cache_data = f_res.json()
+                                chunks = cache_data.get("chunks", [])
+                                cache_chunk_count = len(chunks)
+                                if chunks:
+                                    cache_sample = chunks[0][:200]
+                    break
+            except Exception as e:
+                logger.error(f"[DIAGNOSE ERROR] Ошибка запроса к Яндекс.Диску: {e}")
+
+    # 3. Логи ETL
+    last_etl_log_list = get_last_etl_logs(clean_folder_name, limit=10)
+    last_etl_log = "\n".join(last_etl_log_list) if last_etl_log_list else "Логи ETL для данной папки отсутствуют или процесс еще не запускался."
+
+    patient_access_record = None
+    if db_record:
+        patient_access_record = {
+            "access_token": db_record["access_token"],
+            "created_at": db_record["created_at"],
+            "role": db_record["role"]
+        }
+
+    return {
+        "folder_name": folder_name,
+        "exists_in_db": exists_in_db,
+        "patient_access_record": patient_access_record,
+        "cache_exists_on_disk": cache_exists_on_disk,
+        "cache_chunk_count": cache_chunk_count,
+        "cache_size_bytes": cache_size_bytes,
+        "cache_sample": cache_sample,
+        "last_etl_log": last_etl_log
+    }
+
 @app.get("/app")
 @app.get("/app/")
 async def read_app_index():
@@ -761,6 +837,14 @@ async def read_app_index():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Чат не найден."}
+
+@app.get("/app/{token_path:path}")
+async def read_app_with_path_token(token_path: str):
+    # Если пользователь перешел по ссылке вида /app/0BS4FVUNrkMG...
+    clean_token = token_path.strip("/")
+    if clean_token:
+        return RedirectResponse(url=f"/app/?token={clean_token}")
+    return RedirectResponse(url="/app/")
 
 @app.get("/")
 async def read_index(request: Request, token: Optional[str] = None):

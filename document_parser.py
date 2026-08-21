@@ -78,18 +78,27 @@ def parse_document_bytes(file_bytes: bytes, file_name: str, mime_type: str = "")
         except Exception as e:
             return f"[Ошибка чтения docx файла {file_name}: {e}]"
 
-    # 3. Картинки (.png, .jpg, .jpeg) — прямой OCR
-    elif fname_lower.endswith(('.png', '.jpg', '.jpeg')) or 'image' in mime_type:
+    # 3. Картинки (.png, .jpg, .jpeg, .bmp, .tiff, .tif, .webp) — прямой OCR
+    elif fname_lower.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp')) or ('image' in mime_type):
         if not pytesseract:
-            print(f"[PARSER WARNING] pytesseract не установлен. Невозможно выполнить OCR для '{file_name}'")
-            return f"[Отказ OCR: pytesseract не доступен в среде]"
+            logger.warning(f"[PARSER WARNING] pytesseract не установлен. Невозможно выполнить OCR для '{file_name}'")
+            return "[Отказ OCR: pytesseract не доступен в среде]"
         try:
             image = Image.open(io.BytesIO(file_bytes))
-            ocr_text = pytesseract.image_to_string(image, lang='rus', timeout=60)
-            print(f"[SECURE PARSER LOG] Извлечено {len(ocr_text)} символов через Image OCR (pytesseract lang=rus) из '{file_name}'")
+            # Автоматическая конвертация цветовой палитры для надежного OCR
+            if image.mode not in ('L', 'RGB'):
+                image = image.convert('RGB')
+            
+            # Пробуем русско-английский OCR, при отсутствии eng языка откатываемся на rus
+            try:
+                ocr_text = pytesseract.image_to_string(image, lang='rus+eng', timeout=60)
+            except Exception:
+                ocr_text = pytesseract.image_to_string(image, lang='rus', timeout=60)
+
+            logger.info(f"[SECURE PARSER LOG] Извлечено {len(ocr_text)} символов через Image OCR из '{file_name}'")
             return ocr_text
         except Exception as e:
-            print(f"[PARSER ERROR] Сбой/таймаут Image OCR для {file_name}: {e}")
+            logger.error(f"[PARSER ERROR] Сбой/таймаут Image OCR для {file_name}: {e}")
             return f"[Ошибка OCR изображения {file_name}: {e}]"
 
     # 4. Гибридный парсинг PDF (Текстовый слой -> OCR скан)

@@ -560,6 +560,33 @@ def folder_exists(gdrive_folder_id: str) -> bool:
     conn.close()
     return exists
 
+def get_patient_access_by_folder(folder_name_or_id: str) -> dict | None:
+    """
+    Поиск записи patient_access по имени или ID папки на Яндекс.Диске.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    clean = folder_name_or_id.replace("disk:/", "").strip("/").strip()
+    query_like = f"%{clean}%"
+    execute_query(cursor, """
+        SELECT id, access_token, gdrive_folder_id, role, is_verified, created_at
+        FROM patient_access
+        WHERE gdrive_folder_id = ? OR gdrive_folder_id LIKE ?
+        ORDER BY created_at DESC LIMIT 1
+    """, (folder_name_or_id, query_like))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row[0],
+            "access_token": row[1],
+            "gdrive_folder_id": row[2],
+            "role": row[3],
+            "is_verified": bool(row[4]),
+            "created_at": str(row[5])
+        }
+    return None
+
 def get_public_services():
     conn = get_connection()
     cursor = conn.cursor()

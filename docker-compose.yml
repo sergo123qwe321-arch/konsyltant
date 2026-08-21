@@ -36,6 +36,7 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - DEFAULT_NOTIFICATION_EMAIL=${DEFAULT_NOTIFICATION_EMAIL}
       - UNISENDER_API_KEY=${UNISENDER_API_KEY}
+      - EXCLUDED_FOLDERS=${EXCLUDED_FOLDERS:-Загрузки,Trash,Archive,Корзина}
     env_file:
       - .env
 

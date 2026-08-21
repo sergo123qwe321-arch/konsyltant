@@ -12,10 +12,9 @@ ssh.connect('159.194.232.74', port=22, username='root', password=os.getenv('BEGE
 
 script = """
 docker compose -f /root/konsyltant/docker-compose.yml exec web python -c "
-import requests
-res = requests.post('http://127.0.0.1:8000/api/v1/doctor/login', json={'email': 'producer@cmz.site', 'password': 'TestAccess2026!'})
-print('Status Code:', res.status_code)
-print('Response Body:', res.json())
+import os
+print('BASE_URL:', os.getenv('BASE_URL'))
+print('DEFAULT_NOTIFICATION_EMAIL:', os.getenv('DEFAULT_NOTIFICATION_EMAIL'))
 "
 """
 
