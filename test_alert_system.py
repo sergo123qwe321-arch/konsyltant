@@ -8,12 +8,17 @@ import unittest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-# Устанавливаем тестовое окружение
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-os.environ["ADMIN_SECRET_KEY"] = "test_admin_secret_key_12345"
-os.environ["JWT_SECRET_KEY"] = "test_jwt_secret_key_12345"
-os.environ["PRIMARY_ALERT_EMAIL"] = "konsultantms@yandex.com"
-os.environ["SECONDARY_ALERT_EMAIL"] = "sergo123qwe321@gmail.com"
+# Устанавливаем тестовое окружение без перезаписи боевого DATABASE_URL
+if "DATABASE_URL" not in os.environ:
+    os.environ["DATABASE_URL"] = "sqlite:///test_alert_tmp.db"
+if "ADMIN_SECRET_KEY" not in os.environ:
+    os.environ["ADMIN_SECRET_KEY"] = "test_admin_secret_key_12345"
+if "JWT_SECRET_KEY" not in os.environ:
+    os.environ["JWT_SECRET_KEY"] = "test_jwt_secret_key_12345"
+if "PRIMARY_ALERT_EMAIL" not in os.environ:
+    os.environ["PRIMARY_ALERT_EMAIL"] = "konsultantms@yandex.com"
+if "SECONDARY_ALERT_EMAIL" not in os.environ:
+    os.environ["SECONDARY_ALERT_EMAIL"] = "sergo123qwe321@gmail.com"
 
 from main import app
 from security_utils import create_access_token
