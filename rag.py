@@ -1,17 +1,21 @@
 import os
 import uuid
 import json
+import logging
 import requests
 import urllib3
 from dotenv import load_dotenv
+from database import record_llm_usage, get_llm_usage_summary
 
 load_dotenv()
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+logger = logging.getLogger("rag")
 
 # Настройка GigaChat (Сбер ИИ)
 GIGACHAT_OAUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
 GIGACHAT_COMPLETIONS_URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+GIGACHAT_BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
 MODEL = "GigaChat"
 YANDEX_DISK_TOKEN = os.getenv("YANDEX_DISK_TOKEN", "")
 
@@ -163,6 +167,18 @@ def ask_consultant(user_message: str, folder_id: str) -> str:
 
         response.raise_for_status()
         data = response.json()
+        
+        # Учет потребления токенов
+        try:
+            usage = data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+            resp_model = data.get("model", MODEL)
+            record_llm_usage(resp_model, prompt_tokens, completion_tokens, total_tokens, "rag_consultation")
+        except Exception as usage_err:
+            logger.error(f"[LLM USAGE TRACK ERROR] {usage_err}")
+
         return data["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
         print(f"[GIGACHAT REQUEST ERROR] {e}")
@@ -240,8 +256,20 @@ def generate_medical_summary(folder_id: str) -> tuple[dict | None, str | None, b
             }, response.text, True
 
         response.raise_for_status()
-        raw_content = response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        raw_content = data["choices"][0]["message"]["content"]
         
+        # Учет потребления токенов
+        try:
+            usage = data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            total_tokens = usage.get("total_tokens", 0)
+            resp_model = data.get("model", MODEL)
+            record_llm_usage(resp_model, prompt_tokens, completion_tokens, total_tokens, "clinical_summary")
+        except Exception as usage_err:
+            logger.error(f"[LLM USAGE TRACK ERROR] {usage_err}")
+
         # Очистка от markdown блоков ```json ... ```
         cleaned = raw_content.strip()
         if cleaned.startswith("```json"):
@@ -282,5 +310,80 @@ def generate_medical_summary(folder_id: str) -> tuple[dict | None, str | None, b
             "recommendations": [],
             "raw_response": str(e)
         }, str(e), True
+
+def get_gigachat_balance() -> dict:
+    """
+    Запрашивает официальный баланс токенов Сбера через GET https://gigachat.devices.sberbank.ru/api/v1/balance
+    Gracefully обрабатывает:
+    - 200 OK: возвращает остаток токенов по пакетам/моделям.
+    - 403 Forbidden: стандартное поведение Сбера для аккаунтов с постоплатой (Pay-As-You-Go).
+    - Расчетный остаток по купленному пакету из GIGACHAT_PACKAGE_TOKENS_LIMIT (с предупреждением при >= 80%).
+    """
+    token = get_gigachat_token()
+    if not token:
+        return {
+            "status": "error",
+            "http_code": None,
+            "balance": None,
+            "message": "Не удалось получить OAuth токен GigaChat."
+        }
+
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}"
+    }
+
+    result = {
+        "status": "unknown",
+        "http_code": None,
+        "balance": None,
+        "message": "",
+        "package_limit": None,
+        "calculated_remaining": None,
+        "usage_percent": None
+    }
+
+    # Проверка опционального лимита пакета
+    pkg_limit_str = os.getenv("GIGACHAT_PACKAGE_TOKENS_LIMIT")
+    all_time_tokens = 0
+    try:
+        summary = get_llm_usage_summary()
+        all_time_tokens = summary.get("all_time", {}).get("total_tokens", 0)
+    except Exception:
+        pass
+
+    if pkg_limit_str:
+        try:
+            pkg_limit = int(pkg_limit_str.strip())
+            result["package_limit"] = pkg_limit
+            remaining = max(0, pkg_limit - all_time_tokens)
+            usage_pct = round((all_time_tokens / pkg_limit) * 100, 2) if pkg_limit > 0 else 0.0
+            result["calculated_remaining"] = remaining
+            result["usage_percent"] = usage_pct
+
+            if usage_pct >= 80.0:
+                logger.warning(f"[LLM QUOTA WARNING] Внимание! Израсходовано {usage_pct}% лимита токенов GigaChat ({all_time_tokens}/{pkg_limit})")
+        except Exception as parse_err:
+            logger.error(f"[GIGACHAT PACKAGE PARSE ERROR] {parse_err}")
+
+    try:
+        res = requests.get(GIGACHAT_BALANCE_URL, headers=headers, verify=False, timeout=15)
+        result["http_code"] = res.status_code
+
+        if res.status_code == 200:
+            result["status"] = "available"
+            result["balance"] = res.json()
+            result["message"] = "Официальный баланс токенов успешно получен из GigaChat API."
+        elif res.status_code == 403:
+            result["status"] = "pay_as_you_go"
+            result["message"] = "Оплата производится по факту потребления (Pay-As-You-Go). Официальный баланс пакетов возвращает 403 (характерно для постоплаты). Точный финансовый баланс доступен в личном кабинете Сбер Бизнес / Studio."
+        else:
+            result["status"] = "error"
+            result["message"] = f"GigaChat Balance API вернул статус {res.status_code}: {res.text}"
+    except Exception as e:
+        result["status"] = "exception"
+        result["message"] = f"Исключение при запросе баланса: {str(e)}"
+
+    return result
 
 

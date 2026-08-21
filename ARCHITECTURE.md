@@ -244,6 +244,18 @@ graph LR
    - **Отзыв (Revocation):** Эндпоинт `DELETE /api/v1/patient/share/{grant_id}` производит мягкое удаление (`is_active = FALSE`), моментально освобождая слот для создания новой ссылки.
    - **Список активных ссылок:** Эндпоинт `GET /api/v1/patient/shares` предоставляет список действующих доступов для рендеринга в SPA пациента.
 
+8. **Observability: ETL Performance Metrics & LLM Token Accounting:**
+   - **Метрики ETL (`etl_metrics`):**
+     - Таблица технических метрик производительности: `folder_name`, `started_at`, `finished_at`, `duration_seconds`, `file_count`, `pages_processed`, `chunks_created`, `errors_count`, `avg_time_per_file_seconds`.
+     - Не содержит PII и медицинских данных.
+     - Административный эндпоинт `GET /api/v1/admin/etl/metrics` возвращает историю обработок и агрегаты (средняя скорость папки, средняя скорость файла, количество папок и файлов).
+     - Поле `last_etl_metrics` в диагностическом эндпоинте `GET /api/v1/admin/diagnose/folder/{folder_name}`.
+   - **Учет токенов LLM (`llm_usage`):**
+     - Таблица учета токенов: `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `request_type`, `created_at`.
+     - Автоматическая фиксация блока `usage` после каждого запроса к GigaChat API (RAG-консультация, клиническое резюме).
+     - Административный эндпоинт `GET /api/v1/admin/llm/usage` возвращает расход токенов за сегодня, 7 дней, 13 дней, все время, с разбивкой по моделям и типам запросов.
+     - Интеграция с официальным методом Сбера `GET /balance` с graceful обработкой (`200 OK` для пакетных тарифов, `403 Pay-As-You-Go` для постоплаты) и расчетным контролем квоты через `GIGACHAT_PACKAGE_TOKENS_LIMIT` с предупреждением при $\ge 80\%$.
+
 ---
 
 ## 🛡️ Fault Tolerance, Security & Rate Limiting Policy

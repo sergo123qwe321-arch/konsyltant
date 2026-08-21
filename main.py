@@ -25,9 +25,11 @@ from database import (
     create_doctor, get_doctor_by_id, verify_doctor, create_share_grant,
     validate_share_grant, verify_doctor_credentials, check_doctor_patient_grant,
     count_active_shares, get_share_grant_by_id, revoke_share_grant,
-    get_active_shares_for_patient, get_patient_access_by_folder
+    get_active_shares_for_patient, get_patient_access_by_folder,
+    get_latest_etl_metric_for_folder, get_all_etl_metrics,
+    get_etl_aggregates, get_llm_usage_summary
 )
-from rag import ask_consultant, generate_medical_summary
+from rag import ask_consultant, generate_medical_summary, get_gigachat_balance
 from pdf_generator import generate_summary_pdf
 from folder_watcher import scan_folders, get_last_etl_logs
 from security_utils import (
@@ -811,6 +813,9 @@ def admin_diagnose_folder(folder_name: str, admin: dict = Depends(get_current_ad
     last_etl_log_list = get_last_etl_logs(clean_folder_name, limit=10)
     last_etl_log = "\n".join(last_etl_log_list) if last_etl_log_list else "Логи ETL для данной папки отсутствуют или процесс еще не запускался."
 
+    # 4. Метрики производительности ETL
+    last_etl_metrics = get_latest_etl_metric_for_folder(folder_name)
+
     patient_access_record = None
     if db_record:
         patient_access_record = {
@@ -827,7 +832,43 @@ def admin_diagnose_folder(folder_name: str, admin: dict = Depends(get_current_ad
         "cache_chunk_count": cache_chunk_count,
         "cache_size_bytes": cache_size_bytes,
         "cache_sample": cache_sample,
-        "last_etl_log": last_etl_log
+        "last_etl_log": last_etl_log,
+        "last_etl_metrics": last_etl_metrics
+    }
+
+@app.get("/api/v1/admin/etl/metrics")
+async def get_admin_etl_metrics(
+    limit: int = 50,
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Возвращает агрегаты и историю производительности ETL-конвейера (только ADMIN).
+    - Среднее время обработки папки за все время
+    - Среднее время на один файл
+    - Количество обработанных папок и общее число файлов
+    """
+    aggregates = get_etl_aggregates()
+    history = get_all_etl_metrics(limit=limit)
+    return {
+        "aggregates": aggregates,
+        "history": history
+    }
+
+@app.get("/api/v1/admin/llm/usage")
+async def get_admin_llm_usage(
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Возвращает детальную статистику потребления токенов GigaChat и официальный баланс (только ADMIN).
+    - Потребление за сегодня, 7 дней, 13 дней, все время
+    - Разбивка по моделям и типам запросов
+    - Официальный/расчетный баланс токенов
+    """
+    usage_summary = get_llm_usage_summary()
+    balance_info = get_gigachat_balance()
+    return {
+        "usage_summary": usage_summary,
+        "balance_info": balance_info
     }
 
 @app.get("/app")

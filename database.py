@@ -139,6 +139,33 @@ def init_db():
         cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE")
         cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         cursor.execute("ALTER TABLE patient_share_grants ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS etl_metrics (
+                id SERIAL PRIMARY KEY,
+                folder_name VARCHAR(255) NOT NULL,
+                started_at VARCHAR(100),
+                finished_at VARCHAR(100),
+                duration_seconds REAL NOT NULL DEFAULT 0.0,
+                file_count INTEGER NOT NULL DEFAULT 0,
+                pages_processed INTEGER NOT NULL DEFAULT 0,
+                chunks_created INTEGER NOT NULL DEFAULT 0,
+                errors_count INTEGER NOT NULL DEFAULT 0,
+                avg_time_per_file_seconds REAL NOT NULL DEFAULT 0.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS llm_usage (
+                id SERIAL PRIMARY KEY,
+                model VARCHAR(100) NOT NULL DEFAULT 'GigaChat',
+                prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                total_tokens INTEGER NOT NULL DEFAULT 0,
+                request_type VARCHAR(50) NOT NULL DEFAULT 'rag_consultation',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
     else:
         cursor.execute("""
@@ -266,7 +293,6 @@ def init_db():
             """)
             cursor.execute("DROP TABLE patient_share_grants")
             cursor.execute("ALTER TABLE patient_share_grants_new RENAME TO patient_share_grants")
-        else:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS patient_share_grants (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -278,6 +304,33 @@ def init_db():
                     expires_at DATETIME NOT NULL
                 )
             """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS etl_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                folder_name TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT,
+                duration_seconds REAL NOT NULL DEFAULT 0.0,
+                file_count INTEGER NOT NULL DEFAULT 0,
+                pages_processed INTEGER NOT NULL DEFAULT 0,
+                chunks_created INTEGER NOT NULL DEFAULT 0,
+                errors_count INTEGER NOT NULL DEFAULT 0,
+                avg_time_per_file_seconds REAL NOT NULL DEFAULT 0.0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS llm_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model TEXT NOT NULL DEFAULT 'GigaChat',
+                prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                total_tokens INTEGER NOT NULL DEFAULT 0,
+                request_type TEXT NOT NULL DEFAULT 'rag_consultation',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
     
     # 1. Сидирование врачей
@@ -443,6 +496,11 @@ def ensure_indexes(conn=None):
         ("idx_public_leads_status_created", "public_leads", "status, created_at", False),
         ("idx_public_services_category", "public_services", "category", False),
         ("idx_public_events_date", "public_events", "event_date", False),
+        ("idx_etl_metrics_created_at", "etl_metrics", "created_at", False),
+        ("idx_etl_metrics_folder", "etl_metrics", "folder_name", False),
+        ("idx_llm_usage_created_at", "llm_usage", "created_at", False),
+        ("idx_llm_usage_model", "llm_usage", "model", False),
+        ("idx_llm_usage_request_type", "llm_usage", "request_type", False),
     ]
 
     for idx_name, table_name, cols, is_unique in INDEX_SPECS:
@@ -1125,4 +1183,259 @@ def check_doctor_patient_grant(doctor_id: Optional[int], patient_folder_id: str)
                 return True
                 
     return False
+
+def save_etl_metric(
+    folder_name: str,
+    started_at: str,
+    finished_at: str,
+    duration_seconds: float,
+    file_count: int,
+    pages_processed: int,
+    chunks_created: int,
+    errors_count: int,
+    avg_time_per_file_seconds: float
+) -> int:
+    """
+    Сохраняет метрику производительности ETL обработки папки в таблицу etl_metrics.
+    Не содержит PII или медицинских данных.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        INSERT INTO etl_metrics (
+            folder_name, started_at, finished_at, duration_seconds,
+            file_count, pages_processed, chunks_created, errors_count, avg_time_per_file_seconds
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        folder_name, started_at, finished_at, duration_seconds,
+        file_count, pages_processed, chunks_created, errors_count, avg_time_per_file_seconds
+    ))
+    conn.commit()
+    conn.close()
+    return 1
+
+def get_latest_etl_metric_for_folder(folder_name: str) -> dict | None:
+    """
+    Получает последнюю запись метрики ETL для указанной папки.
+    """
+    clean_folder = folder_name.replace("disk:/", "").strip("/").strip()
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        SELECT id, folder_name, started_at, finished_at, duration_seconds,
+               file_count, pages_processed, chunks_created, errors_count,
+               avg_time_per_file_seconds, created_at
+        FROM etl_metrics
+        WHERE folder_name = ? OR folder_name LIKE ?
+        ORDER BY created_at DESC LIMIT 1
+    """, (folder_name, f"%{clean_folder}%"))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row[0],
+            "folder_name": row[1],
+            "started_at": row[2],
+            "finished_at": row[3],
+            "duration_seconds": round(float(row[4]), 2),
+            "file_count": int(row[5]),
+            "pages_processed": int(row[6]),
+            "chunks_created": int(row[7]),
+            "errors_count": int(row[8]),
+            "avg_time_per_file_seconds": round(float(row[9]), 2),
+            "created_at": str(row[10])
+        }
+    return None
+
+def get_all_etl_metrics(limit: int = 50) -> list[dict]:
+    """
+    Возвращает список последних записей метрик ETL.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, f"""
+        SELECT id, folder_name, started_at, finished_at, duration_seconds,
+               file_count, pages_processed, chunks_created, errors_count,
+               avg_time_per_file_seconds, created_at
+        FROM etl_metrics
+        ORDER BY created_at DESC LIMIT {int(limit)}
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "folder_name": r[1],
+            "started_at": r[2],
+            "finished_at": r[3],
+            "duration_seconds": round(float(r[4]), 2),
+            "file_count": int(r[5]),
+            "pages_processed": int(r[6]),
+            "chunks_created": int(r[7]),
+            "errors_count": int(r[8]),
+            "avg_time_per_file_seconds": round(float(r[9]), 2),
+            "created_at": str(r[10])
+        }
+        for r in rows
+    ]
+
+def get_etl_aggregates() -> dict:
+    """
+    Вычисляет агрегатные показатели ETL конвейера за все время.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 
+            COUNT(*),
+            COALESCE(AVG(duration_seconds), 0.0),
+            COALESCE(AVG(avg_time_per_file_seconds), 0.0),
+            COALESCE(SUM(file_count), 0),
+            COALESCE(SUM(chunks_created), 0),
+            COALESCE(SUM(errors_count), 0)
+        FROM etl_metrics
+    """)
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "total_folders_processed": int(row[0]),
+            "avg_folder_duration_seconds": round(float(row[1]), 2),
+            "avg_time_per_file_seconds": round(float(row[2]), 2),
+            "total_files_processed": int(row[3]),
+            "total_chunks_created": int(row[4]),
+            "total_errors": int(row[5])
+        }
+    return {
+        "total_folders_processed": 0,
+        "avg_folder_duration_seconds": 0.0,
+        "avg_time_per_file_seconds": 0.0,
+        "total_files_processed": 0,
+        "total_chunks_created": 0,
+        "total_errors": 0
+    }
+
+def record_llm_usage(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    request_type: str = "rag_consultation"
+) -> int:
+    """
+    Фиксирует потребление токенов GigaChat API в таблицу llm_usage.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        INSERT INTO llm_usage (model, prompt_tokens, completion_tokens, total_tokens, request_type)
+        VALUES (?, ?, ?, ?, ?)
+    """, (model or "GigaChat", prompt_tokens or 0, completion_tokens or 0, total_tokens or 0, request_type or "rag_consultation"))
+    conn.commit()
+    conn.close()
+    return 1
+
+def get_llm_usage_summary() -> dict:
+    """
+    Формирует сводку потребления токенов:
+    - сегодня
+    - за 7 дней
+    - за 13 дней
+    - за всё время
+    - с разбивкой по моделям и типам запросов
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    now = datetime.now()
+    today_start = now.strftime("%Y-%m-%d 00:00:00")
+    seven_days_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+    thirteen_days_ago = (now - timedelta(days=13)).strftime("%Y-%m-%d %H:%M:%S")
+
+    def _get_period_tokens(since_date=None):
+        if since_date:
+            execute_query(cursor, """
+                SELECT 
+                    COALESCE(SUM(prompt_tokens), 0),
+                    COALESCE(SUM(completion_tokens), 0),
+                    COALESCE(SUM(total_tokens), 0),
+                    COUNT(*)
+                FROM llm_usage
+                WHERE created_at >= ?
+            """, (since_date,))
+        else:
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(prompt_tokens), 0),
+                    COALESCE(SUM(completion_tokens), 0),
+                    COALESCE(SUM(total_tokens), 0),
+                    COUNT(*)
+                FROM llm_usage
+            """)
+        r = cursor.fetchone()
+        return {
+            "prompt_tokens": int(r[0]),
+            "completion_tokens": int(r[1]),
+            "total_tokens": int(r[2]),
+            "requests_count": int(r[3])
+        }
+
+    today_stat = _get_period_tokens(today_start)
+    seven_days_stat = _get_period_tokens(seven_days_ago)
+    thirteen_days_stat = _get_period_tokens(thirteen_days_ago)
+    all_time_stat = _get_period_tokens(None)
+
+    cursor.execute("""
+        SELECT 
+            model,
+            COALESCE(SUM(prompt_tokens), 0),
+            COALESCE(SUM(completion_tokens), 0),
+            COALESCE(SUM(total_tokens), 0),
+            COUNT(*)
+        FROM llm_usage
+        GROUP BY model
+        ORDER BY SUM(total_tokens) DESC
+    """)
+    by_model_rows = cursor.fetchall()
+    by_model = [
+        {
+            "model": r[0],
+            "prompt_tokens": int(r[1]),
+            "completion_tokens": int(r[2]),
+            "total_tokens": int(r[3]),
+            "requests_count": int(r[4])
+        }
+        for r in by_model_rows
+    ]
+
+    cursor.execute("""
+        SELECT 
+            request_type,
+            COALESCE(SUM(total_tokens), 0),
+            COUNT(*)
+        FROM llm_usage
+        GROUP BY request_type
+        ORDER BY SUM(total_tokens) DESC
+    """)
+    by_type_rows = cursor.fetchall()
+    by_type = [
+        {
+            "request_type": r[0],
+            "total_tokens": int(r[1]),
+            "requests_count": int(r[2])
+        }
+        for r in by_type_rows
+    ]
+
+    conn.close()
+
+    return {
+        "today": today_stat,
+        "last_7_days": seven_days_stat,
+        "last_13_days": thirteen_days_stat,
+        "all_time": all_time_stat,
+        "by_model": by_model,
+        "by_request_type": by_type
+    }
 

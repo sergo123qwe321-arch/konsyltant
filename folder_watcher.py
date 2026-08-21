@@ -7,10 +7,11 @@ import logging
 from dotenv import load_dotenv
 
 import json
+import time
 from datetime import datetime, timezone
 from document_parser import parse_document_bytes, chunk_text
 
-from database import folder_exists, create_patient_access
+from database import folder_exists, create_patient_access, save_etl_metric
 from notification_service import NotificationService
 from security_utils import mask_credential, mask_url
 
@@ -125,17 +126,22 @@ def upload_json_to_yandex_disk(disk_path: str, payload: dict) -> bool:
 def build_and_upload_folder_cache(folder_path: str, folder_name: str) -> str:
     """
     Выполняет ETL-процесс для папки пациента:
+    - Замеряет производительность (время старта/финиша, длительность, средняя скорость)
     - Парсит документы (игнорируя файлы на '_')
     - Разбивает текст на чанки
     - Формирует и загружает _{clean_folder_name}_cache.json на Яндекс.Диск
+    - Сохраняет технические метрики в таблицу etl_metrics
     - Публикует кэш-файл и возвращает его public_url
     """
+    start_ts = time.time()
+    started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     clean_folder_name = folder_name.replace(" ", "_")
     cache_filename = f"_{clean_folder_name}_cache.json"
     norm_folder_path = folder_path.rstrip("/")
     cache_disk_path = f"{norm_folder_path}/{cache_filename}"
 
-    record_etl_log(folder_name, f"ETL запуск для '{folder_name}' ({folder_path})")
+    record_etl_log(folder_name, f"ETL запуск для '{folder_name}' ({folder_path}) в {started_at}")
     logger.info(f"🔍 Найдена новая папка: {folder_name}")
 
     # Получаем содержимое папки
@@ -149,6 +155,7 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str) -> str:
     all_chunks = []
     pages_processed = 0
     pages_total = 0
+    errors_count = 0
 
     for item in file_items:
         try:
@@ -161,17 +168,20 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str) -> str:
             file_bytes = download_yandex_file_bytes(fpath, item.get("file"))
             if file_bytes:
                 text = parse_document_bytes(file_bytes, fname, mime_type)
-                if text and text.strip() and not text.startswith("[Неподдерживаемый") and not text.startswith("[Ошибка"):
+                if text and text.strip() and not text.startswith("[Неподдерживаемый") and not text.startswith("[Ошибка") and not text.startswith("[Отказ"):
                     pages_processed += 1
                     chunks = chunk_text(text, chunk_size=1000, overlap=100)
                     for chunk in chunks:
                         all_chunks.append(f"--- Файл: {fname} ---\n{chunk}")
                     record_etl_log(folder_name, f"Успешно обработан '{fname}' -> {len(chunks)} чанков")
                 else:
+                    errors_count += 1
                     record_etl_log(folder_name, f"Файл '{fname}' не содержит извлекаемого текста или ошибка парсера")
             else:
+                errors_count += 1
                 record_etl_log(folder_name, f"Не удалось скачать байты для '{fname}'")
         except Exception as file_err:
+            errors_count += 1
             err_msg = f"Сбой обработки файла '{item.get('name', 'N/A')}': {file_err}"
             logger.error(f"[ETL PARSE ERROR] {err_msg}")
             record_etl_log(folder_name, err_msg)
@@ -190,6 +200,30 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str) -> str:
     logger.info(f"💾 Сохранение кэша: {cache_filename}")
     record_etl_log(folder_name, f"Сохранение кэша на Яндекс.Диск: {cache_disk_path}")
     uploaded = upload_json_to_yandex_disk(cache_disk_path, payload)
+    
+    # Расчет времени выполнения и средних показателей
+    finished_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    duration_seconds = round(time.time() - start_ts, 2)
+    avg_time_per_file = round(duration_seconds / file_count, 2) if file_count > 0 else 0.0
+
+    # Сохранение метрик в БД
+    try:
+        save_etl_metric(
+            folder_name=folder_name,
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_seconds=duration_seconds,
+            file_count=file_count,
+            pages_processed=pages_processed,
+            chunks_created=chunk_count,
+            errors_count=errors_count,
+            avg_time_per_file_seconds=avg_time_per_file
+        )
+        logger.info(f"⚡ [ETL METRICS] Папка '{folder_name}': {file_count} файлов за {duration_seconds}с (среднее: {avg_time_per_file}с/файл, чанков: {chunk_count}, ошибок: {errors_count})")
+        record_etl_log(folder_name, f"Метрики сохранены: {file_count} файлов за {duration_seconds}с (среднее: {avg_time_per_file}с/файл)")
+    except Exception as metric_err:
+        logger.error(f"[ETL METRICS ERROR] Ошибка сохранения метрик в БД: {metric_err}")
+
     if not uploaded:
         record_etl_log(folder_name, "Ошибка загрузки JSON-кэша на Яндекс.Диск")
         return ""
