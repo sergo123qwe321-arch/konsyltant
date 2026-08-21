@@ -293,16 +293,27 @@
   - В `ARCHITECTURE.md` удалены дубликаты структуры файлов, окончательно подтверждена деинсталляция Google Drive и зафиксировано завершение Phase 4 Roadmap.
   - Разработан тестовый набор `test_voice_input.py` (6/6 тестов PASS).
   - Затронутые файлы: `static/js/voiceInput.js`, `static/index.html`, `static/style.css`, `static/app.js`, `static/js/app.js`, `ARCHITECTURE.md`, `process.md`, `test_voice_input.py`.
+- [2026-08-21] [Production Launch Preparation] Подготовка к боевому тестированию на реальных данных пациента:
+  - Создан идемпотентный боевой seed-скрипт `scripts/admin/seed_production_patient.py` (принимает имя папки как CLI аргумент, проверяет ее наличие на Яндекс.Диске, формирует RAG-кэш, генерирует токен и пароль, выводит учетные данные в консоль).
+  - Проверена непрерывная работа ETL-воркера `folder_watcher` в логах боевого контейнера VPS (сканирование каждые 60 секунд, средняя скорость 4 с/файл).
+  - Проведена проверка отправки тестовых писем через `notification_service.py` на оба адреса (`konsultantms@yandex.com` и `sergo123qwe321@gmail.com`) с добавлением хелперов `send_dual_email` и `send_email_to_recipient`.
+  - Проверена подсистема оповещений (`POST /api/v1/admin/alerts/test`) и механизм дедупликации алертов.
+  - Создана подробная пошаговая инструкция `PRODUCTION_LAUNCH.md` для Продюсера по загрузке папок, ETL-обработке, диагностике и регламенту при сбоях.
+  - Проведен финальный аудит безопасности: эндпоинты `/api/v1/patient/share`, `/api/v1/doctor/patient/{folder_id}/summary` (GET/POST) и `/api/v1/doctor/patient/{folder_id}/summary/pdf` защищены JWT и проверкой активных грантов шеринга, Rate Limiter активен.
+  - Добавлен раздел «12. Production Launch Checklist» в `ARCHITECTURE.md`.
+  - Разработан и пройден тестовый набор `test_production_launch.py` (5/5 тестов PASS).
+  - Затронутые файлы: `scripts/admin/seed_production_patient.py`, `notification_service.py`, `main.py`, `PRODUCTION_LAUNCH.md`, `ARCHITECTURE.md`, `process.md`, `test_production_launch.py`.
 
 ## План
 - **Что сделано:**
-  - Полная реализация Phase 4: AI Клиническая суммаризация, ReportLab PDF генератор, подсистема мониторинга и алертов (`alert_service.py`) с дублированием на 2 email, клиентский голосовой ввод Web Speech API (`voiceInput.js`).
-  - Экстренный аудит Render-инфраструктуры (подтверждена 100% автономность VPS Beget `159.194.232.74`).
-  - Синхронизация и очистка архитектурного канваса `ARCHITECTURE.md` от дубликатов.
+  - Полная готовность платформы к загрузке реальных данных пациента и переходу в боевой режим.
+  - Разработан боевой seed-скрипт `scripts/admin/seed_production_patient.py`.
+  - Создано руководство `PRODUCTION_LAUNCH.md` и чек-лист в `ARCHITECTURE.md`.
+  - Подтверждена почтовая доставка и система алертов на оба email.
 - **Что в процессе:**
-  - Деплой на боевой VPS `159.194.232.74` и итоговая верификация.
+  - Деплой на боевой VPS `159.194.232.74` и выполнение финального набора тестов в контейнере.
 - **Что предстоит:**
-  - Дальнейшее развитие и сопровождение продакшен-платформы.
+  - Загрузка первой боевой папки пациента Продюсером и совместный мониторинг первого боевого консилиума.
 
 
 

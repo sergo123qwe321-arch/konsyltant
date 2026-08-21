@@ -129,3 +129,21 @@ class NotificationService:
             success = NotificationService.send_unisender_email(subject, body, recipient_email)
 
         return success
+
+def send_email_to_recipient(email: str, subject: str, html_body: str) -> bool:
+    """Удобная функция отправки HTML-письма на указанный адрес."""
+    return NotificationService.send_smtp_email(subject, html_body, email)
+
+def send_dual_email(subject: str, html_body: str, primary_email: str = None, secondary_email: str = None) -> dict:
+    """Отправляет письмо с дублированием на два ключевых адреса."""
+    p_email = primary_email or os.getenv("PRIMARY_ALERT_EMAIL", "konsultantms@yandex.com")
+    s_email = secondary_email or os.getenv("SECONDARY_ALERT_EMAIL", "sergo123qwe321@gmail.com")
+    
+    res_p = send_email_to_recipient(p_email, subject, html_body)
+    res_s = send_email_to_recipient(s_email, subject, html_body) if s_email else False
+    
+    return {
+        p_email: res_p,
+        s_email: res_s,
+        "success": res_p or res_s
+    }

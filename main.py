@@ -753,7 +753,8 @@ def doctor_get_patient_records_api(
         "message": "Медицинская карта успешно предоставлена для ознакомления специалисту"
     }
 
-@app.post("/api/v1/doctor/patient/{patient_folder_id}/summary")
+@app.get("/api/v1/doctor/patient/{patient_folder_id:path}/summary")
+@app.post("/api/v1/doctor/patient/{patient_folder_id:path}/summary")
 async def doctor_generate_patient_summary(
     patient_folder_id: str, 
     doctor: dict = Depends(get_current_doctor)
@@ -793,7 +794,7 @@ async def doctor_generate_patient_summary(
         "summary": summary_data
     }
 
-@app.get("/api/v1/doctor/patient/{patient_folder_id}/summary/pdf")
+@app.get("/api/v1/doctor/patient/{patient_folder_id:path}/summary/pdf")
 async def doctor_download_patient_summary_pdf(
     patient_folder_id: str,
     doctor: dict = Depends(get_current_doctor)

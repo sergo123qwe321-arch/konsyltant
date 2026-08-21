@@ -637,10 +637,19 @@ def create_patient_access(password: str, gdrive_folder_id: str) -> str:
     salt = bcrypt.gensalt()
     password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
     
-    execute_query(cursor, """
-        INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id)
-        VALUES (?, ?, ?)
-    """, (access_token, password_hash, gdrive_folder_id))
+    execute_query(cursor, "SELECT id FROM patient_access WHERE gdrive_folder_id = ?", (gdrive_folder_id,))
+    row = cursor.fetchone()
+    if row:
+        execute_query(cursor, """
+            UPDATE patient_access 
+            SET access_token = ?, password_hash = ?
+            WHERE id = ?
+        """, (access_token, password_hash, row[0]))
+    else:
+        execute_query(cursor, """
+            INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id)
+            VALUES (?, ?, ?)
+        """, (access_token, password_hash, gdrive_folder_id))
     
     conn.commit()
     conn.close()
