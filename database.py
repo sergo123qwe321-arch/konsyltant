@@ -639,13 +639,26 @@ def create_patient_access(password: str, gdrive_folder_id: str) -> str:
     
     clean_folder = gdrive_folder_id.replace("disk:/", "").strip("/")
     folder_variants = (gdrive_folder_id, clean_folder, f"disk:/{clean_folder}")
-    execute_query(cursor, """
-        UPDATE patient_access 
-        SET access_token = ?, password_hash = ?, gdrive_folder_id = ?, created_at = CURRENT_TIMESTAMP
-        WHERE gdrive_folder_id = ? OR gdrive_folder_id = ? OR gdrive_folder_id = ?
-    """, (access_token, password_hash, gdrive_folder_id, folder_variants[0], folder_variants[1], folder_variants[2]))
     
-    if cursor.rowcount == 0:
+    execute_query(cursor, """
+        SELECT id FROM patient_access 
+        WHERE gdrive_folder_id = ? OR gdrive_folder_id = ? OR gdrive_folder_id = ?
+        ORDER BY id DESC
+    """, folder_variants)
+    rows = cursor.fetchall()
+    
+    if rows:
+        primary_id = rows[0][0]
+        execute_query(cursor, """
+            UPDATE patient_access 
+            SET access_token = ?, password_hash = ?, gdrive_folder_id = ?, created_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (access_token, password_hash, gdrive_folder_id, primary_id))
+        
+        if len(rows) > 1:
+            for dup_row in rows[1:]:
+                execute_query(cursor, "DELETE FROM patient_access WHERE id = ?", (dup_row[0],))
+    else:
         execute_query(cursor, """
             INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, is_verified)
             VALUES (?, ?, ?, 'PATIENT', TRUE)
