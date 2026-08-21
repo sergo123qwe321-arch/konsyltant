@@ -39,6 +39,7 @@ from security_utils import (
     create_access_token, verify_token, mask_ip, mask_credential,
     InMemoryAuthRateLimiter
 )
+from alert_service import alert_worker_loop, send_test_alert, run_health_checks_and_alert
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,9 @@ async def lifespan(app: FastAPI):
     
     # Запуск фонового сканирования папок для автоматической регистрации
     threading.Thread(target=watcher_loop, daemon=True).start()
+    
+    # Запуск фонового мониторинга и системы оповещений (каждые 5 минут)
+    threading.Thread(target=alert_worker_loop, daemon=True).start()
     
     yield
 
@@ -1011,6 +1015,39 @@ async def get_admin_llm_usage(
     return {
         "usage_summary": usage_summary,
         "balance_info": balance_info
+    }
+
+# --- Эндпоинты Системы Оповещений и Мониторинга (Alert Subsystem) ---
+
+@app.post("/api/v1/admin/alerts/test")
+async def admin_test_alert_api(admin: dict = Depends(get_current_admin)):
+    """
+    Отправка тестового email-уведомления на оба адреса (PRIMARY_ALERT_EMAIL и SECONDARY_ALERT_EMAIL).
+    Позволяет Продюсеру верифицировать работу системы оповещений. Доступно только для роли ADMIN.
+    """
+    result = send_test_alert()
+    return result
+
+@app.get("/api/v1/admin/alerts/status")
+async def admin_alerts_status_api(admin: dict = Depends(get_current_admin)):
+    """
+    Возвращает текущее состояние проверок системы мониторинга здоровья платформы (только ADMIN).
+    """
+    from alert_service import MONITORED_SERVICES, ALERT_STATES
+    states = {}
+    for s in MONITORED_SERVICES:
+        k = s["key"]
+        st = ALERT_STATES.get(k, {})
+        states[k] = {
+            "title": s["title"],
+            "is_active_alert": st.get("is_active", False),
+            "last_alert_time": st.get("last_alert_time", 0),
+            "last_value": st.get("last_value", ""),
+            "description": st.get("description", "")
+        }
+    return {
+        "status": "ok",
+        "services": states
     }
 
 @app.get("/app")

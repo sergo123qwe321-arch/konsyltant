@@ -19,6 +19,20 @@ GIGACHAT_BALANCE_URL = "https://gigachat.devices.sberbank.ru/api/v1/balance"
 MODEL = "GigaChat"
 YANDEX_DISK_TOKEN = os.getenv("YANDEX_DISK_TOKEN", "")
 
+# Счетчик последовательных ошибок LLM для системы мониторинга
+CONSECUTIVE_LLM_ERRORS: int = 0
+
+def increment_llm_errors():
+    global CONSECUTIVE_LLM_ERRORS
+    CONSECUTIVE_LLM_ERRORS += 1
+
+def reset_llm_errors():
+    global CONSECUTIVE_LLM_ERRORS
+    CONSECUTIVE_LLM_ERRORS = 0
+
+def get_consecutive_llm_errors() -> int:
+    return CONSECUTIVE_LLM_ERRORS
+
 SYSTEM_PROMPT_TEMPLATE = """
 Ты — ИИ-Консультант, виртуальный медицинский помощник пациента.
 Твоя задача — отвечать на вопросы пациента, опираясь ИСКЛЮЧИТЕЛЬНО на предоставленный ниже контекст из его РЕАЛЬНЫХ медицинских документов.
@@ -162,11 +176,13 @@ def ask_consultant(user_message: str, folder_id: str) -> str:
         response = requests.post(GIGACHAT_COMPLETIONS_URL, headers=headers, json=payload, verify=False, timeout=30)
         
         if response.status_code in (401, 403):
+            increment_llm_errors()
             print(f"[GIGACHAT API ERROR] {response.status_code} Quota/Auth issue: {response.text}")
             return ERROR_MESSAGE
 
         response.raise_for_status()
         data = response.json()
+        reset_llm_errors()
         
         # Учет потребления токенов
         try:
@@ -181,9 +197,11 @@ def ask_consultant(user_message: str, folder_id: str) -> str:
 
         return data["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
+        increment_llm_errors()
         print(f"[GIGACHAT REQUEST ERROR] {e}")
         return ERROR_MESSAGE
     except Exception as e:
+        increment_llm_errors()
         print(f"[GIGACHAT EXCEPTION] {e}")
         return ERROR_MESSAGE
 
@@ -247,6 +265,7 @@ def generate_medical_summary(folder_id: str) -> tuple[dict | None, str | None, b
     try:
         response = requests.post(GIGACHAT_COMPLETIONS_URL, headers=headers, json=payload, verify=False, timeout=40)
         if response.status_code in (401, 403):
+            increment_llm_errors()
             return {
                 "anamnesis": "Сервис ИИ временно недоступен (лимит квоты токенов).",
                 "diagnoses": [],
@@ -257,6 +276,7 @@ def generate_medical_summary(folder_id: str) -> tuple[dict | None, str | None, b
 
         response.raise_for_status()
         data = response.json()
+        reset_llm_errors()
         raw_content = data["choices"][0]["message"]["content"]
         
         # Учет потребления токенов
@@ -301,6 +321,7 @@ def generate_medical_summary(folder_id: str) -> tuple[dict | None, str | None, b
             }, raw_content, True
 
     except Exception as e:
+        increment_llm_errors()
         print(f"[MEDICAL SUMMARY EXCEPTION] {e}")
         return {
             "anamnesis": f"Ошибка генерации резюме: {str(e)}",

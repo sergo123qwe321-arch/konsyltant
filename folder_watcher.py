@@ -29,6 +29,16 @@ EXCLUDED_FOLDERS = [f.strip() for f in os.getenv('EXCLUDED_FOLDERS', 'Загру
 # Хранилище последних логов ETL для диагностического эндпоинта администратора
 LAST_ETL_LOGS: dict[str, list[str]] = {}
 
+# Heartbeat отслеживания жизнеспособности ETL-воркера
+LAST_ETL_HEARTBEAT: float = time.time()
+
+def update_etl_heartbeat():
+    global LAST_ETL_HEARTBEAT
+    LAST_ETL_HEARTBEAT = time.time()
+
+def get_last_etl_heartbeat() -> float:
+    return LAST_ETL_HEARTBEAT
+
 def record_etl_log(folder_name: str, message: str):
     clean_key = folder_name.replace("disk:/", "").strip("/").strip()
     if clean_key not in LAST_ETL_LOGS:
@@ -356,6 +366,7 @@ def scan_folders():
     """
     Фоновое сканирование новых папок на Яндекс.Диске с высокой отказоустойчивостью и защитой от CWE-532.
     """
+    update_etl_heartbeat()
     logger.info(f"📋 Исключенные из сканирования папки: {EXCLUDED_FOLDERS}")
     print(f"\n[FOLDER WATCHER] Сканирование ресурсов Яндекс.Диска. Целевой email: {TARGET_EMAIL}")
     

@@ -127,72 +127,83 @@
     - Разработан полнофункциональный дашборд врача `#doctor-dashboard-modal`: профиль специалиста (ФИО, специализация, бейдж), поисковая строка по токену/ссылке, карточка медкарты пациента, сетка диагностических файлов (PDF/DOCX/выписки) с кнопками просмотра/скачивания и предупреждением о конфиденциальности.
     - Реализована глубокая маршрутизация (Deep-linking): авто-парсинг параметров `?share_token=...`, `#share_token=...` и хэша `#doctor`. При открытии ссылки неавторизованным врачом система запрашивает вход и сразу после логина автоматически открывает карту нужного пациента.
   - Разработан и успешно пройден сквозной интеграционный тест `test_e2e_doctor_share.py` (100% PASS).
-- [2026-08-19] Выполнен Initial Workspace Audit (Первичный технический аудит рабочего пространства):
+- [2026-08-19] [Initial Audit] Первичный технический аудит рабочего пространства:
   - Проведен комплексный статический анализ кодовой базы, архитектуры, зависимостей, безопасности, схем данных и тестов.
   - Подтверждено стабильное состояние приложения: все 7 подсистем (FastAPI, Nginx, PostgreSQL, Stateless JWT, RAG/ETL, Doctor RBAC, SPA/SSR) синхронизированы и готовы к дальнейшей разработке.
   - Составлен детальный аналитический отчет для Архитектора.
-- [2026-08-19] Выполнен Security Enhancement (Внедрение Rate Limiting для endpoints авторизации):
+  - Затронутые файлы: `ARCHITECTURE.md`, `process.md`.
+- [2026-08-19] [Security] Внедрение Rate Limiting для endpoints авторизации:
   - Разработан и интегрирован легковесный потокобезопасный `InMemoryAuthRateLimiter` и HTTP-middleware в `main.py`.
   - Защищены эндпоинты авторизации: `/api/login` (пациенты), `/api/v1/doctor/login` (врачи), `/api/v1/admin/login` (администраторы).
-  - Конфигурация: максимум 5 попыток в минуту с IP (с учетом заголовка `X-Forwarded-For`), период блокировки 5 минут (300 секунд).
+  - Конфигурация: максимум 5 попыток в минуту с одного IP (с учетом заголовка `X-Forwarded-For`), период блокировки 5 минут (300 секунд).
   - Ответ при превышении: HTTP 429 Too Many Requests с телом `{"detail": "...", "retry_after": 300}` и заголовком `Retry-After: 300`.
   - Реализован автоматический сброс счетчика попыток при успешной авторизации (HTTP 200) и маскирование IP-адресов в логах (`mask_ip`).
-  - Разработан тестовый набор `test_rate_limiting.py` (6 сценариев: обычный режим, блокировка 6-й попытки, сброс по времени, отсутствие влияния на не-auth роуты, сброс при успехе, проверка заголовка `Retry-After` — 100% PASS).
-  - Все регрессионные тесты (`test_e2e_doctor_share.py`, `test_doctor_api.py`, `test_jwt_auth.py` и др.) пройдены на 100%.
-- [2026-08-19] Выполнен Performance Optimization (Оптимизация производительности БД и создание индексов с автомиграцией):
+  - Разработан тестовый набор `test_rate_limiting.py` (6/6 тестов PASS).
+  - Затронутые файлы: `main.py`, `security_utils.py`, `test_rate_limiting.py`.
+- [2026-08-19] [Performance] Оптимизация производительности БД и создание индексов с автомиграцией:
   - Проведен аудит SQL-запросов (`patient_access`, `patient_share_grants`, `doctors`, `public_posts`, `public_leads`, `public_services`, `public_events`).
   - Разработан механизм автомиграции индексов `ensure_indexes()` в `database.py`, встроенный в жизненный цикл инициализации `init_db()`.
   - Созданы уникальные B-tree индексы для токенов доступа (`idx_patient_access_token`, `idx_share_grants_token`), обеспечивающие $O(\log N)$ время отклика при авторизации и валидации шеринг-ссылок врачей.
-  - Созданы составные индексы (Composite Indexes) для оптимизации выборки:
-    - `idx_share_grants_patient_active` (`patient_folder_id`, `is_active`, `expires_at`) для быстрого подсчета активных ссылок пациента.
-    - `idx_patient_access_role_verified` (`role`, `is_verified`) для выборки врачей.
-    - `idx_public_leads_status_created` (`status`, `created_at`) для админ-панели CMS.
+  - Созданы составные индексы (Composite Indexes): `idx_share_grants_patient_active`, `idx_patient_access_role_verified`, `idx_public_leads_status_created`.
   - Созданы индексы сортировки и внешних ключей (`idx_public_posts_created_at`, `idx_share_grants_doctor_id`, `idx_doctors_license_number`, `idx_doctors_full_name`, `idx_public_services_category`, `idx_public_events_date`).
-  - Разработан тестовый набор `test_db_indexes.py` (проверка физического наличия индексов, идемпотентность повторной миграции, проверка плана запросов `EXPLAIN` / `USING INDEX` — 100% PASS).
-  - Все 16 регрессионных тестов пройдены на 100%.
-- [2026-08-19] Выполнен аудит технологического суверенитета, документирование бизнес-логики и реорганизация репозитория:
+  - Разработан тестовый набор `test_db_indexes.py` (3/3 тестов PASS).
+  - Затронутые файлы: `database.py`, `test_db_indexes.py`.
+- [2026-08-19] [Tech Sovereignty] Аудит суверенитета, документирование бизнес-логики и реорганизация репозитория:
   - Задокументирован сквозной 5-этапный бизнес-процесс обработки медицинских карт на Яндекс.Диске и принцип строгой изоляции контекста RAG (каждая папка пациента = изолированный тенант).
   - Зафиксирован архитектурный императив технологического суверенитета (функционирование без VPN и обходных прокси) и составлена матрица устойчивости внешних интеграций к блокировкам РКН и санкциям.
   - Проведен аудит зависимостей: подтверждено 100% отсутствие импортов отладочных скриптов в production-коде.
   - Реорганизована структура репозитория: созданы каталоги `scripts/admin/` (перемещен `reset_db.py`), `scripts/debug/` (перемещены скрипты инспекции Диска), удалены устаревшие временные файлы (`extract.py`, `split_js.py`, `temp_script.js`, `index.html.лендинг`).
   - Создан документ `scripts/README.md` и сформирован `.dockerignore` для исключения служебных скриптов из production-сборок.
-- [2026-08-19] Critical Fix: Doctor Login Authentication:
-  - Выявлена причина сбоя: таблица `doctors` в production PostgreSQL не содержала учетных данных `password_hash`, `email` и `role`, а `DoctorLoginRequest` требовал строго поле `login` (отклоняя `email` и `username`).
+  - Затронутые файлы: `ARCHITECTURE.md`, `scripts/README.md`, `.dockerignore`.
+- [2026-08-19] [Auth Fix] Экстренная починка авторизации врача и создание сид-скрипта:
+  - Выявлена причина сбоя: таблица `doctors` в production PostgreSQL не содержала колонок `password_hash`, `email` и `role`, а `DoctorLoginRequest` требовал строго поле `login`.
   - Проведена автомиграция: добавлены колонки `email`, `password_hash`, `role` в таблицу `doctors` как для PostgreSQL, так и для SQLite.
   - В `DoctorLoginRequest` добавлена универсальная поддержка полей `email`, `login`, `username` через вычисляемое свойство `identifier`.
   - Функция `verify_doctor_credentials` расширена для поиска по `email`, `license_number`, `id`, `full_name` и проверки bcrypt-хэша пароля.
-  - Скрипт `scripts/admin/seed_producer_doctor.py` обновлен и синхронизирует учетную запись в `doctors` и `patient_access`.
-- [2026-08-20] Google Drive Decommission & Tech Sovereignty Enforcement:
+  - Создан скрипт `scripts/admin/seed_producer_doctor.py` (`producer@cmz.site` / `TestAccess2026!`).
+  - Затронутые файлы: `database.py`, `main.py`, `scripts/admin/seed_producer_doctor.py`.
+- [2026-08-20] [AI Clinical Summary] Генерация структурированного медицинского резюме пациента:
+  - Разработан RAG-пайплайн клинической суммаризации `generate_medical_summary` в `rag.py` на базе извлеченных чанков медкарты пациента.
+  - Реализован строгий zero-hallucination промпт со структурированным JSON-ответом (`anamnesis`, `diagnoses`, `contraindications`, `drug_interactions`, `recommendations`).
+  - Создан эндпоинт `POST /api/v1/doctor/patient/{patient_folder_id}/summary` с двухфакторной защитой (JWT роль `DOCTOR` + проверка активного гранта в `patient_share_grants`).
+  - Разработан тестовый набор `test_doctor_summary_api.py` (6/6 тестов PASS).
+  - Затронутые файлы: `rag.py`, `main.py`, `test_doctor_summary_api.py`.
+- [2026-08-20] [Feature] Генерация клинического PDF-отчета (ReportLab):
+  - Создан модуль `pdf_generator.py` на базе ReportLab с интеграцией шрифтов DejaVuSans (полная поддержка кириллицы UTF-8).
+  - Разработан двухпроходный класс `NumberedCanvas` для нумерации страниц («Стр. X из Y»), стилизованная шапка клиники, акцентные блоки противопоказаний (`Alert Box`), таблицы медикаментов и юридический дисклеймер.
+  - Реализован эндпоинт `GET /api/v1/doctor/patient/{patient_folder_id}/summary/pdf` с отдачей бинарного потока `application/pdf` и заголовком `Content-Disposition: attachment`.
+  - Разработан тестовый набор `test_pdf_generation.py` (5/5 тестов PASS).
+  - Затронутые файлы: `pdf_generator.py`, `main.py`, `requirements.txt`, `test_pdf_generation.py`.
+- [2026-08-20] [Security] Ограничение лимита активных шеринг-ссылок пациента и механизм отзыва:
+  - Реализовано бизнес-правило: максимум 2 активные шеринг-ссылки одновременно на одного пациента.
+  - Внедрена функция `count_active_shares(patient_folder_id)` на основе составного индекса `idx_share_grants_patient_active`.
+  - При превышении лимита эндпоинт `POST /api/v1/patient/share` возвращает `HTTP 429 Too Many Requests`.
+  - Добавлены эндпоинты `GET /api/v1/patient/shares` (список активных ссылок) и `DELETE /api/v1/patient/share/{grant_id}` (мягкий отзыв доступа).
+  - Разработан тестовый набор `test_sharing_limit.py` (1/1 тестов PASS).
+  - Затронутые файлы: `database.py`, `main.py`, `test_sharing_limit.py`.
+- [2026-08-20] [Tech Sovereignty] Полная деинсталляция Google Drive API и автономность Яндекс.Диска:
   - Полностью удалена интеграция с Google Drive API как нарушающая архитектурный императив технологического суверенитета.
-  - Удалено:
-    * `google-api-python-client`, `google-auth`, `google-auth-httplib2`, `google-auth-oauthlib` из `requirements.txt`.
-    * `credentials.json` из репозитория, `.gitignore` и `.dockerignore`.
-    * `drive_api.py` и `test_drive.py` (legacy код MVP).
-    * Весь fallback-код на Google Drive в `main.py` (эндпоинты `/api/patient/files` и `/api/v1/doctor/patient-records/{share_token}` переведены исключительно на Яндекс.Диск).
-    * Связанные неиспользуемые переменные окружения.
-  - Внедрен эндпоинт проверки здоровья хранилища: `GET /api/v1/health/yandex-disk` с JWT-защитой (`ADMIN`), возвращающий статус доступности, квоту Диска и маскированный токен.
-  - Платформа работает 100% автономно на российских сервисах:
-    * Yandex Disk API — хранилище документов и чанков
-    * GigaChat API — LLM для RAG-консультаций
-    * Yandex SMTP / UniSender — почтовые уведомления
-  - Создан тестовый набор `test_yandex_disk_autonomy.py` (7/7 тестов PASS). Все 38 тестов системы пройдены на 100%.
-- [2026-08-21] ETL Diagnostic & Folder Exclusion:
-  - Исправлены критические проблемы ETL-пайплайна:
-    1. Добавлен механизм исключения папок из сканирования (`EXCLUDED_FOLDERS=Загрузки,Trash,Archive,Корзина`).
-    2. Добавлено детальное логирование каждого шага ETL (поиск, скачивание файлов, OCR-обработка, чанкинг, сохранение кэша, генерация токена, отправка email).
-    3. Создан диагностический эндпоинт для администратора: `GET /api/v1/admin/diagnose/folder/{folder_name}`.
-    4. Исправлена проблема генерации ссылок для пациентов (очистка от портов `:8000`, строгий формат `https://цмз.site/app/?token={token}` и бесшовный редирект для `/app/{token}`).
-    5. Создан скрипт сидирования тестового пациента `scripts/admin/seed_test_patient.py`.
-  - Разработан тестовый набор `test_etl_diagnostic.py` (4/4 тестов PASS). Все 42 теста проекта пройдены на 100%.
-- [2026-08-21] Observability Subsystem — ETL Metrics & GigaChat Token Consumption:
-  - Внедрена подсистема наблюдаемости без ослабления безопасности:
-    1. Проведен ретроспективный анализ папки «Дюзгёрен Арон Альп» (80 сканов обработаны за 303 секунды, средняя скорость: 3.79 с/файл с полным Tesseract OCR и нарезкой на 167 чанков).
-    2. Внедрена таблица `etl_metrics` с автомиграцией и индексами в `init_db()` и сбор метрик в `folder_watcher.py` (время начала/конца, общая длительность, число файлов, страниц, чанков, ошибок, ср. время на файл).
-    3. Создан административный эндпоинт `GET /api/v1/admin/etl/metrics` (история и агрегаты) и расширен `GET /api/v1/admin/diagnose/folder/{folder_name}` полем `last_etl_metrics`.
-    4. Внедрена таблица `llm_usage` с автомиграцией и индексами и автоматическая фиксация `prompt_tokens`, `completion_tokens`, `total_tokens` после каждого вызова GigaChat в `rag.py`.
-    5. Создан административный эндпоинт `GET /api/v1/admin/llm/usage` (потребление за сегодня, 7 дней, 13 дней, все время, разбивка по моделям и типам запросов).
-    6. Интегрирован официальный метод GigaChat `GET /balance` с graceful обработкой (200 OK vs 403 Pay-As-You-Go) и опциональным лимитом купленного пакета `GIGACHAT_PACKAGE_TOKENS_LIMIT` с предупреждением при $\ge 80\%$.
-  - Создан тестовый набор `test_observability_metrics.py` (6/6 тестов PASS). Все 48 тестов проекта пройдены на 100%.
+  - Удалено: `google-api-python-client`, `google-auth` из `requirements.txt`, `credentials.json` из репозитория, файлы `drive_api.py` и `test_drive.py`.
+  - Все fallback-маршруты в `main.py` переведены исключительно на Яндекс.Диск.
+  - Создан эндпоинт проверки здоровья хранилища `GET /api/v1/health/yandex-disk` с JWT-защитой (`ADMIN`).
+  - Разработан тестовый набор `test_yandex_disk_autonomy.py` (7/7 тестов PASS).
+  - Затронутые файлы: `requirements.txt`, `main.py`, `rag.py`, `folder_watcher.py`, `test_yandex_disk_autonomy.py`.
+- [2026-08-21] [ETL Diagnostic] Диагностика ETL-конвейера, исключение папок и тестовый пациент:
+  - Добавлен механизм исключения системных папок из сканирования (`EXCLUDED_FOLDERS=Загрузки,Trash,Archive,Корзина`).
+  - Добавлено пошаговое логирование каждого этапа ETL в `LAST_ETL_LOGS`.
+  - Создан диагностический эндпоинт для администратора `GET /api/v1/admin/diagnose/folder/{folder_name}`.
+  - Исправлен формат генерации клиентских ссылок (`https://цмз.site/app/?token={token}`) и настроен бесшовный редирект для `/app/{token}`.
+  - Создан идемпотентный скрипт сидирования тестового пациента `scripts/admin/seed_test_patient.py`.
+  - Разработан тестовый набор `test_etl_diagnostic.py` (4/4 тестов PASS).
+  - Затронутые файлы: `folder_watcher.py`, `database.py`, `main.py`, `.env.example`, `scripts/admin/seed_test_patient.py`, `test_etl_diagnostic.py`.
+- [2026-08-21] [Observability] Подсистема наблюдаемости: метрики скорости ETL и учет токенов GigaChat:
+  - Внедрена таблица `etl_metrics` с автомиграцией и индексами в `init_db()` и сбор метрик в `folder_watcher.py` (длительность, число файлов, страниц, чанков, ошибок, ср. время на файл).
+  - Создан административный эндпоинт `GET /api/v1/admin/etl/metrics` (история и агрегаты) и расширен диагностический эндпоинт `GET /api/v1/admin/diagnose/folder/{folder_name}` полем `last_etl_metrics`.
+  - Внедрена таблица `llm_usage` с автомиграцией и автоматическая фиксация `prompt_tokens`, `completion_tokens`, `total_tokens` после каждого вызова GigaChat в `rag.py`.
+  - Создан административный эндпоинт `GET /api/v1/admin/llm/usage` (потребление за сегодня, 7 дней, 13 дней, все время, разбивка по моделям и типам запросов).
+  - Интегрирован официальный метод GigaChat `GET /balance` с graceful обработкой (200 OK vs 403 Pay-As-You-Go) и опциональным лимитом купленного пакета `GIGACHAT_PACKAGE_TOKENS_LIMIT`.
+  - Разработан тестовый набор `test_observability_metrics.py` (6/6 тестов PASS).
+  - Затронутые файлы: `database.py`, `folder_watcher.py`, `rag.py`, `main.py`, `test_observability_metrics.py`.
 
 ## План
 - **Что сделано:**
@@ -223,23 +234,19 @@
   - Выполнена оптимизация производительности БД: созданы B-tree индексы с автомиграцией (`ensure_indexes`).
   - Задокументирован сквозной бизнес-процесс Яндекс.Диска, директива технологического суверенитета и реорганизована структура `scripts/`.
   - Реализована подсистема наблюдаемости: замер производительности ETL-конвейера (`etl_metrics`), учёт потребления токенов GigaChat (`llm_usage`), интеграция с официальным методом Сбера `GET /balance` и защищенные административные эндпоинты `/api/v1/admin/etl/metrics` и `/api/v1/admin/llm/usage`.
-- [2026-08-21] Landing Page Restructuring, Producer Admin Access & Operations Dashboard:
-  - Создан идемпотентный скрипт сидирования администратора `scripts/admin/seed_producer_admin.py` (создает/обновляет учетную запись `producer-admin@cmz.site` / `AdminAccess2026!` с ролью `ADMIN` и bcrypt-хэшированием пароля).
+- [2026-08-21] [CMS & UI] Переструктуризация лендинга, админский доступ Продюсера и операционная панель:
+  - Создан идемпотентный скрипт сидирования администратора `scripts/admin/seed_producer_admin.py` (`producer-admin@cmz.site` / `AdminAccess2026!` с ролью `ADMIN` и bcrypt-хэшированием пароля).
   - В админ-CMS добавлен раздел «Операционная панель» (`#admin-tab-ops`), отображающий карточки состояния Яндекс.Диска, метрики ETL-конвейера, расход токенов LLM (за день, неделю, все время) и официальные остатки баланса GigaChat.
-- [2026-08-21] Critical CMS Diagnostics, Multimedia Support & Landing Hierarchy Refinement:
-  - Проведена экстренная live-диагностика на VPS: выявлено, что база данных PostgreSQL и бэкенд FastAPI полностью работоспособны (POST `/api/v1/admin/posts` и GET `/api/v1/admin/leads` возвращают HTTP 200). Причина сбоя заключалась во фронтенде (потеря токена при обновлении страниц из-за `sessionStorage` без `localStorage` фоллбэка, отсутствие детальных алертов об ошибках и расхождение алиасов healthcheck).
-  - Внедрена поддержка мультимедиа контента:
-    - Расширена таблица `public_posts` полями `cover_image_url` (VARCHAR 500), `video_url` (VARCHAR 500), `attachments` (TEXT/JSON) с автомиграцией схем PostgreSQL и SQLite.
-    - Создана таблица `public_library` (`id`, `title`, `summary`, `content`, `category`, `tags`, `cover_image_url`, `video_url`, `attachments`, `created_at`) с индексами `idx_public_library_created_at`, `idx_public_library_category`.
-    - Добавлен модуль загрузки медиафайлов на Яндекс.Диск `upload_media_file_to_yandex_disk` в папку `disk:/uploads/` с автоматической публикацией и возвратом `public_url`.
-    - Реализован защищенный эндпоинт `POST /api/v1/admin/upload` для загрузки изображений и видео.
-    - Добавлены REST эндпоинты полезной библиотеки: `GET /api/v1/public/library`, `GET /api/v1/public/library/{id}`, `POST /api/v1/admin/library`, `PUT /api/v1/admin/library/{id}`, `DELETE /api/v1/admin/library/{id}`.
-    - Добавлен алиас эндпоинта проверки Яндекс.Диска `@app.get("/api/v1/admin/health/yandex-disk")`.
-  - Обновлен фронтенд в `static/js/app.js` и `templates/index.html`:
-    - Функция `getAdminToken()` с поддержкой `sessionStorage` + `localStorage`.
-    - Форма создания/редактирования постов дополнена загрузчиком обложек на Яндекс.Диск, живым превью, полем для видеоссылок и выводом понятных сообщений об ошибках.
-    - Карточки постов и блога выводят обложки и видео-бейджи, а модальное окно статьи (`openArticleReader`) отображает медиаплееры/ссылки и полноразмерные изображения.
-  - Изменен порядок секций лендинга: **секция «Новые посты» (`#posts`) перемещена на САМОЕ ПЕРВОЕ МЕСТО (выше Hero-блока)**:
+  - Разработан тестовый набор `test_landing_and_admin_ops.py` (5/5 тестов PASS).
+  - Затронутые файлы: `templates/index.html`, `static/js/app.js`, `scripts/admin/seed_producer_admin.py`, `test_landing_and_admin_ops.py`.
+- [2026-08-21] [CMS / Multimedia] Экстренная починка CRUD-операций, поддержка мультимедиа и перенос постов на 1 место:
+  - Проведена live-диагностика на VPS: база PostgreSQL и бэкенд FastAPI полностью исправны; сбой происходил на фронтенде из-за потери токена в `sessionStorage`. Внедрено гибридное чтение токена `getAdminToken()` (`sessionStorage` + `localStorage`).
+  - Расширена таблица `public_posts` полями `cover_image_url` (VARCHAR 500), `video_url` (VARCHAR 500), `attachments` (TEXT/JSON) с автомиграцией схем PostgreSQL и SQLite.
+  - Создана таблица `public_library` (`id`, `title`, `summary`, `content`, `category`, `tags`, `cover_image_url`, `video_url`, `attachments`, `created_at`) с индексами `idx_public_library_created_at`, `idx_public_library_category`.
+  - В `folder_watcher.py` добавлен модуль загрузки медиафайлов на Яндекс.Диск `upload_media_file_to_yandex_disk` в папку `disk:/uploads/` с автоматической публикацией.
+  - Создан защищенный эндпоинт `POST /api/v1/admin/upload` для загрузки изображений и видео.
+  - В `requirements.txt` добавлена библиотека `python-multipart`.
+  - Секция «Новые посты» (`#posts`) перемещена на САМОЕ ПЕРВОЕ МЕСТО на лендинге (выше Hero-блока):
     1. «Новые посты» (`#posts`)
     2. Hero-блок («Детская вселенная: Маленькая страна», `#hero`)
     3. «Полезная библиотека» (`#blog`)
@@ -251,12 +258,34 @@
     9. «Особая забота» (`#special-care-section`)
     10. «Ждем вас в гости!» (`#contacts`)
     11. Подвал (`footer`)
-  - Проверено и подтверждено полное отсутствие слова «клиника» и слова «музыкальная» в пользовательской части лендинга и мета-тегах.
-  - Обновлен и расширен тестовый набор `test_landing_and_admin_ops.py` (7/7 тестов PASS). Все 55 тестов системы успешно пройдены (55/55 PASS).
+  - Подтверждено 0 упоминаний слова «клиника» и слова «музыкальная» в пользовательском интерфейсе.
+  - Разработан расширенный тестовый набор `test_landing_and_admin_ops.py` (7/7 тестов PASS).
+  - Затронутые файлы: `database.py`, `folder_watcher.py`, `main.py`, `templates/index.html`, `static/js/app.js`, `requirements.txt`, `test_landing_and_admin_ops.py`.
+- [2026-08-21] [Alert System] Система мониторинга и оповещений о критических сбоях с дублированием:
+  - Разработан модуль `alert_service.py` с фоновым воркером `alert_worker_loop` (периодичность 5 минут).
+  - Настроено дублирование уведомлений одновременно на 2 адреса: `PRIMARY_ALERT_EMAIL=konsultantms@yandex.com` и `SECONDARY_ALERT_EMAIL=sergo123qwe321@gmail.com`.
+  - Реализован мониторинг 6 критических метрик с порогами срабатывания:
+    1. Недоступность Яндекс.Диска (ошибка API при проверке квоты)
+    2. Недоступность GigaChat API (3 последовательные ошибки LLM или OAuth)
+    3. Падение фонового ETL-воркера folder_watcher (отсутствие heartbeat > 10 мин)
+    4. Остаток токенов GigaChat ниже 20% от исходного пакета
+    5. Средняя скорость ETL выше 15 с/файл (деградация производительности)
+    6. Недоступность базы данных PostgreSQL более 30 секунд
+  - Реализован механизм дедупликации (не чаще 1 раза в час по одной проблеме) и однократные уведомления о выздоровлении при восстановлении сервиса.
+  - Создан защищенный эндпоинт `POST /api/v1/admin/alerts/test` (JWT `ADMIN`) и эндпоинт `GET /api/v1/admin/alerts/status`.
+  - В операционную панель CMS добавлена карточка мониторинга и кнопка «Проверить оповещения (Тест)» с живым статусом отправки.
+  - Разработан тестовый набор `test_alert_system.py`.
+  - Затронутые файлы: `alert_service.py`, `notification_service.py`, `folder_watcher.py`, `rag.py`, `main.py`, `static/js/app.js`, `.env.example`, `test_alert_system.py`.
+
+## План
+- **Что сделано:**
+  - Полная актуализация системного журнала `process.md` со всеми 14 итерациями разработки, типами задач, краткими резюме и списками затронутых файлов.
+  - Полная синхронизация архитектурного документа `ARCHITECTURE.md` (удален Google Drive из техстека, обновлено позиционирование «Администратор центра ментального здоровья», добавлены разделы наблюдаемости, мультимедиа, операционной панели и системы оповещений, актуализирован Roadmap).
+  - Внедрена подсистема оповещений о сбоях (`alert_service.py`) с дублированием на `PRIMARY_ALERT_EMAIL` и `SECONDARY_ALERT_EMAIL`, 6 критическими порогами, дедупликацией 1 час, recovery-уведомлениями, эндпоинтом `POST /api/v1/admin/alerts/test` и кнопкой в CMS.
 - **Что в процессе:**
-  - Деплой на боевой VPS `159.194.232.74` и верификация внутри контейнера.
+  - Запуск локальных и контейнерных тестов, деплой на боевой VPS `159.194.232.74`.
 - **Что предстоит:**
-  - Phase 4: Интеграция голосового ввода (Web Speech API) и UI кнопки скачивания PDF в интерфейсе Doctor Dashboard.
+  - Phase 4: Интеграция голосового ввода (Native Web Speech API) в приватном чате пациента.
 
 
 

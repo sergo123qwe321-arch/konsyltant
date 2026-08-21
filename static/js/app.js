@@ -595,10 +595,11 @@
 
             try {
                 const headers = { 'Authorization': `Bearer ${token}` };
-                const [resEtl, resLlm, resDisk] = await Promise.all([
+                const [resEtl, resLlm, resDisk, resAlerts] = await Promise.all([
                     fetch('/api/v1/admin/etl/metrics', { headers }).then(r => r.ok ? r.json() : null).catch(() => null),
                     fetch('/api/v1/admin/llm/usage', { headers }).then(r => r.ok ? r.json() : null).catch(() => null),
-                    fetch('/api/v1/admin/health/yandex-disk', { headers }).then(r => r.ok ? r.json() : null).catch(() => null)
+                    fetch('/api/v1/admin/health/yandex-disk', { headers }).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch('/api/v1/admin/alerts/status', { headers }).then(r => r.ok ? r.json() : null).catch(() => null)
                 ]);
 
                 let html = '';
@@ -736,9 +737,102 @@
                     `;
                 }
 
+                // 4. КАРТОЧКА: СИСТЕМА ОПОВЕЩЕНИЙ И АЛЕРТОВ
+                const alertServices = resAlerts && resAlerts.services ? resAlerts.services : {};
+                const hasActiveAlerts = Object.values(alertServices).some(s => s.is_active_alert);
+
+                html += `
+                    <div style="background:rgba(255,255,255,0.03);border:1px solid ${hasActiveAlerts ? 'rgba(239,68,68,0.5)' : 'rgba(16,185,129,0.3)'};border-radius:12px;padding:16px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                            <div>
+                                <h5 style="margin:0;font-size:1.05rem;color:${hasActiveAlerts ? '#F87171' : '#34D399'};">🚨 Система оповещений о сбоях</h5>
+                                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                                    Уведомления дублируются на: <span style="color:#38BDF8;">konsultantms@yandex.com</span> и <span style="color:#38BDF8;">sergo123qwe321@gmail.com</span>
+                                </div>
+                            </div>
+                            <button id="test-alert-btn" class="btn btn-turquoise" onclick="handleTestAlert()" style="padding:6px 12px;font-size:0.8rem;">
+                                🔔 Проверить оповещения (Тест)
+                            </button>
+                        </div>
+
+                        <div id="test-alert-result" style="display:none;margin-bottom:12px;"></div>
+
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:8px;">
+                            ${Object.keys(alertServices).length > 0 ? Object.entries(alertServices).map(([k, s]) => `
+                                <div style="background:rgba(0,0,0,0.25);padding:8px 10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;border-left:3px solid ${s.is_active_alert ? '#EF4444' : '#10B981'};">
+                                    <span style="color:#fff;font-weight:500;">${s.title}</span>
+                                    <span style="color:${s.is_active_alert ? '#F87171' : '#34D399'};font-weight:600;">
+                                        ${s.is_active_alert ? '🚨 Сбой' : '✅ Норма'}
+                                    </span>
+                                </div>
+                            `).join('') : `
+                                <div style="background:rgba(0,0,0,0.25);padding:8px 10px;border-radius:6px;font-size:0.8rem;color:var(--text-muted);">
+                                    Мониторинг 6 критических сервисов активен (интервал: 5 мин, дедупликация: 1 час).
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                `;
+
                 container.innerHTML = html || '<div style="color:var(--text-muted);padding:20px;text-align:center;">Не удалось загрузить данные мониторинга.</div>';
             } catch (err) {
                 container.innerHTML = `<div style="color:#EF4444;text-align:center;padding:20px;">Ошибка загрузки метрик: ${err.message}</div>`;
+            }
+        }
+
+        async function handleTestAlert() {
+            const btn = document.getElementById('test-alert-btn');
+            const resultDiv = document.getElementById('test-alert-result');
+            const token = getAdminToken();
+            if (!token) {
+                alert('Требуется авторизация администратора');
+                return;
+            }
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Отправка тестовых писем... ⏳';
+            }
+            if (resultDiv) {
+                resultDiv.style.display = 'none';
+            }
+            try {
+                const res = await fetch('/api/v1/admin/alerts/test', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Сбой отправки тестового оповещения');
+                
+                if (resultDiv) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.style.background = 'rgba(16,185,129,0.15)';
+                    resultDiv.style.border = '1px solid #10B981';
+                    resultDiv.style.color = '#34D399';
+                    resultDiv.style.padding = '10px 14px';
+                    resultDiv.style.borderRadius = '8px';
+                    resultDiv.style.fontSize = '0.85rem';
+                    const recips = (data.recipients || []).join(', ');
+                    resultDiv.innerHTML = `✅ <strong>${data.message || 'Тестовое уведомление успешно отправлено!'}</strong><br><span style="color:var(--text-muted);font-size:0.8rem;">Адреса получения: ${recips}</span>`;
+                }
+            } catch (err) {
+                if (resultDiv) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.style.background = 'rgba(239,68,68,0.15)';
+                    resultDiv.style.border = '1px solid #EF4444';
+                    resultDiv.style.color = '#F87171';
+                    resultDiv.style.padding = '10px 14px';
+                    resultDiv.style.borderRadius = '8px';
+                    resultDiv.style.fontSize = '0.85rem';
+                    resultDiv.innerHTML = `❌ Ошибка: ${err.message}`;
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '🔔 Проверить оповещения (Тест)';
+                }
             }
         }
 

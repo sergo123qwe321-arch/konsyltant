@@ -25,10 +25,10 @@ sleep 3
 echo '=== 3. SEED PRODUCER ADMIN ON POSTGRESQL ==='
 docker compose exec web python scripts/admin/seed_producer_admin.py
 
-echo '=== 4. RUN ALL IN-CONTAINER TESTS (44 TESTS) ==='
-docker compose exec web python -m unittest test_landing_and_admin_ops.py test_observability_metrics.py test_etl_diagnostic.py test_yandex_disk_autonomy.py test_sharing_limit.py test_pdf_generation.py test_doctor_summary_api.py test_rate_limiting.py test_db_indexes.py test_e2e_doctor_share.py -v
+echo '=== 4. RUN ALL IN-CONTAINER TESTS (63 TESTS) ==='
+docker compose exec web python -m unittest test_alert_system.py test_landing_and_admin_ops.py test_observability_metrics.py test_etl_diagnostic.py test_yandex_disk_autonomy.py test_sharing_limit.py test_pdf_generation.py test_doctor_summary_api.py test_rate_limiting.py test_db_indexes.py test_e2e_doctor_share.py -v
 
-echo '=== 5. LIVE VERIFICATION OF ADMIN LOGIN & PUBLIC POSTS ==='
+echo '=== 5. LIVE VERIFICATION OF ADMIN LOGIN, ALERTS & PUBLIC POSTS ==='
 docker compose exec web python -c "
 import requests, json
 
@@ -44,16 +44,22 @@ print(json.dumps(data, ensure_ascii=False, indent=2))
 token = data.get('access_token')
 headers = {'Authorization': f'Bearer {token}'}
 
+print('--- LIVE POST /api/v1/admin/alerts/test (SEND DUAL EMAIL) ---')
+res_alert = requests.post('http://127.0.0.1:8000/api/v1/admin/alerts/test', headers=headers)
+print(f'Status: {res_alert.status_code}')
+print(json.dumps(res_alert.json(), ensure_ascii=False, indent=2))
+
+print('--- LIVE GET /api/v1/admin/alerts/status ---')
+res_alert_status = requests.get('http://127.0.0.1:8000/api/v1/admin/alerts/status', headers=headers)
+print(f'Status: {res_alert_status.status_code}')
+print(json.dumps(res_alert_status.json(), ensure_ascii=False, indent=2))
+
 print('--- LIVE GET /api/v1/public/posts (SORTED BY CREATED_AT DESC) ---')
 res_posts = requests.get('http://127.0.0.1:8000/api/v1/public/posts')
 posts = res_posts.json()
 print(f'Total posts: {len(posts)}')
 for p in posts[:3]:
-    print(f'  • ID {p.get(\"id\")}: {p.get(\"title\")} | {p.get(\"created_at\")}')
-
-print('--- LIVE GET /api/v1/admin/etl/metrics WITH PRODUCER TOKEN ---')
-res_etl = requests.get('http://127.0.0.1:8000/api/v1/admin/etl/metrics', headers=headers)
-print(f'Status: {res_etl.status_code}, Folders processed: {res_etl.json().get(\"aggregates\", {}).get(\"total_folders_processed\")}')
+    print('  • ID ' + str(p.get('id')) + ': ' + str(p.get('title')) + ' | ' + str(p.get('created_at')))
 "
 """
 
