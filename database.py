@@ -637,14 +637,16 @@ def create_patient_access(password: str, gdrive_folder_id: str) -> str:
     salt = bcrypt.gensalt()
     password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
     
-    execute_query(cursor, "SELECT id FROM patient_access WHERE gdrive_folder_id = ?", (gdrive_folder_id,))
+    clean_folder = gdrive_folder_id.replace("disk:/", "").strip("/")
+    folder_variants = (gdrive_folder_id, clean_folder, f"disk:/{clean_folder}")
+    execute_query(cursor, "SELECT id FROM patient_access WHERE gdrive_folder_id IN (?, ?, ?)", folder_variants)
     row = cursor.fetchone()
     if row:
         execute_query(cursor, """
             UPDATE patient_access 
-            SET access_token = ?, password_hash = ?
+            SET access_token = ?, password_hash = ?, gdrive_folder_id = ?, created_at = CURRENT_TIMESTAMP
             WHERE id = ?
-        """, (access_token, password_hash, row[0]))
+        """, (access_token, password_hash, gdrive_folder_id, row[0]))
     else:
         execute_query(cursor, """
             INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id)
@@ -714,7 +716,7 @@ def get_patient_access_by_folder(folder_name_or_id: str) -> dict | None:
         SELECT id, access_token, gdrive_folder_id, role, is_verified, created_at
         FROM patient_access
         WHERE gdrive_folder_id = ? OR gdrive_folder_id LIKE ?
-        ORDER BY created_at DESC LIMIT 1
+        ORDER BY id DESC LIMIT 1
     """, (folder_name_or_id, query_like))
     row = cursor.fetchone()
     conn.close()
