@@ -38,34 +38,28 @@ antigravKONSYLTANT/
 │
 ├── static/                     # Статические ресурсы (прямая раздача Nginx)
 │   ├── css/
-│   │   └── style.css           # Стили темы клиники (#1E1E2E, #7C3AED, #06B6D4)
+│   │   └── style.css           # Стили темы (#1E1E2E, #7C3AED, #06B6D4)
 │   ├── js/
 │   │   ├── bubbles.js          # Canvas интерактивная анимация пузырьков снов
+│   │   ├── voiceInput.js       # Клиентский Web Speech API контроллер голосового ввода
 │   │   └── app.js              # Клиентский UI, Showcase персонажей, модалки, REST API клиент
 │   ├── images/                 # 3D Pixar персонажи звуков (char_a.jpg ... char_y.jpg)
 │   ├── audio/                  # Звуковые сэмплы инструментов (sound_a.mp3 ... sound_y.mp3)
+│   ├── app.js                  # SPA-контроллер приватного чата пациента
 │   └── index.html              # SPA-интерфейс приватного чата пациента (/app/)
 │
 ├── main.py                     # Точка входа FastAPI (REST API, JWT Auth Middleware, роутинг)
-├── database.py                 # Схема PostgreSQL/SQLite, RBAC, Seeding тестовых данных
-├── security_utils.py           # Stateless JWT (генерация, валидация, проверка TTL)
+├── database.py                 # Слой работы с БД (PostgreSQL / SQLite), автомиграции и индексы
+├── security_utils.py           # Stateless JWT (генерация, валидация), маскирование и Rate Limiting
 ├── crypto_utils.py             # Data at Rest Encryption (Fernet) + реэкспорт security_utils
 ├── rag.py                      # RAG пайплайн (GigaChat API + изоляция контекста пациента)
-├── folder_watcher.py           # Фоновый воркер синхронизации Яндекс.Диска
+├── folder_watcher.py           # Фоновый воркер синхронизации Яндекс.Диска и RAG-индексация
 ├── document_parser.py          # Гибридный парсер документов (DOCX, PDF, OCR Tesseract)
 ├── notification_service.py     # Yandex SMTP сервис рассылки доступов
-│
-├── Dockerfile                  # Контейнеризация Python 3.13 + Tesseract OCR + Poppler
-│   └── audio/                  # Локальные звуки персонажей
-│
-├── document_parser.py          # Модуль парсинга документов (PDF, DOCX, TXT, OCR)
-├── folder_watcher.py           # Фоновый мониторинг папок Яндекс.Диска и RAG-индексация
-├── rag.py                      # RAG-пайплайн и интеграция с GigaChat API
+├── alert_service.py            # Подсистема мониторинга 6 метрик надежности и оповещений о сбоях
 ├── pdf_generator.py            # ReportLab генератор клинических PDF-отчетов
-├── security_utils.py           # JWT Stateless Sessions, маскирование и Rate Limiting
-├── database.py                 # Слой работы с БД (PostgreSQL / SQLite) и автомиграции
-├── main.py                     # Основное FastAPI приложение
-└── Dockerfile                  # Production Dockerfile
+├── Dockerfile                  # Контейнеризация Python 3.13 + Tesseract OCR + Poppler
+└── docker-compose.yml          # Оркестрация Web + PostgreSQL 15 + Nginx + Certbot
 ```
 
 ---
@@ -314,6 +308,20 @@ graph LR
 
 ---
 
+## 🎙️ 11. ГОЛОСОВОЙ ВВОД (NATIVE WEB SPEECH API)
+
+Для повышения доступности и удобства родителей в приватном чате пациента (`/app/`) реализована 100% клиентская подсистема голосового ввода:
+- **Технологический суверенитет и приватность:** Аудиопоток распознается встроенным движком браузера без передачи аудиозаписей на сторонние облачные сервера.
+- **Поддержка браузеров:** Chrome, Яндекс.Браузер, Safari, Edge (с автодетекцией через `isSpeechRecognitionSupported()` и выводом фоллбэк-подсказки для устаревших браузеров).
+- **Режимы распознавания:**
+  - `lang = 'ru-RU'` (русский язык по умолчанию);
+  - `continuous = true` (непрерывный ввод до явной остановки);
+  - `interimResults = true` (живое отображение промежуточной транскрипции в поле ввода).
+- **Состояния кнопки микрофона:** Неактивна (серый), Идёт запись (пульсирующий красный индикатор с анимацией), Ошибка доступа (жёлтый статус с подсказкой).
+- **Defensive UX:** Автоостановка при ручном вводе с клавиатуры, 60-секундный таймаут тишины, удержание фокуса в поле ввода для быстрой правки перед отправкой.
+
+---
+
 ## 🚀 Roadmap & Status
 
 ### ✅ Phase 1: Infrastructure & Security Core (Завершена)
@@ -337,11 +345,11 @@ graph LR
 - [x] **UI шеринга в SPA пациента:** Модальное окно генерации временной ссылки (`#share-modal`) с выбором TTL и копированием в буфер.
 - [x] **Rate Limiting & DB Indexes:** Защита авторизации от brute-force и B-tree индексы БД с автомиграцией.
 
-### ✅ Phase 4: AI Enhancements, Medical Reports & Alerting (Внедрена)
+### ✅ Phase 4: AI Enhancements, Medical Reports, Alerting & Voice (Завершена)
 - [x] **Medical Analytics & Structured Summary:** Пайплайн клинической суммаризации на базе LLM (anamnesis, diagnoses, contraindications, drug_interactions).
 - [x] **Medical Report PDF Generator (`pdf_generator.py`):** ReportLab генератор медицинских заключений с кириллицей DejaVuSans.
 - [x] **Alert Subsystem & Health Monitoring (`alert_service.py`):** Фоновый мониторинг 6 сервисов, дублирование на 2 email, дедупликация и recovery.
-- [ ] **Voice-to-Text:** Интеграция Native Web Speech API на фронтенде чата.
+- [x] **Voice-to-Text (`voiceInput.js`):** 100% клиентская интеграция Native Web Speech API в приватном чате пациента.
 
 
 

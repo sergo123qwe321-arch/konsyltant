@@ -1730,4 +1730,23 @@
             ]).then(() => {
                 console.log('🌌 Все сказочные блоки, CMS, Докторский портал и помощник Алик готовы к работе!');
             });
-        });
+        });
+
+        /* ==========================================================================
+           15. ГОЛОСОВОЙ ВВОД (WEB SPEECH API) УТИЛИТЫ И ЭКСПОРТ
+           ========================================================================== */
+        function isSpeechRecognitionSupported() {
+            return typeof window !== 'undefined' && (
+                'SpeechRecognition' in window || 
+                'webkitSpeechRecognition' in window || 
+                'mozSpeechRecognition' in window || 
+                'msSpeechRecognition' in window
+            );
+        }
+
+        if (typeof window !== 'undefined') {
+            window.isSpeechRecognitionSupported = isSpeechRecognitionSupported;
+        }
+        if (typeof module !== 'undefined' && module.exports) {
+            module.exports = { isSpeechRecognitionSupported };
+        }

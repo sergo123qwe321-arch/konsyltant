@@ -56,8 +56,18 @@
             
             <form id="chat-form" class="chat-input-area">
                 <input type="text" id="chat-input" placeholder="Задайте ваш вопрос..." required autocomplete="off">
+                <button type="button" id="voice-input-btn" class="btn-voice inactive" title="Голосовой ввод (нажмите для записи)" aria-label="Голосовой ввод">
+                    <span class="mic-icon">🎤</span>
+                </button>
                 <button type="submit" class="btn-primary" id="send-btn">Отправить</button>
             </form>
+            <div id="voice-status-container" class="voice-status-bar hidden">
+                <span class="voice-pulse-dot"></span>
+                <span id="voice-status-text" class="voice-status-text">Слушаю... Говорите</span>
+            </div>
+            <div id="voice-fallback-hint" class="voice-fallback-hint hidden">
+                🎙️ Голосовой ввод доступен в Chrome, Яндекс.Браузере, Edge и Safari
+            </div>
         </div>
     </div>
 
@@ -116,6 +126,7 @@
         </div>
     </div>
 
+    <script src="/static/js/voiceInput.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

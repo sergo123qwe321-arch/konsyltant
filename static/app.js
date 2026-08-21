@@ -33,6 +33,22 @@ document.addEventListener('DOMContentLoaded', () => {
         tokenInput.value = urlToken;
     }
 
+    // Инициализация голосового ввода (Web Speech API)
+    let voiceController = null;
+    function initPatientVoiceInput() {
+        if (voiceController) return;
+        if (typeof VoiceInputController !== 'undefined') {
+            voiceController = new VoiceInputController({
+                inputElement: document.getElementById('chat-input'),
+                buttonElement: document.getElementById('voice-input-btn'),
+                statusContainer: document.getElementById('voice-status-container'),
+                statusText: document.getElementById('voice-status-text'),
+                fallbackHint: document.getElementById('voice-fallback-hint'),
+                lang: 'ru-RU'
+            });
+        }
+    }
+
     // Проверяем сессию при загрузке
     if (sessionToken) {
         showScreen('chat');
@@ -48,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loginScreen.classList.remove('active');
             chatScreen.classList.add('active');
             chatInput.focus();
+            initPatientVoiceInput();
         }
     }
 
