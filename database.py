@@ -639,18 +639,16 @@ def create_patient_access(password: str, gdrive_folder_id: str) -> str:
     
     clean_folder = gdrive_folder_id.replace("disk:/", "").strip("/")
     folder_variants = (gdrive_folder_id, clean_folder, f"disk:/{clean_folder}")
-    execute_query(cursor, "SELECT id FROM patient_access WHERE gdrive_folder_id IN (?, ?, ?)", folder_variants)
-    row = cursor.fetchone()
-    if row:
+    execute_query(cursor, """
+        UPDATE patient_access 
+        SET access_token = ?, password_hash = ?, gdrive_folder_id = ?, created_at = CURRENT_TIMESTAMP
+        WHERE gdrive_folder_id = ? OR gdrive_folder_id = ? OR gdrive_folder_id = ?
+    """, (access_token, password_hash, gdrive_folder_id, folder_variants[0], folder_variants[1], folder_variants[2]))
+    
+    if cursor.rowcount == 0:
         execute_query(cursor, """
-            UPDATE patient_access 
-            SET access_token = ?, password_hash = ?, gdrive_folder_id = ?, created_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """, (access_token, password_hash, gdrive_folder_id, row[0]))
-    else:
-        execute_query(cursor, """
-            INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id)
-            VALUES (?, ?, ?)
+            INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, is_verified)
+            VALUES (?, ?, ?, 'PATIENT', TRUE)
         """, (access_token, password_hash, gdrive_folder_id))
     
     conn.commit()
@@ -715,9 +713,9 @@ def get_patient_access_by_folder(folder_name_or_id: str) -> dict | None:
     execute_query(cursor, """
         SELECT id, access_token, gdrive_folder_id, role, is_verified, created_at
         FROM patient_access
-        WHERE gdrive_folder_id = ? OR gdrive_folder_id LIKE ?
+        WHERE gdrive_folder_id = ? OR gdrive_folder_id = ? OR gdrive_folder_id = ? OR gdrive_folder_id LIKE ?
         ORDER BY id DESC LIMIT 1
-    """, (folder_name_or_id, query_like))
+    """, (folder_name_or_id, clean, f"disk:/{clean}", query_like))
     row = cursor.fetchone()
     conn.close()
     if row:
