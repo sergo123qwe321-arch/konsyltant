@@ -2,8 +2,11 @@ import sqlite3
 import bcrypt
 import secrets
 import os
+import logging
 from typing import Optional
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger("database")
 
 try:
     import psycopg2
@@ -340,6 +343,17 @@ def init_db():
                 except Exception:
                     pass
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patient_share_grants (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_folder_id TEXT NOT NULL,
+                doctor_id INTEGER REFERENCES doctors(id) ON DELETE CASCADE,
+                share_token TEXT UNIQUE NOT NULL,
+                is_active BOOLEAN DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME NOT NULL
+            )
+        """)
         cursor.execute("PRAGMA table_info(patient_share_grants)")
         grant_existing_cols = [row[1] for row in cursor.fetchall()]
         if grant_existing_cols and ("id" not in grant_existing_cols or "patient_id" in grant_existing_cols):
@@ -363,17 +377,6 @@ def init_db():
             """)
             cursor.execute("DROP TABLE patient_share_grants")
             cursor.execute("ALTER TABLE patient_share_grants_new RENAME TO patient_share_grants")
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS patient_share_grants (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    patient_folder_id TEXT NOT NULL,
-                    doctor_id INTEGER REFERENCES doctors(id) ON DELETE CASCADE,
-                    share_token TEXT UNIQUE NOT NULL,
-                    is_active BOOLEAN DEFAULT 1,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    expires_at DATETIME NOT NULL
-                )
-            """)
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS etl_metrics (
