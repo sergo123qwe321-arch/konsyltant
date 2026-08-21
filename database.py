@@ -27,7 +27,10 @@ def execute_query(cursor, query, params=()):
     if DATABASE_URL and psycopg2:
         # В PostgreSQL используется синтаксис %s вместо ?
         query = query.replace("?", "%s")
-    cursor.execute(query, params)
+    if params is None or len(params) == 0:
+        cursor.execute(query)
+    else:
+        cursor.execute(query, params)
 
 def init_db():
     """
@@ -85,13 +88,38 @@ def init_db():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS public_posts (
                 id SERIAL PRIMARY KEY,
-                title VARCHAR(200) NOT NULL,
+                title VARCHAR(300) NOT NULL,
                 summary TEXT,
                 content TEXT,
                 tags TEXT,
+                cover_image_url VARCHAR(500) DEFAULT '',
+                video_url VARCHAR(500) DEFAULT '',
+                attachments TEXT DEFAULT '[]',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("ALTER TABLE public_posts ADD COLUMN IF NOT EXISTS cover_image_url VARCHAR(500) DEFAULT ''")
+        cursor.execute("ALTER TABLE public_posts ADD COLUMN IF NOT EXISTS video_url VARCHAR(500) DEFAULT ''")
+        cursor.execute("ALTER TABLE public_posts ADD COLUMN IF NOT EXISTS attachments TEXT DEFAULT '[]'")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public_library (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(300) NOT NULL,
+                summary TEXT,
+                content TEXT,
+                category VARCHAR(100) DEFAULT 'Все',
+                tags TEXT DEFAULT '[]',
+                cover_image_url VARCHAR(500) DEFAULT '',
+                video_url VARCHAR(500) DEFAULT '',
+                attachments TEXT DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("ALTER TABLE public_library ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT 'Все'")
+        cursor.execute("ALTER TABLE public_library ADD COLUMN IF NOT EXISTS cover_image_url VARCHAR(500) DEFAULT ''")
+        cursor.execute("ALTER TABLE public_library ADD COLUMN IF NOT EXISTS video_url VARCHAR(500) DEFAULT ''")
+        cursor.execute("ALTER TABLE public_library ADD COLUMN IF NOT EXISTS attachments TEXT DEFAULT '[]'")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS public_leads (
                 id SERIAL PRIMARY KEY,
@@ -227,9 +255,44 @@ def init_db():
                 summary TEXT,
                 content TEXT,
                 tags TEXT,
+                cover_image_url TEXT DEFAULT '',
+                video_url TEXT DEFAULT '',
+                attachments TEXT DEFAULT '[]',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("PRAGMA table_info(public_posts)")
+        posts_existing_cols = [row[1] for row in cursor.fetchall()]
+        for col_name, col_def in [("cover_image_url", "TEXT DEFAULT ''"), ("video_url", "TEXT DEFAULT ''"), ("attachments", "TEXT DEFAULT '[]'")]:
+            if col_name not in posts_existing_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE public_posts ADD COLUMN {col_name} {col_def}")
+                except Exception:
+                    pass
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public_library (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                summary TEXT,
+                content TEXT,
+                category TEXT DEFAULT 'Все',
+                tags TEXT DEFAULT '[]',
+                cover_image_url TEXT DEFAULT '',
+                video_url TEXT DEFAULT '',
+                attachments TEXT DEFAULT '[]',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("PRAGMA table_info(public_library)")
+        lib_existing_cols = [row[1] for row in cursor.fetchall()]
+        for col_name, col_def in [("category", "TEXT DEFAULT 'Все'"), ("cover_image_url", "TEXT DEFAULT ''"), ("video_url", "TEXT DEFAULT ''"), ("attachments", "TEXT DEFAULT '[]'")]:
+            if col_name not in lib_existing_cols:
+                try:
+                    cursor.execute(f"ALTER TABLE public_library ADD COLUMN {col_name} {col_def}")
+                except Exception:
+                    pass
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS public_leads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -493,6 +556,8 @@ def ensure_indexes(conn=None):
         ("idx_doctors_full_name", "doctors", "full_name", False),
         ("idx_doctors_verified", "doctors", "is_verified", False),
         ("idx_public_posts_created_at", "public_posts", "created_at", False),
+        ("idx_public_library_created_at", "public_library", "created_at", False),
+        ("idx_public_library_category", "public_library", "category", False),
         ("idx_public_leads_status_created", "public_leads", "status, created_at", False),
         ("idx_public_services_category", "public_services", "category", False),
         ("idx_public_events_date", "public_events", "event_date", False),
@@ -665,9 +730,9 @@ def get_public_posts(tag=None):
     conn = get_connection()
     cursor = conn.cursor()
     if tag:
-        execute_query(cursor, "SELECT id, title, summary, content, tags, created_at FROM public_posts WHERE tags LIKE ? ORDER BY created_at DESC, id DESC", (f'%"{tag}"%',))
+        execute_query(cursor, "SELECT id, title, summary, content, tags, cover_image_url, video_url, attachments, created_at FROM public_posts WHERE tags LIKE ? ORDER BY created_at DESC, id DESC", (f'%"{tag}"%',))
     else:
-        execute_query(cursor, "SELECT id, title, summary, content, tags, created_at FROM public_posts ORDER BY created_at DESC, id DESC")
+        execute_query(cursor, "SELECT id, title, summary, content, tags, cover_image_url, video_url, attachments, created_at FROM public_posts ORDER BY created_at DESC, id DESC")
     rows = cursor.fetchall()
     conn.close()
     import json
@@ -677,7 +742,21 @@ def get_public_posts(tag=None):
             tags_list = json.loads(r[4]) if r[4] else []
         except:
             tags_list = []
-        res.append({"id": r[0], "title": r[1], "summary": r[2], "content": r[3], "tags": tags_list, "created_at": str(r[5])})
+        try:
+            att_list = json.loads(r[7]) if r[7] else []
+        except:
+            att_list = []
+        res.append({
+            "id": r[0],
+            "title": r[1],
+            "summary": r[2],
+            "content": r[3],
+            "tags": tags_list,
+            "cover_image_url": r[5] or "",
+            "video_url": r[6] or "",
+            "attachments": att_list,
+            "created_at": str(r[8])
+        })
     return res
 
 def get_public_doctors():
@@ -721,29 +800,31 @@ def get_all_leads():
         for r in rows
     ]
 
-def create_public_post(title: str, summary: str, content: str, tags: list) -> int:
+def create_public_post(title: str, summary: str, content: str, tags: list, cover_image_url: str = "", video_url: str = "", attachments: list = None) -> int:
     import json
     conn = get_connection()
     cursor = conn.cursor()
-    tags_json = json.dumps(tags, ensure_ascii=False)
+    tags_json = json.dumps(tags or [], ensure_ascii=False)
+    att_json = json.dumps(attachments or [], ensure_ascii=False)
     execute_query(cursor, """
-        INSERT INTO public_posts (title, summary, content, tags)
-        VALUES (?, ?, ?, ?)
-    """, (title, summary, content, tags_json))
+        INSERT INTO public_posts (title, summary, content, tags, cover_image_url, video_url, attachments)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (title, summary, content, tags_json, cover_image_url or "", video_url or "", att_json))
     conn.commit()
     conn.close()
     return 1
 
-def update_public_post(post_id: int, title: str, summary: str, content: str, tags: list) -> bool:
+def update_public_post(post_id: int, title: str, summary: str, content: str, tags: list, cover_image_url: str = "", video_url: str = "", attachments: list = None) -> bool:
     import json
     conn = get_connection()
     cursor = conn.cursor()
-    tags_json = json.dumps(tags, ensure_ascii=False)
+    tags_json = json.dumps(tags or [], ensure_ascii=False)
+    att_json = json.dumps(attachments or [], ensure_ascii=False)
     execute_query(cursor, """
         UPDATE public_posts
-        SET title = ?, summary = ?, content = ?, tags = ?
+        SET title = ?, summary = ?, content = ?, tags = ?, cover_image_url = ?, video_url = ?, attachments = ?
         WHERE id = ?
-    """, (title, summary, content, tags_json, post_id))
+    """, (title, summary, content, tags_json, cover_image_url or "", video_url or "", att_json, post_id))
     conn.commit()
     conn.close()
     return True
@@ -760,7 +841,7 @@ def get_post_by_id(post_id: int):
     import json
     conn = get_connection()
     cursor = conn.cursor()
-    execute_query(cursor, "SELECT id, title, summary, content, tags, created_at FROM public_posts WHERE id = ?", (post_id,))
+    execute_query(cursor, "SELECT id, title, summary, content, tags, cover_image_url, video_url, attachments, created_at FROM public_posts WHERE id = ?", (post_id,))
     r = cursor.fetchone()
     conn.close()
     if not r:
@@ -769,7 +850,132 @@ def get_post_by_id(post_id: int):
         tags_list = json.loads(r[4]) if r[4] else []
     except:
         tags_list = []
-    return {"id": r[0], "title": r[1], "summary": r[2], "content": r[3], "tags": tags_list, "created_at": str(r[5])}
+    try:
+        att_list = json.loads(r[7]) if r[7] else []
+    except:
+        att_list = []
+    return {
+        "id": r[0],
+        "title": r[1],
+        "summary": r[2],
+        "content": r[3],
+        "tags": tags_list,
+        "cover_image_url": r[5] or "",
+        "video_url": r[6] or "",
+        "attachments": att_list,
+        "created_at": str(r[8])
+    }
+
+def create_public_library_item(title: str, summary: str, content: str, category: str = "Все", tags: list = None, cover_image_url: str = "", video_url: str = "", attachments: list = None) -> int:
+    import json
+    conn = get_connection()
+    cursor = conn.cursor()
+    tags_json = json.dumps(tags or [], ensure_ascii=False)
+    att_json = json.dumps(attachments or [], ensure_ascii=False)
+    execute_query(cursor, """
+        INSERT INTO public_library (title, summary, content, category, tags, cover_image_url, video_url, attachments)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (title, summary, content, category or "Все", tags_json, cover_image_url or "", video_url or "", att_json))
+    conn.commit()
+    conn.close()
+    return 1
+
+def get_public_library_items(category: str = None, tag: str = None):
+    import json
+    conn = get_connection()
+    cursor = conn.cursor()
+    params = []
+    sql = "SELECT id, title, summary, content, category, tags, cover_image_url, video_url, attachments, created_at FROM public_library"
+    conditions = []
+    if category and category != "Все":
+        conditions.append("category = ?")
+        params.append(category)
+    if tag:
+        conditions.append("tags LIKE ?")
+        params.append(f'%"{tag}"%')
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+    sql += " ORDER BY created_at DESC, id DESC"
+    
+    execute_query(cursor, sql, tuple(params) if params else ())
+    rows = cursor.fetchall()
+    conn.close()
+    res = []
+    for r in rows:
+        try:
+            tags_list = json.loads(r[5]) if r[5] else []
+        except:
+            tags_list = []
+        try:
+            att_list = json.loads(r[8]) if r[8] else []
+        except:
+            att_list = []
+        res.append({
+            "id": r[0],
+            "title": r[1],
+            "summary": r[2],
+            "content": r[3],
+            "category": r[4] or "Все",
+            "tags": tags_list,
+            "cover_image_url": r[6] or "",
+            "video_url": r[7] or "",
+            "attachments": att_list,
+            "created_at": str(r[9])
+        })
+    return res
+
+def get_library_item_by_id(item_id: int):
+    import json
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "SELECT id, title, summary, content, category, tags, cover_image_url, video_url, attachments, created_at FROM public_library WHERE id = ?", (item_id,))
+    r = cursor.fetchone()
+    conn.close()
+    if not r:
+        return None
+    try:
+        tags_list = json.loads(r[5]) if r[5] else []
+    except:
+        tags_list = []
+    try:
+        att_list = json.loads(r[8]) if r[8] else []
+    except:
+        att_list = []
+    return {
+        "id": r[0],
+        "title": r[1],
+        "summary": r[2],
+        "content": r[3],
+        "category": r[4] or "Все",
+        "tags": tags_list,
+        "cover_image_url": r[6] or "",
+        "video_url": r[7] or "",
+        "attachments": att_list,
+        "created_at": str(r[9])
+    }
+
+def update_public_library_item(item_id: int, title: str, summary: str, content: str, category: str = "Все", tags: list = None, cover_image_url: str = "", video_url: str = "", attachments: list = None) -> bool:
+    import json
+    conn = get_connection()
+    cursor = conn.cursor()
+    tags_json = json.dumps(tags or [], ensure_ascii=False)
+    att_json = json.dumps(attachments or [], ensure_ascii=False)
+    execute_query(cursor, """
+        UPDATE public_library
+        SET title = ?, summary = ?, content = ?, category = ?, tags = ?, cover_image_url = ?, video_url = ?, attachments = ?
+        WHERE id = ?
+    """, (title, summary, content, category or "Все", tags_json, cover_image_url or "", video_url or "", att_json, item_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_public_library_item(item_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "DELETE FROM public_library WHERE id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+    return True
 
 def verify_admin_credentials(username: str, password: str) -> bool:
     conn = get_connection()

@@ -3,13 +3,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import logging
-from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response
+import uuid
+from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 import threading
@@ -27,11 +28,13 @@ from database import (
     count_active_shares, get_share_grant_by_id, revoke_share_grant,
     get_active_shares_for_patient, get_patient_access_by_folder,
     get_latest_etl_metric_for_folder, get_all_etl_metrics,
-    get_etl_aggregates, get_llm_usage_summary
+    get_etl_aggregates, get_llm_usage_summary,
+    create_public_library_item, get_public_library_items,
+    get_library_item_by_id, update_public_library_item, delete_public_library_item
 )
 from rag import ask_consultant, generate_medical_summary, get_gigachat_balance
 from pdf_generator import generate_summary_pdf
-from folder_watcher import scan_folders, get_last_etl_logs
+from folder_watcher import scan_folders, get_last_etl_logs, upload_media_file_to_yandex_disk
 from security_utils import (
     create_access_token, verify_token, mask_ip, mask_credential,
     InMemoryAuthRateLimiter
@@ -236,15 +239,31 @@ class AdminLoginRequest(BaseModel):
 
 class PostCreateRequest(BaseModel):
     title: str
-    summary: str
-    content: str
-    tags: Optional[list] = []
+    summary: Optional[str] = ""
+    content: Optional[str] = ""
+    tags: Optional[List[str]] = []
+    cover_image_url: Optional[str] = ""
+    video_url: Optional[str] = ""
+    attachments: Optional[List[dict]] = []
 
 class PostUpdateRequest(BaseModel):
     title: str
-    summary: str
-    content: str
-    tags: Optional[list] = []
+    summary: Optional[str] = ""
+    content: Optional[str] = ""
+    tags: Optional[List[str]] = []
+    cover_image_url: Optional[str] = ""
+    video_url: Optional[str] = ""
+    attachments: Optional[List[dict]] = []
+
+class LibraryItemRequest(BaseModel):
+    title: str
+    summary: Optional[str] = ""
+    content: Optional[str] = ""
+    category: Optional[str] = "Все"
+    tags: Optional[List[str]] = []
+    cover_image_url: Optional[str] = ""
+    video_url: Optional[str] = ""
+    attachments: Optional[List[dict]] = []
 
 class DoctorLoginRequest(BaseModel):
     login: Optional[str] = None
@@ -404,20 +423,138 @@ def admin_leads_api(admin: dict = Depends(get_current_admin)):
 def admin_create_post_api(req: PostCreateRequest, admin: dict = Depends(get_current_admin)):
     if not req.title.strip():
         raise HTTPException(status_code=400, detail="Заголовок статьи не может быть пустым")
-    create_public_post(req.title.strip(), req.summary.strip(), req.content.strip(), req.tags or [])
+    create_public_post(
+        req.title.strip(),
+        req.summary.strip() if req.summary else "",
+        req.content.strip() if req.content else "",
+        req.tags or [],
+        cover_image_url=req.cover_image_url or "",
+        video_url=req.video_url or "",
+        attachments=req.attachments or []
+    )
     return {"status": "ok", "message": "Статья успешно создана"}
 
 @app.put("/api/v1/admin/posts/{post_id}")
 def admin_update_post_api(post_id: int, req: PostUpdateRequest, admin: dict = Depends(get_current_admin)):
     if not req.title.strip():
         raise HTTPException(status_code=400, detail="Заголовок статьи не может быть пустым")
-    update_public_post(post_id, req.title.strip(), req.summary.strip(), req.content.strip(), req.tags or [])
+    update_public_post(
+        post_id,
+        req.title.strip(),
+        req.summary.strip() if req.summary else "",
+        req.content.strip() if req.content else "",
+        req.tags or [],
+        cover_image_url=req.cover_image_url or "",
+        video_url=req.video_url or "",
+        attachments=req.attachments or []
+    )
     return {"status": "ok", "message": "Статья успешно обновлена"}
 
 @app.delete("/api/v1/admin/posts/{post_id}")
 def admin_delete_post_api(post_id: int, admin: dict = Depends(get_current_admin)):
     delete_public_post(post_id)
     return {"status": "ok", "message": "Статья успешно удалена"}
+
+# --- Эндпоинты Полезной Библиотеки (Phase 2 & 4) ---
+
+@app.get("/api/v1/public/library")
+def public_library_api(category: Optional[str] = None, tag: Optional[str] = None):
+    return get_public_library_items(category=category, tag=tag)
+
+@app.get("/api/v1/public/library/{item_id}")
+def public_library_item_api(item_id: int):
+    item = get_library_item_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Материал не найден")
+    return item
+
+@app.post("/api/v1/admin/library")
+def admin_create_library_item_api(req: LibraryItemRequest, admin: dict = Depends(get_current_admin)):
+    if not req.title.strip():
+        raise HTTPException(status_code=400, detail="Заголовок материала не может быть пустым")
+    create_public_library_item(
+        req.title.strip(),
+        req.summary.strip() if req.summary else "",
+        req.content.strip() if req.content else "",
+        category=req.category or "Все",
+        tags=req.tags or [],
+        cover_image_url=req.cover_image_url or "",
+        video_url=req.video_url or "",
+        attachments=req.attachments or []
+    )
+    return {"status": "ok", "message": "Материал успешно добавлен в библиотеку"}
+
+@app.put("/api/v1/admin/library/{item_id}")
+def admin_update_library_item_api(item_id: int, req: LibraryItemRequest, admin: dict = Depends(get_current_admin)):
+    if not req.title.strip():
+        raise HTTPException(status_code=400, detail="Заголовок материала не может быть пустым")
+    update_public_library_item(
+        item_id,
+        req.title.strip(),
+        req.summary.strip() if req.summary else "",
+        req.content.strip() if req.content else "",
+        category=req.category or "Все",
+        tags=req.tags or [],
+        cover_image_url=req.cover_image_url or "",
+        video_url=req.video_url or "",
+        attachments=req.attachments or []
+    )
+    return {"status": "ok", "message": "Материал библиотеки успешно обновлен"}
+
+@app.delete("/api/v1/admin/library/{item_id}")
+def admin_delete_library_item_api(item_id: int, admin: dict = Depends(get_current_admin)):
+    delete_public_library_item(item_id)
+    return {"status": "ok", "message": "Материал библиотеки успешно удален"}
+
+# --- Эндпоинт загрузки медиафайлов на Яндекс.Диск ---
+
+@app.post("/api/v1/admin/upload")
+async def admin_upload_file_api(
+    file: UploadFile = File(...),
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Загрузка изображений, видео или документов администратором.
+    Сохраняет файл локально в static/uploads/ и загружает на Яндекс.Диск в disk:/uploads/.
+    """
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Файл не содержит данных")
+
+    ext = os.path.splitext(file.filename)[1].lower() if file.filename else ".bin"
+    safe_name = f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
+
+    # 1. Локальное сохранение в static/uploads/
+    upload_dir = os.path.join(STATIC_DIR, "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    local_path = os.path.join(upload_dir, safe_name)
+    with open(local_path, "wb") as f:
+        f.write(content)
+
+    local_url = f"/static/uploads/{safe_name}"
+
+    # 2. Загрузка на Яндекс.Диск
+    yandex_public_url = ""
+    try:
+        yandex_public_url = upload_media_file_to_yandex_disk(
+            content,
+            safe_name,
+            content_type=file.content_type or "application/octet-stream"
+        )
+    except Exception as e:
+        logger.warning(f"[UPLOAD WARNING] Ошибка загрузки на Яндекс.Диск: {e}")
+
+    final_url = yandex_public_url if yandex_public_url else local_url
+
+    return {
+        "status": "ok",
+        "url": final_url,
+        "local_url": local_url,
+        "yandex_url": yandex_public_url,
+        "filename": safe_name,
+        "original_name": file.filename,
+        "size": len(content)
+    }
 
 # --- Эндпоинты Врачей и Шеринга Данных (Phase 3) ---
 
@@ -755,6 +892,11 @@ def yandex_disk_health_check(admin: dict = Depends(get_current_admin)):
             "detail": f"Сетевая ошибка при обращении к Яндекс.Диску: {str(e)}",
             "yandex_disk": {"status": "unreachable"}
         }
+
+@app.get("/api/v1/admin/health/yandex-disk")
+def admin_yandex_disk_health_check_alias(admin: dict = Depends(get_current_admin)):
+    """Алиас для проверки здоровья Яндекс.Диска под префиксом /api/v1/admin/"""
+    return yandex_disk_health_check(admin=admin)
 
 @app.get("/api/v1/admin/diagnose/folder/{folder_name:path}")
 def admin_diagnose_folder(folder_name: str, admin: dict = Depends(get_current_admin)):

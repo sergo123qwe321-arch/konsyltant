@@ -57,6 +57,30 @@
 </nav>
 </div>
 </header>
+<!-- БЛОК 1: СЕКЦИЯ «НОВЫЕ ПОСТЫ» (САМАЯ ПЕРВАЯ, ВЫШЕ HERO-БЛОКА) -->
+<section id="posts" class="posts-section" data-alik-comment="Здесь публикуются свежие полезные материалы от наших ведущих специалистов! 📰✨">
+<div class="demo-badge" style="margin: 0 auto 16px auto; display: table;">📰 Свежие публикации экспертов</div>
+<h2>Новые посты</h2>
+<p style="text-align: center; color: var(--text-muted); margin-top: -30px; margin-bottom: 40px; font-size: 1.05rem;">Актуальные статьи и практические рекомендации наших нейропсихологов и логопедов</p>
+<div class="blog-grid" id="latest-posts-container">
+<div class="card-glass blog-card skeleton-card">
+<div class="skeleton skeleton-img"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+</div>
+<div class="card-glass blog-card skeleton-card">
+<div class="skeleton skeleton-img"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+</div>
+<div class="card-glass blog-card skeleton-card">
+<div class="skeleton skeleton-img"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+</div>
+</div>
+</section>
+
 <!-- БЛОК 2: ПЕРВЫЙ ЭКРАН (HERO SECTION) -->
 <section class="hero" id="hero" data-alik-comment="Привет! Я Алик — твой проводник по Маленькой Стране! 🎸">
 <div class="hero-container">
@@ -82,30 +106,6 @@
         <img src="/static/assets/img/alik/Alik.png" alt="Гитарист Алик" id="hero-alik-img" class="hero-alik-img"/>
     </picture>
 </div>
-</div>
-</div>
-</section>
-
-<!-- БЛОК 2.1: СЕКЦИЯ «НОВЫЕ ПОСТЫ» (ИЗ CMS, СОРТИРОВКА ПО CREATED_AT) -->
-<section id="posts" class="posts-section" data-alik-comment="Здесь публикуются свежие полезные материалы от наших ведущих специалистов! 📰✨">
-<div class="demo-badge" style="margin: 0 auto 16px auto; display: table;">📰 Свежие публикации экспертов</div>
-<h2>Новые посты</h2>
-<p style="text-align: center; color: var(--text-muted); margin-top: -30px; margin-bottom: 40px; font-size: 1.05rem;">Актуальные статьи и практические рекомендации наших нейропсихологов и логопедов</p>
-<div class="blog-grid" id="latest-posts-container">
-<div class="card-glass blog-card skeleton-card">
-<div class="skeleton skeleton-img"></div>
-<div class="skeleton skeleton-title"></div>
-<div class="skeleton skeleton-text"></div>
-</div>
-<div class="card-glass blog-card skeleton-card">
-<div class="skeleton skeleton-img"></div>
-<div class="skeleton skeleton-title"></div>
-<div class="skeleton skeleton-text"></div>
-</div>
-<div class="card-glass blog-card skeleton-card">
-<div class="skeleton skeleton-img"></div>
-<div class="skeleton skeleton-title"></div>
-<div class="skeleton skeleton-text"></div>
 </div>
 </div>
 </section>
@@ -479,7 +479,9 @@
 <div id="article-modal-tags" style="margin-bottom: 8px;"></div>
 <h2 id="article-modal-title" style="font-size: 1.4rem; color: #fff; margin-bottom: 10px; line-height: 1.3;"></h2>
 <div id="article-modal-date" style="font-size: 0.85rem; color: var(--accent-turquoise); margin-bottom: 16px;"></div>
+<div id="article-modal-media" style="margin-bottom: 16px; border-radius: 12px; overflow: hidden; display: none;"></div>
 <div id="article-modal-body" style="font-size: 0.95rem; line-height: 1.7; color: var(--text-gray); white-space: pre-line;"></div>
+<div id="article-modal-attachments" style="margin-top: 16px; display: flex; flex-direction: column; gap: 6px;"></div>
 <button class="btn btn-turquoise" onclick="closeModal('article-modal')" style="width: 100%; margin-top: 24px;">
     Закрыть статью
 </button>
@@ -554,6 +556,23 @@
 <div class="form-group">
 <label class="form-label" for="edit-post-tags">Теги (через запятую)</label>
 <input class="form-input" id="edit-post-tags" placeholder="Развитие речи, Игры"/>
+</div>
+<div class="form-group">
+<label class="form-label">Обложка статьи (URL или Загрузка на Яндекс.Диск)</label>
+<div style="display: flex; gap: 8px; margin-bottom: 6px;">
+<input class="form-input" id="edit-post-cover" placeholder="https://... или выберите файл" style="flex: 1;" oninput="updateCoverPreview()"/>
+<label class="btn btn-outline" style="cursor: pointer; padding: 8px 12px; font-size: 0.85rem; white-space: nowrap; margin: 0;">
+    📁 Загрузить файл
+    <input type="file" id="edit-post-cover-file" accept="image/*,video/*" style="display: none;" onchange="handleAdminFileUpload(event, 'edit-post-cover')"/>
+</label>
+</div>
+<div id="edit-post-cover-preview" style="display: none; max-height: 120px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); margin-top: 4px;">
+<img id="cover-preview-img" src="" style="width: 100%; height: 120px; object-fit: cover;" alt="Превью"/>
+</div>
+</div>
+<div class="form-group">
+<label class="form-label" for="edit-post-video">Видеоматериал (URL)</label>
+<input class="form-input" id="edit-post-video" placeholder="Ссылка на видео (Яндекс.Диск, MP4, Rutube, YouTube, VK Video)"/>
 </div>
 <div class="form-group">
 <label class="form-label" for="edit-post-summary">Краткий анонс</label>

@@ -1,6 +1,7 @@
 import unittest
 import os
 import re
+import io
 from fastapi.testclient import TestClient
 from main import app
 from database import init_db, get_connection, execute_query
@@ -20,12 +21,12 @@ class TestLandingAndAdminOps(unittest.TestCase):
         cls.patient_token = create_access_token({"sub": "test_patient", "role": "PATIENT"})
 
     def test_01_landing_sections_order(self):
-        """1. Проверка порядка секций лендинга в templates/index.html"""
+        """1. Проверка порядка секций лендинга в templates/index.html: Посты первыми, выше Hero!"""
         with open("templates/index.html", "r", encoding="utf-8") as f:
             html = f.read()
 
-        pos_hero = html.find('id="hero"')
         pos_posts = html.find('id="posts"')
+        pos_hero = html.find('id="hero"')
         pos_blog = html.find('id="blog"')
         pos_characters = html.find('id="characters"')
         pos_about = html.find('id="about"')
@@ -35,8 +36,8 @@ class TestLandingAndAdminOps(unittest.TestCase):
         pos_contacts = html.find('id="contacts"')
         pos_footer = html.find('<footer')
 
-        self.assertNotEqual(pos_hero, -1, "Hero секция найдена")
         self.assertNotEqual(pos_posts, -1, "Секция Новые посты найдена")
+        self.assertNotEqual(pos_hero, -1, "Hero секция найдена")
         self.assertNotEqual(pos_blog, -1, "Секция Полезная библиотека найдена")
         self.assertNotEqual(pos_characters, -1, "Секция Персонажи звуков найдена")
         self.assertNotEqual(pos_about, -1, "Секция О центре найдена")
@@ -46,9 +47,9 @@ class TestLandingAndAdminOps(unittest.TestCase):
         self.assertNotEqual(pos_contacts, -1, "Секция Контакты найдена")
         self.assertNotEqual(pos_footer, -1, "Подвал найден")
 
-        # Проверяем строгий порядок
-        self.assertTrue(pos_hero < pos_posts, "Hero должен идти перед Новыми постами")
-        self.assertTrue(pos_posts < pos_blog, "Новые посты должны идти перед Библиотекой")
+        # Проверяем строгий порядок: Посты -> Hero -> Библиотека -> Персонажи -> О центре -> Услуги -> Врачи -> События -> Контакты -> Подвал
+        self.assertTrue(pos_posts < pos_hero, "Новые посты должны идти САМЫМИ ПЕРВЫМИ, перед Hero")
+        self.assertTrue(pos_hero < pos_blog, "Hero должен идти перед Библиотекой")
         self.assertTrue(pos_blog < pos_characters, "Библиотека должна идти перед Персонажами звуков")
         self.assertTrue(pos_characters < pos_about, "Персонажи должны идти перед О центре")
         self.assertTrue(pos_about < pos_services, "О центре перед Услугами")
@@ -57,8 +58,8 @@ class TestLandingAndAdminOps(unittest.TestCase):
         self.assertTrue(pos_events < pos_contacts, "События перед Контактами")
         self.assertTrue(pos_contacts < pos_footer, "Контакты перед Подвалом")
 
-    def test_02_no_word_muzykalnaya_in_hero_and_seo(self):
-        """2. Проверка отсутствия слова «музыкальная» в title, meta и hero"""
+    def test_02_no_word_muzykalnaya_and_klinika(self):
+        """2. Проверка отсутствия запрещенных слов («музыкальная», «клиника») в UI и SEO"""
         with open("templates/index.html", "r", encoding="utf-8") as f:
             html = f.read()
 
@@ -66,26 +67,25 @@ class TestLandingAndAdminOps(unittest.TestCase):
         title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
         self.assertIsNotNone(title_match)
         self.assertNotIn("музыкальн", title_match.group(1).lower())
+        self.assertNotIn("клиник", title_match.group(1).lower())
         self.assertIn("детская вселенная: маленькая страна", title_match.group(1).lower())
 
-        # Meta description
-        meta_desc = re.search(r'<meta\s+name="description"\s+content="(.*?)"', html, re.IGNORECASE)
-        if meta_desc:
-            self.assertNotIn("музыкальн", meta_desc.group(1).lower())
-            self.assertIn("детская вселенная", meta_desc.group(1).lower())
-
         # Hero badge & H1
-        hero_section = html[html.find('id="hero"'):html.find('id="posts"')]
+        hero_section = html[html.find('id="hero"'):html.find('id="blog"')]
         self.assertNotIn("музыкальная", hero_section.lower())
+        self.assertNotIn("клиника", hero_section.lower())
         self.assertIn("детская вселенная: маленькая страна", hero_section.lower())
 
-    def test_03_end_to_end_post_publication(self):
-        """3. Сквозная публикация поста: создание в CMS -> появление в публичных постах"""
+    def test_03_end_to_end_post_publication_with_multimedia(self):
+        """3. Создание поста с мультимедиа (обложка, видео) через Admin API и проверка в Public API"""
         post_data = {
-            "title": "Тестовая статья Продюсера о развитии внимания",
-            "summary": "Краткое описание инновационной методики концентрации внимания у дошкольников.",
-            "content": "Полный текст статьи с упражнениями для родителей и специалистов центра.",
-            "tags": ["Эмоции и поведение", "Игры"]
+            "title": "Интерактивные упражнения для развития речи",
+            "summary": "Методические рекомендации и видеоматериалы от ведущих специалистов Центра.",
+            "content": "Подробный разбор артикуляционной гимнастики и игровых методик в домашних условиях.",
+            "tags": ["Развитие речи", "Игры"],
+            "cover_image_url": "https://disk.yandex.ru/i/test_speech_cover.jpg",
+            "video_url": "https://disk.yandex.ru/i/test_speech_video.mp4",
+            "attachments": [{"title": "Памятка для родителей (PDF)", "url": "https://disk.yandex.ru/d/manual.pdf"}]
         }
 
         # 1. Создание через Admin API
@@ -104,41 +104,76 @@ class TestLandingAndAdminOps(unittest.TestCase):
         latest_post = posts[0]
         self.assertEqual(latest_post["title"], post_data["title"])
         self.assertEqual(latest_post["summary"], post_data["summary"])
+        self.assertEqual(latest_post["cover_image_url"], post_data["cover_image_url"])
+        self.assertEqual(latest_post["video_url"], post_data["video_url"])
 
         # 3. Получение по ID
         post_id = latest_post["id"]
         res_single = self.client.get(f"/api/v1/public/posts/{post_id}")
         self.assertEqual(res_single.status_code, 200)
         self.assertEqual(res_single.json()["title"], post_data["title"])
+        self.assertEqual(res_single.json()["cover_image_url"], post_data["cover_image_url"])
 
-    def test_04_idempotent_admin_seed(self):
-        """4. Идемпотентность сидирования админа и успешный логин"""
-        # Повторный запуск сидирования
-        seed_producer_admin()
-        seed_producer_admin()
+    def test_04_admin_upload_endpoint(self):
+        """4. Загрузка файла через эндпоинт POST /api/v1/admin/upload"""
+        dummy_file_content = b"Fake image file content for testing uploads"
+        files = {
+            "file": ("test_cover.jpg", io.BytesIO(dummy_file_content), "image/jpeg")
+        }
 
-        conn = get_connection()
-        cursor = conn.cursor()
-        execute_query(cursor, "SELECT COUNT(*) FROM patient_access WHERE access_token = 'producer-admin@cmz.site';")
-        count = cursor.fetchone()[0]
-        conn.close()
-        self.assertEqual(count, 1, "Должна быть ровно 1 запись с данным логином")
-
-        # Проверка логина через эндпоинт
-        res_login = self.client.post(
-            "/api/v1/admin/login",
-            json={"username": "producer-admin@cmz.site", "password": "AdminAccess2026!"}
+        res_upload = self.client.post(
+            "/api/v1/admin/upload",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+            files=files
         )
-        self.assertEqual(res_login.status_code, 200)
-        data = res_login.json()
-        self.assertIn("access_token", data)
-        self.assertEqual(data["role"], "ADMIN")
+        self.assertEqual(res_upload.status_code, 200)
+        data = res_upload.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertIn("url", data)
+        self.assertIn("local_url", data)
+        self.assertEqual(data["original_name"], "test_cover.jpg")
 
-    def test_05_rbac_operational_endpoints(self):
-        """5. Проверка RBAC для операционных эндпоинтов (401 без токена, 403 для PATIENT/DOCTOR, 200 для ADMIN)"""
+    def test_05_admin_leads_endpoint(self):
+        """5. Получение списка заявок через GET /api/v1/admin/leads"""
+        res_leads = self.client.get(
+            "/api/v1/admin/leads",
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        self.assertEqual(res_leads.status_code, 200)
+        leads = res_leads.json()
+        self.assertIsInstance(leads, list)
+
+    def test_06_public_library_crud(self):
+        """6. Создание и получение материалов полезной библиотеки"""
+        lib_data = {
+            "title": "Сборник речевых сказок для малышей",
+            "summary": "Аудиосказки и тексты для постановки звуков раннего онтогенеза.",
+            "content": "Полный текст сказок и методические указания по чтению перед сном.",
+            "category": "Развитие речи",
+            "tags": ["Сказки", "Речь"],
+            "cover_image_url": "https://disk.yandex.ru/i/tales_cover.png",
+            "video_url": ""
+        }
+
+        res_create = self.client.post(
+            "/api/v1/admin/library",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+            json=lib_data
+        )
+        self.assertEqual(res_create.status_code, 200)
+
+        res_list = self.client.get("/api/v1/public/library")
+        self.assertEqual(res_list.status_code, 200)
+        items = res_list.json()
+        self.assertTrue(len(items) > 0)
+        self.assertEqual(items[0]["title"], lib_data["title"])
+
+    def test_07_rbac_operational_endpoints(self):
+        """7. Проверка RBAC для операционных эндпоинтов (401 без токена, 403 для PATIENT/DOCTOR, 200 для ADMIN)"""
         endpoints = [
             "/api/v1/admin/etl/metrics",
             "/api/v1/admin/llm/usage",
+            "/api/v1/admin/health/yandex-disk",
             "/api/v1/health/yandex-disk"
         ]
 

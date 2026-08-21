@@ -271,6 +271,54 @@ def publish_yandex_disk_resource(path: str) -> str:
 
     return ""
 
+def upload_media_file_to_yandex_disk(file_bytes: bytes, filename: str, content_type: str = "application/octet-stream") -> str:
+    """
+    Загружает медиафайл (фото, видео, документ) на Яндекс.Диск в папку disk:/uploads/,
+    публикует его и возвращает public_url.
+    """
+    if not YANDEX_DISK_TOKEN:
+        logger.warning("[YANDEX DISK MEDIA UPLOAD] YANDEX_DISK_TOKEN не задан.")
+        return ""
+
+    headers = {
+        "Authorization": f"OAuth {YANDEX_DISK_TOKEN}",
+        "Accept": "application/json"
+    }
+
+    # 1. Создаем папку /uploads/ если не существует
+    try:
+        requests.put("https://cloud-api.yandex.net/v1/disk/resources", headers=headers, params={"path": "disk:/uploads"}, timeout=10)
+    except Exception:
+        pass
+
+    disk_path = f"disk:/uploads/{filename}"
+    upload_api_url = "https://cloud-api.yandex.net/v1/disk/resources/upload"
+    params = {"path": disk_path, "overwrite": "true"}
+
+    try:
+        res = requests.get(upload_api_url, headers=headers, params=params, timeout=15)
+        if res.status_code != 200:
+            logger.error(f"[YANDEX DISK MEDIA UPLOAD ERROR] Не удалось получить href ({res.status_code}): {res.text}")
+            return ""
+
+        upload_href = res.json().get("href")
+        if not upload_href:
+            return ""
+
+        put_headers = {"Content-Type": content_type}
+        put_res = requests.put(upload_href, data=file_bytes, headers=put_headers, timeout=30)
+        if put_res.status_code not in (200, 201):
+            logger.error(f"[YANDEX DISK MEDIA UPLOAD ERROR] PUT вернул {put_res.status_code}")
+            return ""
+
+        # Публикуем ресурс
+        pub_url = publish_yandex_disk_resource(disk_path)
+        logger.info(f"[YANDEX DISK MEDIA UPLOAD] Файл '{filename}' успешно загружен и опубликован: {pub_url}")
+        return pub_url
+    except Exception as e:
+        logger.error(f"[YANDEX DISK MEDIA UPLOAD EXCEPTION] {e}")
+        return ""
+
 def get_yandex_disk_folders(path="/"):
     """Сканирует ресурсы Яндекс.Диска по указанному пути, игнорируя системные файлы/папки с '_'"""
     if not YANDEX_DISK_TOKEN:

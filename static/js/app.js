@@ -276,8 +276,18 @@
                 if (tagsList.length === 0) tagsList = ['Экспертное'];
 
                 const tagsHTML = tagsList.map(t => `<span class="blog-tag">${t}</span>`).join('');
+                const hasCover = Boolean(post.cover_image_url);
+                const hasVideo = Boolean(post.video_url);
+
+                const coverHTML = hasCover
+                    ? `<div style="height: 160px; border-radius: 12px 12px 0 0; background: url('${post.cover_image_url}') center/cover no-repeat; margin: -20px -20px 14px -20px; position: relative;">
+                         ${hasVideo ? '<span style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.75); color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight:600;">🎬 Видео</span>' : ''}
+                       </div>`
+                    : (hasVideo ? `<div style="margin-bottom: 8px;"><span style="background: rgba(239,68,68,0.2); color: #F87171; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">🎬 С видеоматериалом</span></div>` : '');
+
                 container.innerHTML += `
-                    <div class="card-glass blog-card">
+                    <div class="card-glass blog-card" style="display: flex; flex-direction: column;">
+                        ${coverHTML}
                         <div class="blog-tags">${tagsHTML}</div>
                         <div class="blog-date">📅 ${post.created_at ? post.created_at.split(' ')[0] : 'Недавно'}</div>
                         <h3 style="margin-bottom: 10px; font-size: 1.15rem; line-height: 1.4;">${post.title}</h3>
@@ -312,13 +322,23 @@
                 if (tagsList.length === 0) tagsList = ['Полезное'];
 
                 const tagsHTML = tagsList.map(t => `<span class="blog-tag">${t}</span>`).join('');
+                const hasCover = Boolean(post.cover_image_url);
+                const hasVideo = Boolean(post.video_url);
+
+                const coverHTML = hasCover
+                    ? `<div style="height: 160px; border-radius: 12px 12px 0 0; background: url('${post.cover_image_url}') center/cover no-repeat; margin: -20px -20px 14px -20px; position: relative;">
+                         ${hasVideo ? '<span style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.75); color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight:600;">🎬 Видео</span>' : ''}
+                       </div>`
+                    : (hasVideo ? `<div style="margin-bottom: 8px;"><span style="background: rgba(239,68,68,0.2); color: #F87171; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">🎬 С видеоматериалом</span></div>` : '');
+
                 container.innerHTML += `
-                    <div class="card-glass blog-card">
+                    <div class="card-glass blog-card" style="display: flex; flex-direction: column;">
+                        ${coverHTML}
                         <div class="blog-tags">${tagsHTML}</div>
                         <div class="blog-date">📅 ${post.created_at ? post.created_at.split(' ')[0] : 'Недавно'}</div>
                         <h3 style="margin-bottom: 10px; font-size: 1.15rem; line-height: 1.4;">${post.title}</h3>
                         <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-gray); margin-bottom: 16px;">${post.summary}</p>
-                        <div class="blog-card-footer">
+                        <div class="blog-card-footer" style="margin-top:auto;">
                             <button class="read-more" onclick="openArticleReader(${post.id})">Читать далее ✨</button>
                         </div>
                     </div>
@@ -327,7 +347,7 @@
         }
 
         async function openArticleReader(postId) {
-            let post = cachedPosts.find(p => p.id === postId);
+            let post = (cachedPosts || []).find(p => p.id === postId);
             if (!post || !post.content) {
                 try {
                     const res = await fetch(`/api/v1/public/posts/${postId}`);
@@ -350,8 +370,34 @@
             else if (typeof post.tags === 'string') tagsList = post.tags.split(',').map(t => t.trim().replace(/[\[\]"]/g, ''));
             
             document.getElementById('article-modal-tags').innerHTML = tagsList.map(t => `<span class="blog-tag" style="margin-right: 6px;">${t}</span>`).join('');
-            document.getElementById('article-modal-body').textContent = post.content || post.summary;
+            
+            const mediaContainer = document.getElementById('article-modal-media');
+            if (mediaContainer) {
+                let mediaHTML = '';
+                if (post.video_url) {
+                    if (post.video_url.endsWith('.mp4') || post.video_url.endsWith('.webm')) {
+                        mediaHTML += `<video controls style="width: 100%; max-height: 320px; border-radius: 10px; background: #000;" src="${post.video_url}"></video>`;
+                    } else {
+                        mediaHTML += `
+                            <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px;">
+                                <span style="font-size: 0.9rem; color: #fff;">🎬 Видеоматериал к статье</span>
+                                <a href="${post.video_url}" target="_blank" class="btn btn-purple" style="padding: 6px 12px; font-size: 0.8rem; text-decoration: none;">Смотреть видео ↗️</a>
+                            </div>
+                        `;
+                    }
+                } else if (post.cover_image_url) {
+                    mediaHTML += `<img src="${post.cover_image_url}" style="width: 100%; max-height: 280px; object-fit: cover; border-radius: 10px;" alt="Обложка"/>`;
+                }
+                if (mediaHTML) {
+                    mediaContainer.innerHTML = mediaHTML;
+                    mediaContainer.style.display = 'block';
+                } else {
+                    mediaContainer.innerHTML = '';
+                    mediaContainer.style.display = 'none';
+                }
+            }
 
+            document.getElementById('article-modal-body').textContent = post.content || post.summary;
             openModal('article-modal');
         }
 
@@ -441,8 +487,12 @@
         /* ==========================================================================
            5. ПАНЕЛЬ АДМИНИСТРАТОРА (CMS)
            ========================================================================== */
+        function getAdminToken() {
+            return sessionStorage.getItem('admin_token') || localStorage.getItem('admin_token') || '';
+        }
+
         function openAdminModal() {
-            const token = sessionStorage.getItem('admin_token');
+            const token = getAdminToken();
             if (token) {
                 openModal('admin-dashboard-modal');
                 loadAdminLeads();
@@ -469,10 +519,14 @@
                     body: JSON.stringify({ username: user, password: pass })
                 });
 
-                if (!res.ok) throw new Error('Неверный логин или пароль');
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || 'Неверный логин или пароль');
+                }
 
                 const data = await res.json();
                 sessionStorage.setItem('admin_token', data.access_token);
+                localStorage.setItem('admin_token', data.access_token);
                 closeModal('admin-login-modal');
                 document.getElementById('admin-login-form').reset();
                 openModal('admin-dashboard-modal');
@@ -488,6 +542,7 @@
 
         function logoutAdmin() {
             sessionStorage.removeItem('admin_token');
+            localStorage.removeItem('admin_token');
             closeModal('admin-dashboard-modal');
             alert('Вы вышли из Панели управления CMS.');
         }
@@ -529,8 +584,12 @@
 
         async function loadAdminOperations() {
             const container = document.getElementById('admin-ops-content');
-            const token = sessionStorage.getItem('admin_token');
-            if (!container || !token) return;
+            const token = getAdminToken();
+            if (!container) return;
+            if (!token) {
+                container.innerHTML = '<div style="color:#EF4444;text-align:center;padding:20px;">Требуется повторный вход в CMS.</div>';
+                return;
+            }
 
             container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px;">Загрузка операционных метрик и баланса... ⏳</div>';
 
@@ -539,17 +598,18 @@
                 const [resEtl, resLlm, resDisk] = await Promise.all([
                     fetch('/api/v1/admin/etl/metrics', { headers }).then(r => r.ok ? r.json() : null).catch(() => null),
                     fetch('/api/v1/admin/llm/usage', { headers }).then(r => r.ok ? r.json() : null).catch(() => null),
-                    fetch('/api/v1/health/yandex-disk', { headers }).then(r => r.ok ? r.json() : null).catch(() => null)
+                    fetch('/api/v1/admin/health/yandex-disk', { headers }).then(r => r.ok ? r.json() : null).catch(() => null)
                 ]);
 
                 let html = '';
 
                 // 1. КАРТОЧКА: ЗДОРОВЬЕ ЯНДЕКС.ДИСКА
-                if (resDisk) {
-                    const totalGb = resDisk.total_space_bytes ? (resDisk.total_space_bytes / (1024 ** 3)).toFixed(1) : '-';
-                    const usedGb = resDisk.used_space_bytes ? (resDisk.used_space_bytes / (1024 ** 3)).toFixed(1) : '-';
-                    const freeGb = (resDisk.total_space_bytes && resDisk.used_space_bytes) ? ((resDisk.total_space_bytes - resDisk.used_space_bytes) / (1024 ** 3)).toFixed(1) : '-';
-                    const isHealthy = resDisk.status === 'healthy';
+                if (resDisk && (resDisk.status === 'OK' || resDisk.status === 'healthy' || resDisk.yandex_disk)) {
+                    const yd = resDisk.yandex_disk || resDisk;
+                    const totalGb = yd.total_space_bytes ? (yd.total_space_bytes / (1024 ** 3)).toFixed(1) : '-';
+                    const usedGb = yd.used_space_bytes ? (yd.used_space_bytes / (1024 ** 3)).toFixed(1) : '-';
+                    const freeGb = (yd.total_space_bytes && yd.used_space_bytes) ? ((yd.total_space_bytes - yd.used_space_bytes) / (1024 ** 3)).toFixed(1) : '-';
+                    const isHealthy = yd.status === 'available' || resDisk.status === 'OK' || resDisk.status === 'healthy';
 
                     html += `
                         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(6,182,212,0.3);border-radius:12px;padding:16px;">
@@ -573,8 +633,8 @@
                                     <strong style="font-size:1.1rem;color:#34D399;">${freeGb} ГБ</strong>
                                 </div>
                                 <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
-                                    <div style="font-size:0.75rem;color:var(--text-muted);">Аккаунт</div>
-                                    <strong style="font-size:0.9rem;color:var(--accent-turquoise);word-break:break-all;">${resDisk.user || 'Yandex OAuth'}</strong>
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Токен хранилища</div>
+                                    <strong style="font-size:0.9rem;color:var(--accent-turquoise);word-break:break-all;">${yd.token || 'Авторизован (OAuth)'}</strong>
                                 </div>
                             </div>
                         </div>
@@ -629,9 +689,6 @@
                     const todayTokens = usage.today ? usage.today.total_tokens : 0;
                     const weekTokens = usage.last_7_days ? usage.last_7_days.total_tokens : 0;
                     const allTokens = usage.all_time ? usage.all_time.total_tokens : 0;
-
-                    // Модели
-                    const modelsList = usage.by_model || [];
                     const balances = (bal.balance && bal.balance.balance) ? bal.balance.balance : [];
 
                     html += `
@@ -688,7 +745,7 @@
         async function loadAdminLeads() {
             const list = document.getElementById('admin-leads-list');
             const counter = document.getElementById('leads-counter');
-            const token = sessionStorage.getItem('admin_token');
+            const token = getAdminToken();
             if (!token) return;
 
             list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">Загрузка заявок...</div>';
@@ -699,7 +756,7 @@
                 });
                 if (!res.ok) throw new Error('Ошибка загрузки заявок');
                 const leads = await res.json();
-                counter.textContent = leads.length;
+                if (counter) counter.textContent = leads.length;
 
                 if (leads.length === 0) {
                     list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px;">Пока нет новых заявок.</div>';
@@ -726,27 +783,34 @@
 
         async function loadAdminPosts() {
             const list = document.getElementById('admin-posts-list');
+            if (!list) return;
             list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">Загрузка статей...</div>';
 
             try {
                 const res = await fetch('/api/v1/public/posts');
                 const posts = await res.json();
 
-                if (posts.length === 0) {
+                if (!posts || posts.length === 0) {
                     list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px;">В блоге пока нет статей.</div>';
                     return;
                 }
 
                 list.innerHTML = posts.map(p => {
                     let tagsList = Array.isArray(p.tags) ? p.tags : (p.tags ? p.tags.split(',') : []);
+                    const hasCover = Boolean(p.cover_image_url);
+                    const hasVideo = Boolean(p.video_url);
                     return `
                         <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;">
+                            ${hasCover ? `<img src="${p.cover_image_url}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;flex-shrink:0;" alt="Обложка"/>` : ''}
                             <div style="flex:1;">
-                                <h5 style="margin:0 0 6px 0;font-size:1rem;color:#fff;">${p.title}</h5>
-                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Теги: ${tagsList.join(', ')} | 📅 ${p.created_at ? p.created_at.split(' ')[0] : ''}</div>
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <h5 style="margin:0;font-size:1rem;color:#fff;">${p.title}</h5>
+                                    ${hasVideo ? '<span style="background:rgba(239,68,68,0.2);color:#F87171;padding:2px 6px;border-radius:4px;font-size:0.7rem;">🎬 Видео</span>' : ''}
+                                </div>
+                                <div style="font-size:0.8rem;color:var(--text-muted);margin:4px 0;">Теги: ${tagsList.join(', ')} | 📅 ${p.created_at ? p.created_at.split(' ')[0] : ''}</div>
                                 <p style="margin:0;font-size:0.85rem;color:var(--text-gray);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${p.summary}</p>
                             </div>
-                            <div style="display:flex;gap:8px;">
+                            <div style="display:flex;gap:8px;flex-shrink:0;">
                                 <button class="btn btn-outline" style="padding:6px 12px;font-size:0.8rem;" onclick="editPost(${p.id})">✏️</button>
                                 <button class="btn btn-outline" style="padding:6px 12px;font-size:0.8rem;color:#EF4444;border-color:rgba(239,68,68,0.4);" onclick="deletePost(${p.id})">🗑️</button>
                             </div>
@@ -758,27 +822,88 @@
             }
         }
 
-        function openPostEditor(post = null) {
-            const editor = document.getElementById('admin-post-editor');
-            const heading = document.getElementById('editor-title-heading');
-            editor.style.display = 'block';
-
-            if (post) {
-                heading.textContent = 'Редактировать статью';
-                document.getElementById('edit-post-id').value = post.id;
-                document.getElementById('edit-post-title').value = post.title;
-                document.getElementById('edit-post-tags').value = Array.isArray(post.tags) ? post.tags.join(', ') : post.tags;
-                document.getElementById('edit-post-summary').value = post.summary;
-                document.getElementById('edit-post-content').value = post.content || post.summary;
+        function updateCoverPreview() {
+            const input = document.getElementById('edit-post-cover');
+            const previewBox = document.getElementById('edit-post-cover-preview');
+            const img = document.getElementById('cover-preview-img');
+            if (!input || !previewBox || !img) return;
+            const url = input.value.trim();
+            if (url) {
+                img.src = url;
+                previewBox.style.display = 'block';
             } else {
-                heading.textContent = 'Создать новую статью';
-                document.getElementById('post-editor-form').reset();
-                document.getElementById('edit-post-id').value = '';
+                previewBox.style.display = 'none';
             }
         }
 
+        async function handleAdminFileUpload(event, targetInputId) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const token = getAdminToken();
+            if (!token) {
+                alert('Сессия администратора не активна. Войдите в CMS.');
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const targetInput = document.getElementById(targetInputId);
+            if (targetInput) targetInput.placeholder = 'Загрузка на Яндекс.Диск... ⏳';
+
+            try {
+                const res = await fetch('/api/v1/admin/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || 'Ошибка загрузки файла');
+                }
+                const data = await res.json();
+                if (targetInput) {
+                    targetInput.value = data.url || data.local_url;
+                    updateCoverPreview();
+                }
+                alert('Файл успешно загружен на Яндекс.Диск! ☁️✨');
+            } catch (err) {
+                alert(`Ошибка загрузки: ${err.message}`);
+                if (targetInput) targetInput.placeholder = 'https://... или выберите файл';
+            }
+        }
+
+        function openPostEditor(post = null) {
+            const editor = document.getElementById('admin-post-editor');
+            const heading = document.getElementById('editor-title-heading');
+            if (!editor) return;
+            editor.style.display = 'block';
+
+            if (post) {
+                if (heading) heading.textContent = 'Редактировать статью';
+                document.getElementById('edit-post-id').value = post.id || '';
+                document.getElementById('edit-post-title').value = post.title || '';
+                document.getElementById('edit-post-tags').value = Array.isArray(post.tags) ? post.tags.join(', ') : (post.tags || '');
+                const coverInp = document.getElementById('edit-post-cover');
+                if (coverInp) coverInp.value = post.cover_image_url || '';
+                const videoInp = document.getElementById('edit-post-video');
+                if (videoInp) videoInp.value = post.video_url || '';
+                document.getElementById('edit-post-summary').value = post.summary || '';
+                document.getElementById('edit-post-content').value = post.content || post.summary || '';
+            } else {
+                if (heading) heading.textContent = 'Создать новую статью';
+                document.getElementById('post-editor-form').reset();
+                document.getElementById('edit-post-id').value = '';
+                const coverInp = document.getElementById('edit-post-cover');
+                if (coverInp) coverInp.value = '';
+                const videoInp = document.getElementById('edit-post-video');
+                if (videoInp) videoInp.value = '';
+            }
+            updateCoverPreview();
+        }
+
         function closePostEditor() {
-            document.getElementById('admin-post-editor').style.display = 'none';
+            const editor = document.getElementById('admin-post-editor');
+            if (editor) editor.style.display = 'none';
         }
 
         async function editPost(postId) {
@@ -795,14 +920,22 @@
 
         async function handleSavePost(e) {
             e.preventDefault();
-            const token = sessionStorage.getItem('admin_token');
-            if (!token) return;
+            const token = getAdminToken();
+            if (!token) {
+                alert('Сессия администратора истекла. Пожалуйста, войдите в систему.');
+                openModal('admin-login-modal');
+                return;
+            }
 
             const btn = document.getElementById('save-post-btn');
             const postId = document.getElementById('edit-post-id').value;
             const title = document.getElementById('edit-post-title').value.trim();
             const tagsRaw = document.getElementById('edit-post-tags').value;
             const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+            const coverInput = document.getElementById('edit-post-cover');
+            const videoInput = document.getElementById('edit-post-video');
+            const cover_image_url = coverInput ? coverInput.value.trim() : '';
+            const video_url = videoInput ? videoInput.value.trim() : '';
             const summary = document.getElementById('edit-post-summary').value.trim();
             const content = document.getElementById('edit-post-content').value.trim();
 
@@ -819,10 +952,20 @@
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
                     },
-                    body: JSON.stringify({ title, summary, content, tags })
+                    body: JSON.stringify({
+                        title,
+                        summary,
+                        content,
+                        tags,
+                        cover_image_url,
+                        video_url
+                    })
                 });
 
-                if (!res.ok) throw new Error('Ошибка сохранения статьи');
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || 'Ошибка сохранения статьи');
+                }
 
                 closePostEditor();
                 loadAdminPosts();
@@ -839,20 +982,27 @@
 
         async function deletePost(postId) {
             if (!confirm('Вы уверены, что хотите удалить эту статью?')) return;
-            const token = sessionStorage.getItem('admin_token');
-            if (!token) return;
+            const token = getAdminToken();
+            if (!token) {
+                alert('Сессия администратора не активна.');
+                return;
+            }
 
             try {
                 const res = await fetch(`/api/v1/admin/posts/${postId}`, {
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (!res.ok) throw new Error('Ошибка удаления');
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.detail || 'Ошибка удаления');
+                }
                 loadAdminPosts();
                 renderLatestPosts();
                 renderBlog();
+                alert('Статья успешно удалена.');
             } catch(e) {
-                alert('Не удалось удалить статью.');
+                alert(`Не удалось удалить статью: ${e.message}`);
             }
         }
 
