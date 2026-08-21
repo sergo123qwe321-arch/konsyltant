@@ -665,9 +665,9 @@ def get_public_posts(tag=None):
     conn = get_connection()
     cursor = conn.cursor()
     if tag:
-        execute_query(cursor, "SELECT id, title, summary, content, tags, created_at FROM public_posts WHERE tags LIKE ?", (f'%"{tag}"%',))
+        execute_query(cursor, "SELECT id, title, summary, content, tags, created_at FROM public_posts WHERE tags LIKE ? ORDER BY created_at DESC, id DESC", (f'%"{tag}"%',))
     else:
-        execute_query(cursor, "SELECT id, title, summary, content, tags, created_at FROM public_posts")
+        execute_query(cursor, "SELECT id, title, summary, content, tags, created_at FROM public_posts ORDER BY created_at DESC, id DESC")
     rows = cursor.fetchall()
     conn.close()
     import json

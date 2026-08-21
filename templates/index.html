@@ -4,7 +4,12 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Центр ментального здоровья «Маленькая Страна»</title>
+<title>Детская вселенная: Маленькая страна | Центр ментального здоровья</title>
+<meta name="description" content="Детская вселенная: Маленькая страна — центр ментального здоровья для детей. Профессиональная помощь нейропсихологов, логопедов и психотерапевтов."/>
+<meta property="og:title" content="Детская вселенная: Маленькая страна | Центр ментального здоровья"/>
+<meta property="og:description" content="Детская вселенная: Маленькая страна — пространство бережной поддержки и развития вашего ребёнка."/>
+<meta property="og:type" content="website"/>
+<meta property="og:url" content="https://цмз.site"/>
 <!-- Google Fonts: Rubik (идеально округлый, дружелюбный и современный шрифт) -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
@@ -32,10 +37,12 @@
 </div>
 <nav id="nav-menu">
 <ul class="nav-links">
+<li><a href="#posts">Новые посты</a></li>
+<li><a href="#blog">Библиотека</a></li>
+<li><a href="#characters">Персонажи</a></li>
 <li><a href="#about">О центре</a></li>
 <li><a href="#services">Услуги</a></li>
 <li><a href="#doctors">Специалисты</a></li>
-<li><a href="#blog">Полезное</a></li>
 <li><a href="#events">Мероприятия</a></li>
 <li><a href="#contacts">Контакты</a></li>
 </ul>
@@ -51,11 +58,11 @@
 </div>
 </header>
 <!-- БЛОК 2: ПЕРВЫЙ ЭКРАН (HERO SECTION) -->
-<section class="hero" id="hero" data-alik-comment="Привет! Я Алик — весёлый музыкант и твой проводник по Маленькой Стране! 🎸">
+<section class="hero" id="hero" data-alik-comment="Привет! Я Алик — твой проводник по Маленькой Стране! 🎸">
 <div class="hero-container">
 <div class="hero-content">
 <div class="demo-badge" id="app-demo-badge">
-<span>✨</span> Детская музыкальная вселенная «Маленькая Страна»
+<span>✨</span> Детская вселенная: Маленькая страна
                 </div>
 <h1>Пространство бережной поддержки и развития вашего ребёнка</h1>
 <p>Профессиональная помощь нейропсихологов, логопедов и детских психотерапевтов с персональным цифровым сопровождением.</p>
@@ -69,18 +76,70 @@
 </div>
 </div>
 <div class="hero-visual">
-<!-- Встроенный интерактивный Pixar-шоукейс с персонажами-звуками -->
-<div class="character-showcase">
-<div class="mascot-glow" id="showcase-glow"></div>
-<div class="showcase-main" id="showcase-main">
-<!-- Выделенный слой персонажа Алика для адаптивности и FLIP-анимации -->
 <div class="hero-alik-wrapper" id="hero-alik-wrapper">
     <picture id="hero-alik-picture">
         <source srcset="/static/assets/img/alik/Alik.webp" type="image/webp">
         <img src="/static/assets/img/alik/Alik.png" alt="Гитарист Алик" id="hero-alik-img" class="hero-alik-img"/>
     </picture>
 </div>
-<img alt="Басист Алик" id="showcase-img" class="showcase-img" style="display: none;" onerror="this.src='/static/images/char_a.jpg'; this.onerror=function(){ this.style.display='none'; document.getElementById('showcase-ph').style.display='flex'; }" src="/static/images/char_a.jpg"/>
+</div>
+</div>
+</section>
+
+<!-- БЛОК 2.1: СЕКЦИЯ «НОВЫЕ ПОСТЫ» (ИЗ CMS, СОРТИРОВКА ПО CREATED_AT) -->
+<section id="posts" class="posts-section" data-alik-comment="Здесь публикуются свежие полезные материалы от наших ведущих специалистов! 📰✨">
+<div class="demo-badge" style="margin: 0 auto 16px auto; display: table;">📰 Свежие публикации экспертов</div>
+<h2>Новые посты</h2>
+<p style="text-align: center; color: var(--text-muted); margin-top: -30px; margin-bottom: 40px; font-size: 1.05rem;">Актуальные статьи и практические рекомендации наших нейропсихологов и логопедов</p>
+<div class="blog-grid" id="latest-posts-container">
+<div class="card-glass blog-card skeleton-card">
+<div class="skeleton skeleton-img"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+</div>
+<div class="card-glass blog-card skeleton-card">
+<div class="skeleton skeleton-img"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+</div>
+<div class="card-glass blog-card skeleton-card">
+<div class="skeleton skeleton-img"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+</div>
+</div>
+</section>
+
+<!-- БЛОК 3: ПОЛЕЗНАЯ БИБЛИОТЕКА (БЛОГ, КАТЕГОРИИ И ТЕГИ) -->
+<section id="blog" data-alik-comment="В нашей библиотеке — проверенные речевые игры и полезные советы нейропсихологов для занятий дома! 📖🧸">
+<div class="demo-badge" style="margin: 0 auto 16px auto; display: table;">📚 База знаний для родителей</div>
+<h2>Полезная Библиотека</h2>
+<div class="chips-container" id="blog-tags-container">
+<button class="chip active" data-tag="Все">🧸 Все статьи</button>
+<button class="chip" data-tag="Развитие речи">🗣️ Развитие речи</button>
+<button class="chip" data-tag="Эмоции и поведение">🧠 Эмоции и поведение</button>
+<button class="chip" data-tag="Сон и режим">🌙 Сон и режим</button>
+<button class="chip" data-tag="Игры">🎲 Игры</button>
+</div>
+<div class="blog-grid" id="blog-container">
+<div class="card-glass blog-card skeleton-card">
+<div class="skeleton skeleton-img"></div>
+<div class="skeleton skeleton-title"></div>
+<div class="skeleton skeleton-text"></div>
+</div>
+</div>
+</section>
+
+<!-- БЛОК 3.1: ПЕРСОНАЖИ ЗВУКОВ (PIXAR SHOWCASE) -->
+<section id="characters" class="characters-section" data-alik-comment="Познакомьтесь с героями звуков! Каждый персонаж помогает осваивать правильную речь в игре! 🎶🎷">
+<div class="demo-badge" style="margin: 0 auto 16px auto; display: table;">🎨 Интерактивные герои</div>
+<h2>Персонажи звуков</h2>
+<p style="text-align: center; color: var(--text-muted); margin-top: -30px; margin-bottom: 40px; font-size: 1.05rem;">Интерактивные герои помогают малышам осваивать звуки, развивать речь и выражать эмоции играючи</p>
+<div style="max-width: 900px; margin: 0 auto;">
+<div class="character-showcase">
+<div class="mascot-glow" id="showcase-glow"></div>
+<div class="showcase-main" id="showcase-main">
+<img alt="Басист Алик" id="showcase-img" class="showcase-img" onerror="this.src='/static/images/char_a.jpg'; this.onerror=function(){ this.style.display='none'; document.getElementById('showcase-ph').style.display='flex'; }" src="/static/images/char_a.jpg"/>
 <div class="showcase-placeholder" id="showcase-ph" style="display: none;">🧸</div>
 </div>
 <div class="showcase-info">
@@ -97,8 +156,8 @@
 </div>
 </div>
 </div>
-</div>
 </section>
+
 <!-- БЛОК 4: О ЦЕНТРЕ -->
 <section id="about" data-alik-comment="В нашей Стране всё устроено бережно: комфортные игровые залы и забота о каждом шаге малыша! 🏫">
 <div class="about-wrapper">
@@ -133,7 +192,7 @@
 </div>
 </div>
 </section>
-<!-- БЛОК 4: КАРТОЧКИ УСЛУГ (ДИНАМИЧЕСКИЕ ЧЕРЕЗ API) -->
+<!-- БЛОК 5: КАРТОЧКИ УСЛУГ (ДИНАМИЧЕСКИЕ ЧЕРЕЗ API) -->
 <section id="services" data-alik-comment="Наши волшебные направления: нейропсихология, запуск речи и мягкая детская психотерапия! 🧠🗣️">
 <h2>Направления заботы</h2>
 <div class="services-grid" id="services-container">
@@ -157,7 +216,7 @@
 </div>
 </div>
 </section>
-<!-- БЛОК 5: НАША КОМАНДА (ДИНАМИЧЕСКИЕ ЧЕРЕЗ API) -->
+<!-- БЛОК 6: НАША КОМАНДА (ДИНАМИЧЕСКИЕ ЧЕРЕЗ API) -->
 <section id="doctors" data-alik-comment="Познакомьтесь с нашими волшебниками! Опытные специалисты бережно помогут раскрыть таланты ребёнка. 👩‍⚕️👨‍⚕️">
 <h2>Волшебники Центра</h2>
 <div class="doctors-grid" id="doctors-container">
@@ -169,25 +228,7 @@
 </div>
 </div>
 </section>
-<!-- БЛОК 3: БИБЛИОТЕКА РОДИТЕЛЬСКОГО ОПЫТА (Блог, Теги) -->
-<section id="blog" data-alik-comment="В нашей библиотеке — проверенные речевые игры и полезные советы нейропсихологов для занятий дома! 📖🧸">
-<h2>Полезная Библиотека</h2>
-<div class="chips-container" id="blog-tags-container">
-<button class="chip active" data-tag="Все">🧸 Все статьи</button>
-<button class="chip" data-tag="Развитие речи">🗣️ Развитие речи</button>
-<button class="chip" data-tag="Эмоции и поведение">🧠 Эмоции и поведение</button>
-<button class="chip" data-tag="Сон и режим">🌙 Сон и режим</button>
-<button class="chip" data-tag="Игры">🎲 Игры</button>
-</div>
-<div class="blog-grid" id="blog-container">
-<div class="card-glass blog-card skeleton-card">
-<div class="skeleton skeleton-img"></div>
-<div class="skeleton skeleton-title"></div>
-<div class="skeleton skeleton-text"></div>
-</div>
-</div>
-</section>
-<!-- БЛОК 6: ЖИЗНЬ ЦЕНТРА (Мероприятия & Живые фото) -->
+<!-- БЛОК 7: ЖИЗНЬ ЦЕНТРА (Мероприятия & Живые фото) -->
 <section id="events" data-alik-comment="Мы часто проводим интерактивные мастер-классы для родителей и тёплые встречи нашего Клуба! 🔮✨">
 <h2>События &amp; Жизнь центра</h2>
 <div class="events-layout">
@@ -221,7 +262,7 @@
 </div>
 </div>
 </section>
-<!-- БЛОК 7: РАЗДЕЛ "ОСОБАЯ ЗАБОТА" -->
+<!-- БЛОК 8: РАЗДЕЛ "ОСОБАЯ ЗАБОТА" -->
 <section id="special-care-section" style="padding-top: 0; padding-bottom: 50px;" data-alik-comment="Медицинские данные и анкеты надёжно зашифрованы по стандартам 152-ФЗ и доступны только вашему врачу. 🛡️">
 <div class="special-care">
 <div class="care-content">
@@ -232,7 +273,7 @@
 </div>
 </div>
 </section>
-<!-- БЛОК 8: КОНТАКТЫ & ФОРМА ОБРАТНОЙ СВЯЗИ -->
+<!-- БЛОК 9: КОНТАКТЫ & ФОРМА ОБРАТНОЙ СВЯЗИ -->
 <section id="contacts" data-alik-comment="Заполните заявку, и наша служба заботы свяжется с вами и подберёт самое удобное время! ✍️🚀">
 <h2>Ждем вас в гости!</h2>
 <div class="contacts-wrapper">
@@ -252,7 +293,7 @@
 <option value="Нейропсихология">🧠 Нейропсихологическая диагностика</option>
 <option value="Логопедия">🗣️ Запуск и коррекция речи (Логопед)</option>
 <option value="Детская психотерапия">🧸 Детская психотерапия</option>
-<option value="Развивающие группы">🎵 Музыкально-развивающие группы</option>
+<option value="Развивающие группы">🎵 Развивающие группы</option>
 <option value="Другое">❓ Другой вопрос</option>
 </select>
 </div>
@@ -300,17 +341,20 @@
 </div>
 </div>
 </section>
-<!-- БЛОК 9: ПОДВАЛ (FOOTER) -->
+<!-- БЛОК 10: ПОДВАЛ (FOOTER) -->
 <footer data-alik-comment="Всегда рады видеть вас в Маленькой Стране! До скорых волшебных встреч! 🌟">
 <div class="footer-container">
 <div class="footer-top">
 <div class="footer-logo">🧸 МаленькаяСтрана</div>
 <ul class="footer-nav">
+<li><a href="#posts">Новые посты</a></li>
+<li><a href="#blog">Библиотека</a></li>
+<li><a href="#characters">Персонажи</a></li>
 <li><a href="#about">О центре</a></li>
 <li><a href="#services">Услуги</a></li>
 <li><a href="#doctors">Специалисты</a></li>
-<li><a href="#blog">Полезное</a></li>
 <li><a href="#events">Мероприятия</a></li>
+<li><a href="#contacts">Контакты</a></li>
 </ul>
 </div>
 <div class="footer-divider"></div>
@@ -447,11 +491,11 @@
 <div class="modal-content" style="max-width: 440px;">
 <button class="close-modal" onclick="closeModal('admin-login-modal')">×</button>
 <h3>🔐 Панель Управления (CMS)</h3>
-<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Управление заявками и статьями экспертного блога</p>
+<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Управление заявками, публикациями и операционной аналитикой</p>
 <form id="admin-login-form" onsubmit="handleAdminLogin(event)">
 <div class="form-group">
 <label class="form-label" for="admin-user">Логин администратора</label>
-<input class="form-input" id="admin-user" placeholder="admin" required="" type="text" value="admin"/>
+<input class="form-input" id="admin-user" placeholder="admin" required="" type="text" value="producer-admin@cmz.site"/>
 </div>
 <div class="form-group">
 <label class="form-label" for="admin-pass">Пароль</label>
@@ -467,7 +511,7 @@
 
 <!-- МОДАЛЬНОЕ ОКНО: ДАШБОРД АДМИНИСТРАТОРА (CMS) -->
 <div class="modal" id="admin-dashboard-modal">
-<div class="modal-content" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; padding: 24px;">
+<div class="modal-content" style="max-width: 960px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; padding: 24px;">
 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 16px;">
 <div style="display: flex; align-items: center; gap: 12px;">
 <h3 style="margin: 0; font-size: 1.3rem;">🎛️ CMS «Маленькая Страна»</h3>
@@ -478,9 +522,10 @@
 <button class="close-modal" onclick="closeModal('admin-dashboard-modal')" style="position: static;">×</button>
 </div>
 </div>
-<div class="admin-tabs" style="display: flex; gap: 10px; margin-bottom: 16px;">
+<div class="admin-tabs" style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
 <button class="btn btn-turquoise" id="tab-btn-leads" onclick="switchAdminTab('leads')" style="padding: 8px 16px; font-size: 0.85rem;">📋 Заявки с сайта (<span id="leads-counter">0</span>)</button>
 <button class="btn btn-outline" id="tab-btn-posts" onclick="switchAdminTab('posts')" style="padding: 8px 16px; font-size: 0.85rem;">✍️ Управление блогом</button>
+<button class="btn btn-outline" id="tab-btn-ops" onclick="switchAdminTab('ops')" style="padding: 8px 16px; font-size: 0.85rem;">📊 Операционная панель</button>
 </div>
 <!-- Вкладка 1: Заявки с сайта -->
 <div id="admin-tab-leads" style="overflow-y: auto; flex: 1; padding-right: 4px;">
@@ -526,6 +571,17 @@
 </div>
 <div id="admin-posts-list" style="display: flex; flex-direction: column; gap: 10px;">
 <!-- Список статей админки -->
+</div>
+</div>
+<!-- Вкладка 3: Операционная панель -->
+<div id="admin-tab-ops" style="display: none; overflow-y: auto; flex: 1; padding-right: 4px;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+<h4 style="margin: 0; font-size: 1.05rem;">📊 Метрики системы и наблюдаемость</h4>
+<button class="btn btn-outline" onclick="loadAdminOperations()" style="padding: 4px 10px; font-size: 0.75rem;">🔄 Обновить данные</button>
+</div>
+<div id="admin-ops-content" style="display: flex; flex-direction: column; gap: 16px;">
+<div style="text-align: center; color: var(--text-muted); padding: 30px;">Загрузка операционных метрик... ⏳</div>
+</div>
 </div>
 </div>
 </div>

@@ -253,6 +253,43 @@
             });
         }
 
+        async function renderLatestPosts() {
+            const container = document.getElementById('latest-posts-container');
+            if (!container) return;
+            const data = await loadData('/posts');
+            cachedPosts = data;
+            container.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">🦄 Новых публикаций пока нет.</div>`;
+                return;
+            }
+
+            // Рендерим свежие статьи (до 6 постов)
+            data.slice(0, 6).forEach(post => {
+                let tagsList = [];
+                if (Array.isArray(post.tags)) {
+                    tagsList = post.tags;
+                } else if (typeof post.tags === 'string') {
+                    tagsList = post.tags.split(',').map(t => t.trim().replace(/[\[\]"]/g, ''));
+                }
+                if (tagsList.length === 0) tagsList = ['Экспертное'];
+
+                const tagsHTML = tagsList.map(t => `<span class="blog-tag">${t}</span>`).join('');
+                container.innerHTML += `
+                    <div class="card-glass blog-card">
+                        <div class="blog-tags">${tagsHTML}</div>
+                        <div class="blog-date">📅 ${post.created_at ? post.created_at.split(' ')[0] : 'Недавно'}</div>
+                        <h3 style="margin-bottom: 10px; font-size: 1.15rem; line-height: 1.4;">${post.title}</h3>
+                        <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-gray); margin-bottom: 16px; display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${post.summary}</p>
+                        <div class="blog-card-footer" style="margin-top:auto;">
+                            <button class="read-more" onclick="openArticleReader(${post.id})">Читать статью ✨</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
         async function renderBlog(tag = null) {
             const endpoint = tag ? `/posts?tag=${encodeURIComponent(tag)}` : '/posts';
             const data = await loadData(endpoint);
@@ -458,21 +495,193 @@
         function switchAdminTab(tab) {
             const tabLeads = document.getElementById('admin-tab-leads');
             const tabPosts = document.getElementById('admin-tab-posts');
+            const tabOps = document.getElementById('admin-tab-ops');
             const btnLeads = document.getElementById('tab-btn-leads');
             const btnPosts = document.getElementById('tab-btn-posts');
+            const btnOps = document.getElementById('tab-btn-ops');
 
             if (tab === 'leads') {
-                tabLeads.style.display = 'block';
-                tabPosts.style.display = 'none';
-                btnLeads.className = 'btn btn-turquoise';
-                btnPosts.className = 'btn btn-outline';
+                if (tabLeads) tabLeads.style.display = 'block';
+                if (tabPosts) tabPosts.style.display = 'none';
+                if (tabOps) tabOps.style.display = 'none';
+                if (btnLeads) btnLeads.className = 'btn btn-turquoise';
+                if (btnPosts) btnPosts.className = 'btn btn-outline';
+                if (btnOps) btnOps.className = 'btn btn-outline';
                 loadAdminLeads();
-            } else {
-                tabLeads.style.display = 'none';
-                tabPosts.style.display = 'block';
-                btnLeads.className = 'btn btn-outline';
-                btnPosts.className = 'btn btn-turquoise';
+            } else if (tab === 'posts') {
+                if (tabLeads) tabLeads.style.display = 'none';
+                if (tabPosts) tabPosts.style.display = 'block';
+                if (tabOps) tabOps.style.display = 'none';
+                if (btnLeads) btnLeads.className = 'btn btn-outline';
+                if (btnPosts) btnPosts.className = 'btn btn-turquoise';
+                if (btnOps) btnOps.className = 'btn btn-outline';
                 loadAdminPosts();
+            } else if (tab === 'ops') {
+                if (tabLeads) tabLeads.style.display = 'none';
+                if (tabPosts) tabPosts.style.display = 'none';
+                if (tabOps) tabOps.style.display = 'block';
+                if (btnLeads) btnLeads.className = 'btn btn-outline';
+                if (btnPosts) btnPosts.className = 'btn btn-outline';
+                if (btnOps) btnOps.className = 'btn btn-turquoise';
+                loadAdminOperations();
+            }
+        }
+
+        async function loadAdminOperations() {
+            const container = document.getElementById('admin-ops-content');
+            const token = sessionStorage.getItem('admin_token');
+            if (!container || !token) return;
+
+            container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px;">Загрузка операционных метрик и баланса... ⏳</div>';
+
+            try {
+                const headers = { 'Authorization': `Bearer ${token}` };
+                const [resEtl, resLlm, resDisk] = await Promise.all([
+                    fetch('/api/v1/admin/etl/metrics', { headers }).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch('/api/v1/admin/llm/usage', { headers }).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch('/api/v1/health/yandex-disk', { headers }).then(r => r.ok ? r.json() : null).catch(() => null)
+                ]);
+
+                let html = '';
+
+                // 1. КАРТОЧКА: ЗДОРОВЬЕ ЯНДЕКС.ДИСКА
+                if (resDisk) {
+                    const totalGb = resDisk.total_space_bytes ? (resDisk.total_space_bytes / (1024 ** 3)).toFixed(1) : '-';
+                    const usedGb = resDisk.used_space_bytes ? (resDisk.used_space_bytes / (1024 ** 3)).toFixed(1) : '-';
+                    const freeGb = (resDisk.total_space_bytes && resDisk.used_space_bytes) ? ((resDisk.total_space_bytes - resDisk.used_space_bytes) / (1024 ** 3)).toFixed(1) : '-';
+                    const isHealthy = resDisk.status === 'healthy';
+
+                    html += `
+                        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(6,182,212,0.3);border-radius:12px;padding:16px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                                <h5 style="margin:0;font-size:1.05rem;color:var(--accent-turquoise);">☁️ Яндекс.Диск (Суверенное РФ Хранилище)</h5>
+                                <span style="background:${isHealthy ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'};color:${isHealthy ? '#34D399' : '#F87171'};padding:3px 8px;border-radius:6px;font-size:0.75rem;font-weight:600;">
+                                    ${isHealthy ? '✅ Подключен и доступен' : '❌ Ошибка подключения'}
+                                </span>
+                            </div>
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;">
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Общий объем</div>
+                                    <strong style="font-size:1.1rem;color:#fff;">${totalGb} ГБ</strong>
+                                </div>
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Занято</div>
+                                    <strong style="font-size:1.1rem;color:#FBBF24;">${usedGb} ГБ</strong>
+                                </div>
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Свободно</div>
+                                    <strong style="font-size:1.1rem;color:#34D399;">${freeGb} ГБ</strong>
+                                </div>
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Аккаунт</div>
+                                    <strong style="font-size:0.9rem;color:var(--accent-turquoise);word-break:break-all;">${resDisk.user || 'Yandex OAuth'}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // 2. КАРТОЧКА: ПРОИЗВОДИТЕЛЬНОСТЬ ETL
+                if (resEtl && resEtl.aggregates) {
+                    const agg = resEtl.aggregates;
+                    const hist = resEtl.history || [];
+                    html += `
+                        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(124,58,237,0.3);border-radius:12px;padding:16px;">
+                            <h5 style="margin:0 0 12px 0;font-size:1.05rem;color:var(--accent-purple);">⚡ ETL Конвейер (OCR и Векторизация документов)</h5>
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;margin-bottom:14px;">
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Обработано папок</div>
+                                    <strong style="font-size:1.1rem;color:#fff;">${agg.total_folders_processed}</strong>
+                                </div>
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Ср. время на папку</div>
+                                    <strong style="font-size:1.1rem;color:var(--accent-turquoise);">${agg.avg_folder_duration_seconds ? agg.avg_folder_duration_seconds.toFixed(1) + ' с' : '-'}</strong>
+                                </div>
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Ср. скорость на файл</div>
+                                    <strong style="font-size:1.1rem;color:#34D399;">${agg.avg_time_per_file_seconds ? agg.avg_time_per_file_seconds.toFixed(2) + ' с/файл' : '-'}</strong>
+                                </div>
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Всего файлов / чанков</div>
+                                    <strong style="font-size:1.1rem;color:#FBBF24;">${agg.total_files_processed} / ${agg.total_chunks_created}</strong>
+                                </div>
+                            </div>
+                            ${hist.length > 0 ? `
+                                <div style="font-size:0.85rem;font-weight:600;color:var(--text-gray);margin-bottom:6px;">Последние запуски:</div>
+                                <div style="display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto;">
+                                    ${hist.slice(0, 5).map(h => `
+                                        <div style="background:rgba(0,0,0,0.2);padding:6px 10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;">
+                                            <span style="color:#fff;font-family:monospace;">📁 ${h.folder_name.replace('disk:/', '')}</span>
+                                            <span style="color:var(--text-muted);">${h.file_count} файлов • ⏱️ ${h.duration_seconds.toFixed(1)} с (${h.avg_time_per_file_seconds.toFixed(2)} с/ф)</span>
+                                            <span style="color:var(--accent-turquoise);">${h.created_at ? h.created_at.split(' ')[0] : ''}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : '<div style="font-size:0.85rem;color:var(--text-muted);">История запусков пока пуста.</div>'}
+                        </div>
+                    `;
+                }
+
+                // 3. КАРТОЧКА: РАСХОД ТОКЕНОВ GIGACHAT И ОФИЦИАЛЬНЫЙ БАЛАНС
+                if (resLlm) {
+                    const usage = resLlm.usage_summary || {};
+                    const bal = resLlm.balance_info || {};
+                    const todayTokens = usage.today ? usage.today.total_tokens : 0;
+                    const weekTokens = usage.last_7_days ? usage.last_7_days.total_tokens : 0;
+                    const allTokens = usage.all_time ? usage.all_time.total_tokens : 0;
+
+                    // Модели
+                    const modelsList = usage.by_model || [];
+                    const balances = (bal.balance && bal.balance.balance) ? bal.balance.balance : [];
+
+                    html += `
+                        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(251,191,36,0.3);border-radius:12px;padding:16px;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                                <h5 style="margin:0;font-size:1.05rem;color:#FBBF24;">🤖 Потребление токенов & Баланс GigaChat</h5>
+                                <span style="background:rgba(251,191,36,0.15);color:#FBBF24;padding:3px 8px;border-radius:6px;font-size:0.75rem;font-weight:600;">
+                                    ${bal.status === 'available' ? '💰 Пакет активен' : '💳 Pay-As-You-Go'}
+                                </span>
+                            </div>
+
+                            <!-- Расход токенов -->
+                            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;margin-bottom:14px;">
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Расход за сегодня</div>
+                                    <strong style="font-size:1.1rem;color:#fff;">${todayTokens.toLocaleString('ru-RU')} токенов</strong>
+                                </div>
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">За последние 7 дней</div>
+                                    <strong style="font-size:1.1rem;color:var(--accent-turquoise);">${weekTokens.toLocaleString('ru-RU')} токенов</strong>
+                                </div>
+                                <div style="background:rgba(0,0,0,0.25);padding:10px;border-radius:8px;">
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">За всё время</div>
+                                    <strong style="font-size:1.1rem;color:#34D399;">${allTokens.toLocaleString('ru-RU')} токенов</strong>
+                                </div>
+                            </div>
+
+                            <!-- Остатки баланса Сбера -->
+                            ${balances.length > 0 ? `
+                                <div style="font-size:0.85rem;font-weight:600;color:var(--text-gray);margin-bottom:6px;">Остатки официального баланса Сбера:</div>
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:8px;margin-bottom:10px;">
+                                    ${balances.map(b => `
+                                        <div style="background:rgba(0,0,0,0.2);padding:8px 10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;">
+                                            <span style="color:#fff;font-weight:500;">${b.usage}</span>
+                                            <span style="color:#34D399;font-weight:600;">${Number(b.value).toLocaleString('ru-RU')} ток.</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : `
+                                <div style="background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:6px;font-size:0.85rem;color:var(--text-muted);">
+                                    ${bal.message || 'Официальный баланс получен.'}
+                                </div>
+                            `}
+                        </div>
+                    `;
+                }
+
+                container.innerHTML = html || '<div style="color:var(--text-muted);padding:20px;text-align:center;">Не удалось загрузить данные мониторинга.</div>';
+            } catch (err) {
+                container.innerHTML = `<div style="color:#EF4444;text-align:center;padding:20px;">Ошибка загрузки метрик: ${err.message}</div>`;
             }
         }
 
@@ -617,6 +826,7 @@
 
                 closePostEditor();
                 loadAdminPosts();
+                renderLatestPosts();
                 renderBlog();
                 alert(postId ? 'Статья успешно обновлена! ✨' : 'Статья успешно опубликована! 🚀');
             } catch (err) {
@@ -639,6 +849,7 @@
                 });
                 if (!res.ok) throw new Error('Ошибка удаления');
                 loadAdminPosts();
+                renderLatestPosts();
                 renderBlog();
             } catch(e) {
                 alert('Не удалось удалить статью.');
@@ -1267,6 +1478,7 @@
             }
 
             Promise.all([
+                renderLatestPosts(),
                 renderServices(),
                 renderDoctors(),
                 renderBlog(),
