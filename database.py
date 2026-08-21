@@ -18,13 +18,23 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+def is_postgres():
+    db_url = os.getenv("DATABASE_URL", DATABASE_URL)
+    return bool(db_url and psycopg2 and not db_url.startswith("sqlite"))
+
 def get_connection():
-    if DATABASE_URL and psycopg2:
-        return psycopg2.connect(DATABASE_URL)
-    return sqlite3.connect(DB_FILE)
+    db_url = os.getenv("DATABASE_URL", DATABASE_URL)
+    if is_postgres():
+        return psycopg2.connect(db_url)
+    db_path = DB_FILE
+    if db_url and db_url.startswith("sqlite:///"):
+        db_path = db_url.replace("sqlite:///", "", 1)
+    elif db_url and db_url.startswith("sqlite://"):
+        db_path = db_url.replace("sqlite://", "", 1)
+    return sqlite3.connect(db_path)
 
 def execute_query(cursor, query, params=()):
-    if DATABASE_URL and psycopg2:
+    if is_postgres():
         # В PostgreSQL используется синтаксис %s вместо ?
         query = query.replace("?", "%s")
     if params is None or len(params) == 0:
