@@ -15,16 +15,13 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Render.com иногда выдает строку, начинающуюся с postgres://, 
 # которая устарела для современных драйверов, поэтому принудительно заменяем на postgresql://
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-def is_postgres():
+def check_is_postgres():
     db_url = os.getenv("DATABASE_URL", DATABASE_URL)
     return bool(db_url and psycopg2 and not db_url.startswith("sqlite"))
 
 def get_connection():
     db_url = os.getenv("DATABASE_URL", DATABASE_URL)
-    if is_postgres():
+    if check_is_postgres():
         return psycopg2.connect(db_url)
     db_path = DB_FILE
     if db_url and db_url.startswith("sqlite:///"):
@@ -34,7 +31,7 @@ def get_connection():
     return sqlite3.connect(db_path)
 
 def execute_query(cursor, query, params=()):
-    if is_postgres():
+    if check_is_postgres():
         # В PostgreSQL используется синтаксис %s вместо ?
         query = query.replace("?", "%s")
     if params is None or len(params) == 0:
@@ -50,7 +47,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    is_postgres = bool(DATABASE_URL and psycopg2)
+    is_postgres = check_is_postgres()
     if is_postgres:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS patient_access (
@@ -604,7 +601,7 @@ def get_db_indexes(conn=None) -> list:
         should_close = True
 
     cursor = conn.cursor()
-    is_postgres = bool(DATABASE_URL and psycopg2)
+    is_postgres = check_is_postgres()
 
     indexes = []
     try:
@@ -1017,7 +1014,7 @@ def create_doctor(
 ) -> dict:
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = bool(DATABASE_URL and psycopg2)
+    is_postgres = check_is_postgres()
     val_verified = is_verified if is_postgres else (1 if is_verified else 0)
 
     # Проверяем, существует ли уже врач с таким номером лицензии или email
@@ -1103,7 +1100,7 @@ def get_doctor_by_id(doctor_id: int) -> dict:
 def verify_doctor(doctor_id: int) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = bool(DATABASE_URL and psycopg2)
+    is_postgres = check_is_postgres()
     val_verified = True if is_postgres else 1
     execute_query(cursor, "UPDATE doctors SET is_verified = ? WHERE id = ?", (val_verified, doctor_id))
     affected = cursor.rowcount
@@ -1196,7 +1193,7 @@ def count_active_shares(patient_folder_id: str) -> int:
     """
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = bool(DATABASE_URL and psycopg2)
+    is_postgres = check_is_postgres()
     now_sql = "CURRENT_TIMESTAMP" if is_postgres else "datetime('now')"
     is_active_val = True if is_postgres else 1
     
@@ -1241,7 +1238,7 @@ def revoke_share_grant(grant_id: int) -> bool:
     """
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = bool(DATABASE_URL and psycopg2)
+    is_postgres = check_is_postgres()
     is_active_val = False if is_postgres else 0
     execute_query(cursor, "UPDATE patient_share_grants SET is_active = ? WHERE id = ?", (is_active_val, grant_id))
     affected = cursor.rowcount
@@ -1255,7 +1252,7 @@ def get_active_shares_for_patient(patient_folder_id: str) -> list:
     """
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = bool(DATABASE_URL and psycopg2)
+    is_postgres = check_is_postgres()
     now_sql = "CURRENT_TIMESTAMP" if is_postgres else "datetime('now')"
     is_active_val = True if is_postgres else 1
     
@@ -1283,7 +1280,7 @@ def get_active_shares_for_patient(patient_folder_id: str) -> list:
 def create_share_grant(patient_folder_id: str, doctor_id: Optional[int] = None, ttl_hours: int = 72) -> str:
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = bool(DATABASE_URL and psycopg2)
+    is_postgres = check_is_postgres()
     share_token = f"grant_{secrets.token_urlsafe(32)}"
     now_utc = datetime.now(timezone.utc)
     expires_at = now_utc + timedelta(hours=ttl_hours)
