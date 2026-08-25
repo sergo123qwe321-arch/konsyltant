@@ -75,6 +75,7 @@ def init_db():
         cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS experience_years INTEGER DEFAULT 0")
         cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(255) DEFAULT ''")
         cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS is_verified BOOLEAN DEFAULT FALSE")
+        cursor.execute("ALTER TABLE patient_access ADD COLUMN IF NOT EXISTS email VARCHAR(255) DEFAULT ''")
         conn.commit()
 
         cursor.execute("""
@@ -315,7 +316,8 @@ def init_db():
             ("specialization", "TEXT DEFAULT ''"),
             ("experience_years", "INTEGER DEFAULT 0"),
             ("avatar_url", "TEXT DEFAULT ''"),
-            ("is_verified", "BOOLEAN DEFAULT 0")
+            ("is_verified", "BOOLEAN DEFAULT 0"),
+            ("email", "TEXT DEFAULT ''")
         ]
         for col_name, col_def in sqlite_cols:
             if col_name not in existing_cols:
@@ -739,6 +741,7 @@ def ensure_indexes(conn=None):
     # 15. idx_public_events_date — ускоряет выборку мероприятий клиники по дате
     INDEX_SPECS = [
         ("idx_patient_access_token", "patient_access", "access_token", True),
+        ("idx_patient_access_email", "patient_access", "email", False),
         ("idx_patient_access_gdrive_folder", "patient_access", "gdrive_folder_id", False),
         ("idx_patient_access_role_verified", "patient_access", "role, is_verified", False),
         ("idx_patient_access_created_at", "patient_access", "created_at", False),
@@ -865,7 +868,7 @@ def create_patient_access(password: str, gdrive_folder_id: str) -> str:
 
 def verify_access(access_token: str, password: str) -> str:
     """
-    Проверяет токен и пароль. 
+    Проверяет токен или email и пароль. 
     Возвращает gdrive_folder_id при успехе, иначе None.
     """
     conn = get_connection()
@@ -873,8 +876,8 @@ def verify_access(access_token: str, password: str) -> str:
     
     execute_query(cursor, """
         SELECT password_hash, gdrive_folder_id FROM patient_access 
-        WHERE access_token = ?
-    """, (access_token,))
+        WHERE access_token = ? OR email = ?
+    """, (access_token, access_token))
     
     row = cursor.fetchone()
     conn.close()
@@ -890,11 +893,11 @@ def verify_access(access_token: str, password: str) -> str:
 
 def token_exists(access_token: str) -> bool:
     """
-    Проверяет, существует ли токен в базе данных.
+    Проверяет, существует ли токен или email в базе данных.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    execute_query(cursor, "SELECT 1 FROM patient_access WHERE access_token = ?", (access_token,))
+    execute_query(cursor, "SELECT 1 FROM patient_access WHERE access_token = ? OR email = ?", (access_token, access_token))
     exists = cursor.fetchone() is not None
     conn.close()
     return exists

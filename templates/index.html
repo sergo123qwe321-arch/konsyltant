@@ -433,11 +433,11 @@
 <div class="modal-content" style="max-width: 440px;">
 <button class="close-modal" onclick="closeModal('parent-modal')">×</button>
 <h3>🧸 Вход для родителей</h3>
-<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Войдите по ссылке или коду доступа из письма</p>
+<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Войдите по токену, email или персональной ссылке</p>
 <form id="parent-login-form" onsubmit="handleParentLogin(event)">
 <div class="form-group">
-<label class="form-label" for="parent-token-input">Ссылка или токен доступа</label>
-<input class="form-input" id="parent-token-input" placeholder="Введите токен или вставьте ссылку..." required="" type="text"/>
+<label class="form-label" for="parent-token-input">Токен доступа или Email</label>
+<input class="form-input" id="parent-token-input" placeholder="test_patient_token_2026 или patient@cmz.site" required="" type="text"/>
 </div>
 <div class="form-group">
 <label class="form-label" for="parent-pass-input">Пароль доступа</label>

@@ -25,42 +25,61 @@ docker compose build web
 docker compose up -d
 sleep 4
 
-echo '=== 4. SEED PRODUCER ADMIN ON POSTGRESQL ==='
-docker compose exec web python scripts/admin/seed_producer_admin.py
+echo '=== 4. SEED UAT FIXTURES (DOCTOR, PATIENT, ADMIN, POSTS) ==='
+docker compose exec web python scripts/admin/seed_uat_fixtures.py
 
 echo '=== 5. RUN IN-CONTAINER DISCOVER TESTS (107 TESTS) ==='
 docker compose exec web python -m unittest discover -s . -p "test_*.py" -v
 
-echo '=== 6. LIVE PRODUCTION VERIFICATION (v7.1-production) ==='
+echo '=== 6. LIVE PRODUCTION VERIFICATION ==='
 docker compose exec web python -c "
 import requests, json
 
 print('--- 1. LIVE ADMIN LOGIN ---')
-res_login = requests.post('http://127.0.0.1:8000/api/v1/admin/login', json={
+res_admin = requests.post('http://127.0.0.1:8000/api/v1/admin/login', json={
     'username': 'producer-admin@cmz.site',
     'password': 'AdminAccess2026!'
 })
-print('Admin Login Status:', res_login.status_code)
-token = res_login.json().get('access_token')
-headers = {'Authorization': f'Bearer {token}'}
+print('Admin Login Status:', res_admin.status_code)
+admin_token = res_admin.json().get('access_token')
+admin_headers = {'Authorization': f'Bearer {admin_token}'}
 
-print('--- 2. LIVE DOCTORS LIST (ADMIN API) ---')
-res_docs = requests.get('http://127.0.0.1:8000/api/v1/admin/doctors', headers=headers)
-print('Admin Doctors Status:', res_docs.status_code, 'Count:', len(res_docs.json().get('doctors', [])))
+print('--- 2. LIVE DOCTOR LOGIN ---')
+res_doc = requests.post('http://127.0.0.1:8000/api/v1/doctor/login', json={
+    'email': 'producer@cmz.site',
+    'password': 'TestAccess2026!'
+})
+print('Doctor Login Status:', res_doc.status_code)
 
-print('--- 3. LIVE GUEST CHAT MESSAGE POST ---')
+print('--- 3. LIVE PATIENT LOGIN (BY TOKEN & EMAIL) ---')
+res_pat_token = requests.post('http://127.0.0.1:8000/api/login', json={
+    'token': 'test_patient_token_2026',
+    'password': 'PatientAccess2026!'
+})
+print('Patient Login by Token Status:', res_pat_token.status_code)
+
+res_pat_email = requests.post('http://127.0.0.1:8000/api/login', json={
+    'token': 'patient@cmz.site',
+    'password': 'PatientAccess2026!'
+})
+print('Patient Login by Email Status:', res_pat_email.status_code)
+
+print('--- 4. LIVE POSTS FEED ---')
+res_posts = requests.get('http://127.0.0.1:8000/api/v1/public/posts')
+print('Public Posts Status:', res_posts.status_code, 'Count:', len(res_posts.json()))
+
+print('--- 5. LIVE GUEST CHAT MESSAGE POST & FEED ---')
 res_guest = requests.post('http://127.0.0.1:8000/api/v1/public/chat', json={
-    'message': 'Тестовое сообщение гостя после деплоя v7.1',
-    'author_name': 'Проверка Деплоя'
+    'message': 'Привет от гостя! Проверка чата v7.1',
+    'author_name': 'Гость Тестировщик'
 })
 print('Guest Chat Post Status:', res_guest.status_code, res_guest.json().get('message', {}).get('author_role'))
 
-print('--- 4. LIVE PUBLIC CHAT FEED ---')
 res_chat = requests.get('http://127.0.0.1:8000/api/v1/public/chat?limit=5')
 print('Public Chat Status:', res_chat.status_code, 'Total Messages:', res_chat.json().get('total', 0))
 
-print('--- 5. LIVE MEDIA URL & HEALTH MONITORING ---')
-res_health = requests.get('http://127.0.0.1:8000/api/v1/admin/alerts/status', headers=headers)
+print('--- 6. LIVE ALERTS & HEALTH MONITORING ---')
+res_health = requests.get('http://127.0.0.1:8000/api/v1/admin/alerts/status', headers=admin_headers)
 print('Alerts System Status:', res_health.status_code)
 "
 

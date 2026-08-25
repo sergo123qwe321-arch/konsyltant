@@ -329,7 +329,8 @@ class DoctorNoteSaveRequest(BaseModel):
     note_text: str
 
 class CommunityChatMessageRequest(BaseModel):
-    message: str
+    message: Optional[str] = None
+    message_text: Optional[str] = None
     author_name: Optional[str] = None
 
 class DoctorCreateRequest(BaseModel):
@@ -1563,7 +1564,7 @@ def public_chat_post_api(
     Для гостей действует лимит: не более 3 сообщений в час с одного IP.
     Для всех сообщений применяется мат-фильтр, проверка длины и очередь премодерации сторонних ссылок.
     """
-    msg_text = (req.message or "").strip()
+    msg_text = (req.message or req.message_text or "").strip()
     if not msg_text:
         raise HTTPException(status_code=400, detail="Текст сообщения не может быть пустым")
     if len(msg_text) > 1000:

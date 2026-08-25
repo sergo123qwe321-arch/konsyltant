@@ -1581,13 +1581,15 @@
             gap: 14px;
             pointer-events: none;
             opacity: 0;
+            transform: scale(0.8);
             will-change: transform, opacity;
-            transition: opacity 0.4s ease, transform 0.4s ease;
+            transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.15);
         }
 
         .floating-alik-widget.floating-active {
             opacity: 1;
             pointer-events: auto;
+            transform: scale(1);
         }
 
         .floating-alik-widget.minimized .alik-speech-bubble {
@@ -1815,4 +1817,26 @@
             .alik-bubble-tail {
                 display: none;
             }
+        }
+
+        /* Интерактивная карточка «Показать еще» в библиотеке */
+        .load-more-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            cursor: pointer;
+            border: 2px dashed rgba(255, 255, 255, 0.22) !important;
+            background: rgba(255, 255, 255, 0.04) !important;
+            min-height: 280px;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        .load-more-card:hover {
+            border-color: var(--accent-turquoise, #2DD4BF) !important;
+            background: rgba(45, 212, 191, 0.08) !important;
+            transform: translateY(-6px) scale(1.02) !important;
+            box-shadow: 0 12px 30px rgba(45, 212, 191, 0.2) !important;
+        }
         }

@@ -460,17 +460,34 @@
     - `GET /api/v1/admin/alerts/status` -> HTTP 200 OK (мониторинг и алерты активны).
     - Внешний публичный HTTPS-домен `https://xn--g1aj3a.site/api/v1/public/chat?limit=5` -> HTTP 200 OK.
   - Логи контейнеров чистые, необработанных исключений нет, Nginx проксирует запросы штатно.
+- [2026-08-25] [UAT Hotfix & Front-End UI Polish] Комплексный хотфикс фронтенда, пагинации, анимации Алика и сидирования UAT-данных:
+  - **Персонаж «Алик» (`templates/index.html`, `static/js/app.js`, `static/css/style.css`):**
+    - Плавающий виджет `#floating-alik-widget` по умолчанию скрыт (`opacity: 0; pointer-events: none; transform: scale(0.8);`).
+    - Восстановлена плавная анимация появления/исчезновения через IntersectionObserver: виджет активируется только при уходе Hero-секции из области видимости (scroll down) и возвращается в Hero при прокрутке наверх.
+    - Восстановлена смена реплик в зеленом облачке `#alik-speech-bubble` при пересечении секций с `data-alik-comment`.
+  - **Пагинация «Полезной библиотеки» (`static/js/app.js`, `static/css/style.css`):**
+    - Функция `renderBlog` отрисовывает первые 5 карточек, а на 6-й позиции размещает стилизованную карточку-кнопку «Показать еще 📚» (`#btn-load-more-library`).
+    - По клику плавно разворачивается полный список материалов с кнопкой сворачивания.
+  - **Сидирование постов («Новые посты») (`scripts/admin/seed_production_posts.py`):**
+    - Создан сидер 3 обязательных постов: «Новая платформа запущена», «Добавлена первая группа родителей», «У нас первый доктор».
+  - **Открытый гостевой чат (`static/js/app.js`, `main.py`):**
+    - `CommunityChatMessageRequest` и `handleSendCommunityMessage` поддерживают оба поля (`message` и `message_text`).
+    - Исключена отправка заголовков `Authorization: Bearer undefined` / `null` для гостей. Корректно передается имя гостя из `#community-guest-name` (по умолчанию «Гость»).
+  - **CMS Администратора (`static/js/app.js`):**
+    - Функция `switchAdminTab(tabName)` переведена на декларативное переключение всех 5 вкладок (`leads`, `doctors`, `posts`, `ops`, `moderation`).
+  - **Единый сидер UAT-фикстур и двойная авторизация пациента (`scripts/admin/seed_uat_fixtures.py`, `database.py`):**
+    - В `database.py` добавлена колонка `email` в `patient_access`, функции `verify_access` и `token_exists` поддерживают поиск как по токену, так и по email.
+    - В `#parent-modal` форма адаптирована для ввода токена или email.
+    - Скрипт `scripts/admin/seed_uat_fixtures.py` гарантирует учетные записи Врача (`producer@cmz.site` / `TestAccess2026!`), Пациента (`patient@cmz.site` / `test_patient_token_2026` / `PatientAccess2026!`), Администратора (`producer-admin@cmz.site` / `AdminAccess2026!`) и 3 поста.
+  - Верификация: 107/107 тестов пройдены успешно (100% PASS).
 
 ## План
 - **Что сделано:**
-  - Реализован Этап 1: Слой данных и сервис email-уведомлений для онбординга врачей и гостевого чата (`database.py`, `notification_service.py`).
-  - Реализован Этап 2: API эндпоинты онбординга врачей (`POST/GET /api/v1/admin/doctors`) и логика гостевого чата с Rate Limiter 3 сообщ/час (`POST /api/v1/public/chat` в `main.py`).
-  - Реализован Этап 3: Обновление фронтенда открытого чата и CMS панели администратора (`templates/index.html`, `static/js/app.js`).
-  - Реализован Этап 4: CLI-скрипт `scripts/admin/register_doctor.py`, интеграционный тестовый набор `test_guest_chat_and_doctor_onboarding.py`, актуализация `ARCHITECTURE.md`.
-  - Успешный деплой и валидация релиза `v7.1-production` на боевом сервере VPS Beget (159.194.232.74, `цмз.site`).
-  - Все 107 тестов проекта успешно пройдены на боевом окружении.
+  - Реализован комплексный хотфикс UI, персонажа Алика, пагинации библиотеки, отправки гостевого чата, CMS табов и двойной авторизации пациента.
+  - Разработаны сидеры `seed_production_posts.py` и `seed_uat_fixtures.py`.
+  - Все 107 тестов проекта успешно пройдены со 100% успехом.
 - **Что в процессе:**
-  - Релиз v7.1-production полностью развернут, протестирован и сдан.
+  - Деплой хотфикса на боевой сервер VPS Beget (159.194.232.74) и верификация в живом окружении.
 - **Что предстоит:**
-  - Мониторинг входящих заявок и активности сообщества.
+  - Подтверждение готовности к UAT Продюсером.
 

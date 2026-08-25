@@ -300,51 +300,100 @@
             });
         }
 
-        async function renderBlog(tag = null) {
+        function createBlogCardHTML(post) {
+            let tagsList = [];
+            if (Array.isArray(post.tags)) {
+                tagsList = post.tags;
+            } else if (typeof post.tags === 'string') {
+                tagsList = post.tags.split(',').map(t => t.trim().replace(/[\[\]"]/g, ''));
+            }
+            if (tagsList.length === 0) tagsList = ['Полезное'];
+
+            const tagsHTML = tagsList.map(t => `<span class="blog-tag">${t}</span>`).join('');
+            const hasCover = Boolean(post.cover_image_url);
+            const hasVideo = Boolean(post.video_url);
+
+            const coverHTML = hasCover
+                ? `<div style="height: 160px; border-radius: 12px 12px 0 0; background: url('${post.cover_image_url}') center/cover no-repeat; margin: -20px -20px 14px -20px; position: relative;">
+                     ${hasVideo ? '<span style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.75); color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight:600;">🎬 Видео</span>' : ''}
+                   </div>`
+                : (hasVideo ? `<div style="margin-bottom: 8px;"><span style="background: rgba(239,68,68,0.2); color: #F87171; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">🎬 С видеоматериалом</span></div>` : '');
+
+            return `
+                <div class="card-glass blog-card" style="display: flex; flex-direction: column;">
+                    ${coverHTML}
+                    <div class="blog-tags">${tagsHTML}</div>
+                    <div class="blog-date">📅 ${post.created_at ? post.created_at.split(' ')[0] : 'Недавно'}</div>
+                    <h3 style="margin-bottom: 10px; font-size: 1.15rem; line-height: 1.4;">${post.title}</h3>
+                    <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-gray); margin-bottom: 16px;">${post.summary}</p>
+                    <div class="blog-card-footer" style="margin-top:auto;">
+                        <button class="read-more" onclick="openArticleReader(${post.id})">Читать далее ✨</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        let currentLibraryTag = null;
+        let isLibraryExpanded = false;
+
+        async function renderBlog(tag = null, forceExpand = null) {
+            if (forceExpand !== null) {
+                isLibraryExpanded = forceExpand;
+            } else if (tag !== currentLibraryTag) {
+                isLibraryExpanded = false;
+            }
+            currentLibraryTag = tag;
+
             const endpoint = tag ? `/posts?tag=${encodeURIComponent(tag)}` : '/posts';
             const data = await loadData(endpoint);
             cachedPosts = data;
             const container = document.getElementById('blog-container');
+            if (!container) return;
             container.innerHTML = '';
             
-            if (data.length === 0) {
+            if (!data || data.length === 0) {
                 container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">🦄 Статей в этой категории пока нет.</div>`;
                 return;
             }
 
-            data.forEach(post => {
-                let tagsList = [];
-                if (Array.isArray(post.tags)) {
-                    tagsList = post.tags;
-                } else if (typeof post.tags === 'string') {
-                    tagsList = post.tags.split(',').map(t => t.trim().replace(/[\[\]"]/g, ''));
-                }
-                if (tagsList.length === 0) tagsList = ['Полезное'];
+            if (!isLibraryExpanded && data.length > 5) {
+                // Отрисовываем ровно первые 5 карточек
+                data.slice(0, 5).forEach(post => {
+                    container.innerHTML += createBlogCardHTML(post);
+                });
 
-                const tagsHTML = tagsList.map(t => `<span class="blog-tag">${t}</span>`).join('');
-                const hasCover = Boolean(post.cover_image_url);
-                const hasVideo = Boolean(post.video_url);
-
-                const coverHTML = hasCover
-                    ? `<div style="height: 160px; border-radius: 12px 12px 0 0; background: url('${post.cover_image_url}') center/cover no-repeat; margin: -20px -20px 14px -20px; position: relative;">
-                         ${hasVideo ? '<span style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.75); color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight:600;">🎬 Видео</span>' : ''}
-                       </div>`
-                    : (hasVideo ? `<div style="margin-bottom: 8px;"><span style="background: rgba(239,68,68,0.2); color: #F87171; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">🎬 С видеоматериалом</span></div>` : '');
-
+                // На 6-й позиции добавляем интерактивную кнопку-карточку «Показать еще»
+                const remaining = data.length - 5;
                 container.innerHTML += `
-                    <div class="card-glass blog-card" style="display: flex; flex-direction: column;">
-                        ${coverHTML}
-                        <div class="blog-tags">${tagsHTML}</div>
-                        <div class="blog-date">📅 ${post.created_at ? post.created_at.split(' ')[0] : 'Недавно'}</div>
-                        <h3 style="margin-bottom: 10px; font-size: 1.15rem; line-height: 1.4;">${post.title}</h3>
-                        <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-gray); margin-bottom: 16px;">${post.summary}</p>
-                        <div class="blog-card-footer" style="margin-top:auto;">
-                            <button class="read-more" onclick="openArticleReader(${post.id})">Читать далее ✨</button>
-                        </div>
+                    <div class="card-glass blog-card load-more-card" id="btn-load-more-library" onclick="renderBlog('${tag || ''}', true)">
+                        <div style="font-size: 2.4rem; margin-bottom: 10px;">📚</div>
+                        <h3 style="font-size: 1.15rem; margin-bottom: 6px; color: var(--accent-turquoise, #2DD4BF);">Показать еще 📚</h3>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">Ещё ${remaining} материалов библиотеки</p>
+                        <span class="btn btn-outline" style="padding: 6px 16px; font-size: 0.82rem; pointer-events: none;">Развернуть все ↓</span>
                     </div>
                 `;
-            });
+            } else {
+                // Отрисовываем все материалы
+                data.forEach(post => {
+                    container.innerHTML += createBlogCardHTML(post);
+                });
+
+                if (data.length > 5 && isLibraryExpanded) {
+                    container.innerHTML += `
+                        <div class="card-glass blog-card load-more-card" id="btn-collapse-library" onclick="renderBlog('${tag || ''}', false)" style="min-height: 180px;">
+                            <div style="font-size: 1.8rem; margin-bottom: 8px;">⬆️</div>
+                            <h3 style="font-size: 1.05rem; margin-bottom: 4px; color: var(--accent-turquoise, #2DD4BF);">Свернуть библиотеку</h3>
+                            <span class="btn btn-outline" style="padding: 4px 14px; font-size: 0.8rem; pointer-events: none;">Свернуть ↑</span>
+                        </div>
+                    `;
+                }
+            }
         }
+
+        // Псевдонимы функций для обратной совместимости
+        window.renderLibraryCards = renderBlog;
+        window.loadPublicLibrary = renderBlog;
+        window.renderPostsSection = renderLatestPosts;
 
         function escapeHtml(str) {
             if (str === null || str === undefined) return '';
@@ -618,76 +667,27 @@
         }
 
         function switchAdminTab(tab) {
-            const tabLeads = document.getElementById('admin-tab-leads');
-            const tabDoctors = document.getElementById('admin-tab-doctors');
-            const tabPosts = document.getElementById('admin-tab-posts');
-            const tabOps = document.getElementById('admin-tab-ops');
-            const tabModeration = document.getElementById('admin-tab-moderation');
-            const btnLeads = document.getElementById('tab-btn-leads');
-            const btnDoctors = document.getElementById('tab-btn-doctors');
-            const btnPosts = document.getElementById('tab-btn-posts');
-            const btnOps = document.getElementById('tab-btn-ops');
-            const btnModeration = document.getElementById('tab-btn-moderation');
+            const tabs = ['leads', 'doctors', 'posts', 'ops', 'moderation'];
+            tabs.forEach(t => {
+                const el = document.getElementById(`admin-tab-${t}`);
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (el) {
+                    el.style.display = (t === tab) ? 'block' : 'none';
+                }
+                if (btn) {
+                    btn.className = (t === tab) ? 'btn btn-turquoise' : 'btn btn-outline';
+                }
+            });
 
             if (tab === 'leads') {
-                if (tabLeads) tabLeads.style.display = 'block';
-                if (tabDoctors) tabDoctors.style.display = 'none';
-                if (tabPosts) tabPosts.style.display = 'none';
-                if (tabOps) tabOps.style.display = 'none';
-                if (tabModeration) tabModeration.style.display = 'none';
-                if (btnLeads) btnLeads.className = 'btn btn-turquoise';
-                if (btnDoctors) btnDoctors.className = 'btn btn-outline';
-                if (btnPosts) btnPosts.className = 'btn btn-outline';
-                if (btnOps) btnOps.className = 'btn btn-outline';
-                if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminLeads();
             } else if (tab === 'doctors') {
-                if (tabLeads) tabLeads.style.display = 'none';
-                if (tabDoctors) tabDoctors.style.display = 'block';
-                if (tabPosts) tabPosts.style.display = 'none';
-                if (tabOps) tabOps.style.display = 'none';
-                if (tabModeration) tabModeration.style.display = 'none';
-                if (btnLeads) btnLeads.className = 'btn btn-outline';
-                if (btnDoctors) btnDoctors.className = 'btn btn-turquoise';
-                if (btnPosts) btnPosts.className = 'btn btn-outline';
-                if (btnOps) btnOps.className = 'btn btn-outline';
-                if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminDoctors();
             } else if (tab === 'posts') {
-                if (tabLeads) tabLeads.style.display = 'none';
-                if (tabDoctors) tabDoctors.style.display = 'none';
-                if (tabPosts) tabPosts.style.display = 'block';
-                if (tabOps) tabOps.style.display = 'none';
-                if (tabModeration) tabModeration.style.display = 'none';
-                if (btnLeads) btnLeads.className = 'btn btn-outline';
-                if (btnDoctors) btnDoctors.className = 'btn btn-outline';
-                if (btnPosts) btnPosts.className = 'btn btn-turquoise';
-                if (btnOps) btnOps.className = 'btn btn-outline';
-                if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminPosts();
             } else if (tab === 'ops') {
-                if (tabLeads) tabLeads.style.display = 'none';
-                if (tabDoctors) tabDoctors.style.display = 'none';
-                if (tabPosts) tabPosts.style.display = 'none';
-                if (tabOps) tabOps.style.display = 'block';
-                if (tabModeration) tabModeration.style.display = 'none';
-                if (btnLeads) btnLeads.className = 'btn btn-outline';
-                if (btnDoctors) btnDoctors.className = 'btn btn-outline';
-                if (btnPosts) btnPosts.className = 'btn btn-outline';
-                if (btnOps) btnOps.className = 'btn btn-turquoise';
-                if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminOperations();
             } else if (tab === 'moderation') {
-                if (tabLeads) tabLeads.style.display = 'none';
-                if (tabDoctors) tabDoctors.style.display = 'none';
-                if (tabPosts) tabPosts.style.display = 'none';
-                if (tabOps) tabOps.style.display = 'none';
-                if (tabModeration) tabModeration.style.display = 'block';
-                if (btnLeads) btnLeads.className = 'btn btn-outline';
-                if (btnDoctors) btnDoctors.className = 'btn btn-outline';
-                if (btnPosts) btnPosts.className = 'btn btn-outline';
-                if (btnOps) btnOps.className = 'btn btn-outline';
-                if (btnModeration) btnModeration.className = 'btn btn-turquoise';
                 loadAdminModerationQueue();
             }
         }
@@ -2793,12 +2793,13 @@
 
             try {
                 const headers = { 'Content-Type': 'application/json' };
-                if (auth && auth.token) {
+                if (auth && auth.token && auth.token !== 'null' && auth.token !== 'undefined') {
                     headers['Authorization'] = `Bearer ${auth.token}`;
                 }
 
                 const payload = {
                     message: text,
+                    message_text: text,
                     author_name: auth ? null : (guestName || 'Гость')
                 };
 
@@ -2811,7 +2812,7 @@
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     if (res.status === 429) {
-                        throw new Error(err.detail || 'Превышен лимит отправки сообщений (до 3 сообщений в час для гостей). Пожалуйста, подождите.');
+                        throw new Error(err.detail || 'Превышен лимит отправки сообщений (до 3 сообщений в час для гостей). Пожалуйста, подождите или авторизуйтесь.');
                     }
                     if (res.status === 401) {
                         logoutCommunityUser();
@@ -2823,7 +2824,7 @@
                 if (input) input.value = '';
                 await loadCommunityChatMessages();
             } catch (err) {
-                alert(err.message);
+                alert('⚠️ ' + err.message);
             } finally {
                 if (btn) {
                     btn.disabled = false;
