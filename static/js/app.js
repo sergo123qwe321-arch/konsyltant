@@ -564,6 +564,7 @@
             if (token) {
                 openModal('admin-dashboard-modal');
                 loadAdminLeads();
+                loadAdminDoctors();
             } else {
                 openModal('admin-login-modal');
             }
@@ -599,6 +600,7 @@
                 document.getElementById('admin-login-form').reset();
                 openModal('admin-dashboard-modal');
                 loadAdminLeads();
+                loadAdminDoctors();
             } catch (err) {
                 errBox.style.display = 'block';
                 errBox.textContent = err.message || 'Ошибка входа в CMS';
@@ -617,54 +619,232 @@
 
         function switchAdminTab(tab) {
             const tabLeads = document.getElementById('admin-tab-leads');
+            const tabDoctors = document.getElementById('admin-tab-doctors');
             const tabPosts = document.getElementById('admin-tab-posts');
             const tabOps = document.getElementById('admin-tab-ops');
             const tabModeration = document.getElementById('admin-tab-moderation');
             const btnLeads = document.getElementById('tab-btn-leads');
+            const btnDoctors = document.getElementById('tab-btn-doctors');
             const btnPosts = document.getElementById('tab-btn-posts');
             const btnOps = document.getElementById('tab-btn-ops');
             const btnModeration = document.getElementById('tab-btn-moderation');
 
             if (tab === 'leads') {
                 if (tabLeads) tabLeads.style.display = 'block';
+                if (tabDoctors) tabDoctors.style.display = 'none';
                 if (tabPosts) tabPosts.style.display = 'none';
                 if (tabOps) tabOps.style.display = 'none';
                 if (tabModeration) tabModeration.style.display = 'none';
                 if (btnLeads) btnLeads.className = 'btn btn-turquoise';
+                if (btnDoctors) btnDoctors.className = 'btn btn-outline';
                 if (btnPosts) btnPosts.className = 'btn btn-outline';
                 if (btnOps) btnOps.className = 'btn btn-outline';
                 if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminLeads();
+            } else if (tab === 'doctors') {
+                if (tabLeads) tabLeads.style.display = 'none';
+                if (tabDoctors) tabDoctors.style.display = 'block';
+                if (tabPosts) tabPosts.style.display = 'none';
+                if (tabOps) tabOps.style.display = 'none';
+                if (tabModeration) tabModeration.style.display = 'none';
+                if (btnLeads) btnLeads.className = 'btn btn-outline';
+                if (btnDoctors) btnDoctors.className = 'btn btn-turquoise';
+                if (btnPosts) btnPosts.className = 'btn btn-outline';
+                if (btnOps) btnOps.className = 'btn btn-outline';
+                if (btnModeration) btnModeration.className = 'btn btn-outline';
+                loadAdminDoctors();
             } else if (tab === 'posts') {
                 if (tabLeads) tabLeads.style.display = 'none';
+                if (tabDoctors) tabDoctors.style.display = 'none';
                 if (tabPosts) tabPosts.style.display = 'block';
                 if (tabOps) tabOps.style.display = 'none';
                 if (tabModeration) tabModeration.style.display = 'none';
                 if (btnLeads) btnLeads.className = 'btn btn-outline';
+                if (btnDoctors) btnDoctors.className = 'btn btn-outline';
                 if (btnPosts) btnPosts.className = 'btn btn-turquoise';
                 if (btnOps) btnOps.className = 'btn btn-outline';
                 if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminPosts();
             } else if (tab === 'ops') {
                 if (tabLeads) tabLeads.style.display = 'none';
+                if (tabDoctors) tabDoctors.style.display = 'none';
                 if (tabPosts) tabPosts.style.display = 'none';
                 if (tabOps) tabOps.style.display = 'block';
                 if (tabModeration) tabModeration.style.display = 'none';
                 if (btnLeads) btnLeads.className = 'btn btn-outline';
+                if (btnDoctors) btnDoctors.className = 'btn btn-outline';
                 if (btnPosts) btnPosts.className = 'btn btn-outline';
                 if (btnOps) btnOps.className = 'btn btn-turquoise';
                 if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminOperations();
             } else if (tab === 'moderation') {
                 if (tabLeads) tabLeads.style.display = 'none';
+                if (tabDoctors) tabDoctors.style.display = 'none';
                 if (tabPosts) tabPosts.style.display = 'none';
                 if (tabOps) tabOps.style.display = 'none';
                 if (tabModeration) tabModeration.style.display = 'block';
                 if (btnLeads) btnLeads.className = 'btn btn-outline';
+                if (btnDoctors) btnDoctors.className = 'btn btn-outline';
                 if (btnPosts) btnPosts.className = 'btn btn-outline';
                 if (btnOps) btnOps.className = 'btn btn-outline';
                 if (btnModeration) btnModeration.className = 'btn btn-turquoise';
                 loadAdminModerationQueue();
+            }
+        }
+
+        async function loadAdminDoctors() {
+            const listDiv = document.getElementById('admin-doctors-list');
+            const counter = document.getElementById('doctors-counter');
+            const token = getAdminToken();
+            if (!token) return;
+
+            if (listDiv) {
+                listDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">Загрузка списка специалистов... ⏳</div>';
+            }
+
+            try {
+                const res = await fetch('/api/v1/admin/doctors', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error('Ошибка загрузки врачей');
+                const data = await res.json();
+                const doctors = data.doctors || [];
+
+                if (counter) counter.textContent = doctors.length;
+
+                if (!listDiv) return;
+                if (doctors.length === 0) {
+                    listDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px;">В базе пока нет зарегистрированных специалистов.</div>';
+                    return;
+                }
+
+                let html = '';
+                doctors.forEach(d => {
+                    const verifiedBadge = d.is_verified 
+                        ? '<span style="color:#34D399;background:rgba(16,185,129,0.15);padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">✅ Верифицирован</span>' 
+                        : '<span style="color:#F59E0B;background:rgba(245,158,11,0.15);padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">⏳ Ожидает</span>';
+
+                    html += `
+                        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                            <div>
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                                    <strong style="color:#fff;font-size:0.95rem;">${escapeHtml(d.full_name)}</strong>
+                                    ${verifiedBadge}
+                                </div>
+                                <div style="color:var(--accent-turquoise);font-size:0.85rem;margin-bottom:2px;">
+                                    🩺 ${escapeHtml(d.specialty || 'Специалист')}
+                                </div>
+                                <div style="color:var(--text-muted);font-size:0.8rem;">
+                                    📧 ${escapeHtml(d.email || '-')} &nbsp;|&nbsp; 📜 Лицензия: <code>${escapeHtml(d.license_number || '-')}</code>
+                                </div>
+                            </div>
+                            <div style="font-size:0.78rem;color:var(--text-muted);text-align:right;">
+                                Регистрация:<br>${escapeHtml(d.created_at ? d.created_at.slice(0,10) : '-')}
+                            </div>
+                        </div>
+                    `;
+                });
+                listDiv.innerHTML = html;
+            } catch (e) {
+                if (listDiv) listDiv.innerHTML = `<div style="color:#EF4444;text-align:center;padding:20px;">Ошибка: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        async function handleRegisterDoctor(event) {
+            event.preventDefault();
+            const token = getAdminToken();
+            if (!token) {
+                alert('Требуется авторизация администратора');
+                return;
+            }
+
+            const fullNameInput = document.getElementById('doc-reg-fullname');
+            const specialtyInput = document.getElementById('doc-reg-specialty');
+            const emailInput = document.getElementById('doc-reg-email');
+            const phoneInput = document.getElementById('doc-reg-phone');
+            const licenseInput = document.getElementById('doc-reg-license');
+            const submitBtn = document.getElementById('doc-reg-submit-btn');
+            const resultBox = document.getElementById('doc-reg-result-box');
+
+            const fullName = fullNameInput ? fullNameInput.value.trim() : '';
+            const specialty = specialtyInput ? specialtyInput.value.trim() : '';
+            const email = emailInput ? emailInput.value.trim() : '';
+            const phone = phoneInput ? phoneInput.value.trim() : '';
+            const license = licenseInput ? licenseInput.value.trim() : '';
+
+            if (!fullName || !specialty || !email) {
+                alert('Пожалуйста, заполните обязательные поля (ФИО, Специализация, Email).');
+                return;
+            }
+
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Регистрация и отправка письма... ⏳';
+            }
+            if (resultBox) {
+                resultBox.style.display = 'none';
+            }
+
+            try {
+                const res = await fetch('/api/v1/admin/doctors', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        full_name: fullName,
+                        specialty: specialty,
+                        email: email,
+                        phone: phone,
+                        license_number: license
+                    })
+                });
+
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Не удалось зарегистрировать врача');
+                }
+
+                if (resultBox) {
+                    const emailStatusHtml = data.email_sent 
+                        ? '<span style="color:#34D399;">✅ Письмо с реквизитами доступа успешно отправлено на email врача и в копию клиники!</span>' 
+                        : '<span style="color:#F59E0B;">⚠️ Врач сохранен в базе, но отправка через SMTP временно недоступна. Сохраните временный пароль.</span>';
+
+                    resultBox.style.display = 'block';
+                    resultBox.style.background = 'rgba(16,185,129,0.1)';
+                    resultBox.style.border = '1px solid rgba(16,185,129,0.3)';
+                    resultBox.innerHTML = `
+                        <div style="font-weight:600;color:#34D399;font-size:0.95rem;margin-bottom:6px;">
+                            🎉 Врач «${escapeHtml(data.doctor.full_name)}» успешно зарегистрирован!
+                        </div>
+                        <div style="color:#F8FAFC;margin-bottom:6px;">
+                            <b>Логин:</b> <code>${escapeHtml(data.doctor.email)}</code> &nbsp;|&nbsp; 
+                            <b>Временный пароль:</b> <code style="color:#4ADE80;background:rgba(0,0,0,0.4);padding:2px 8px;border-radius:4px;font-size:1rem;font-weight:bold;">${escapeHtml(data.temporary_password)}</code>
+                        </div>
+                        <div style="font-size:0.82rem;">${emailStatusHtml}</div>
+                    `;
+                }
+
+                if (fullNameInput) fullNameInput.value = '';
+                if (specialtyInput) specialtyInput.value = '';
+                if (emailInput) emailInput.value = '';
+                if (phoneInput) phoneInput.value = '';
+                if (licenseInput) licenseInput.value = '';
+
+                await loadAdminDoctors();
+            } catch (err) {
+                if (resultBox) {
+                    resultBox.style.display = 'block';
+                    resultBox.style.background = 'rgba(239,68,68,0.1)';
+                    resultBox.style.border = '1px solid rgba(239,68,68,0.3)';
+                    resultBox.innerHTML = `<span style="color:#EF4444;">❌ ${escapeHtml(err.message)}</span>`;
+                }
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Зарегистрировать врача и отправить доступы ✉️';
+                }
             }
         }
 
@@ -2462,12 +2642,17 @@
         function updateCommunityChatAuthState() {
             const auth = getActiveCommunityAuth();
             const inputBox = document.getElementById('community-chat-input-box');
-            const authPrompt = document.getElementById('community-chat-auth-prompt');
             const userBadge = document.getElementById('community-user-badge');
+            const guestNameInput = document.getElementById('community-guest-name');
+            const authActions = document.getElementById('community-auth-actions');
+            const logoutLink = document.getElementById('community-logout-link');
+
+            if (inputBox) inputBox.style.display = 'block';
 
             if (auth) {
-                if (inputBox) inputBox.style.display = 'block';
-                if (authPrompt) authPrompt.style.display = 'none';
+                if (guestNameInput) guestNameInput.style.display = 'none';
+                if (authActions) authActions.style.display = 'none';
+                if (logoutLink) logoutLink.style.display = 'inline';
                 if (userBadge) {
                     let roleTag = 'Родитель';
                     let color = '#34D399';
@@ -2481,8 +2666,12 @@
                     userBadge.innerHTML = `👤 Вы вошли как: <strong style="color: ${color};">${escapeHtml(auth.name)}</strong> (${roleTag})`;
                 }
             } else {
-                if (inputBox) inputBox.style.display = 'none';
-                if (authPrompt) authPrompt.style.display = 'block';
+                if (guestNameInput) guestNameInput.style.display = 'inline-block';
+                if (authActions) authActions.style.display = 'inline';
+                if (logoutLink) logoutLink.style.display = 'none';
+                if (userBadge) {
+                    userBadge.innerHTML = `⚪ <span style="color:#9CA3AF;">Вы пишете как гость (до 3 сообщ/час).</span>`;
+                }
             }
         }
 
@@ -2529,6 +2718,11 @@
                         roleColor = '#C084FC';
                         roleBg = 'rgba(168,85,247,0.15)';
                         roleBorder = 'rgba(168,85,247,0.3)';
+                    } else if (m.author_role === 'GUEST') {
+                        roleName = 'Гость';
+                        roleColor = '#9CA3AF';
+                        roleBg = 'rgba(156,163,175,0.15)';
+                        roleBorder = 'rgba(156,163,175,0.3)';
                     }
 
                     let dateStr = 'Недавно';
@@ -2583,17 +2777,14 @@
         async function handleSendCommunityMessage(event) {
             event.preventDefault();
             const input = document.getElementById('community-msg-input');
+            const guestNameInput = document.getElementById('community-guest-name');
             const btn = document.getElementById('community-send-btn');
             const auth = getActiveCommunityAuth();
 
-            if (!auth || !auth.token) {
-                alert('Для отправки сообщения необходимо авторизоваться.');
-                updateCommunityChatAuthState();
-                return;
-            }
-
             const text = input ? input.value.trim() : '';
             if (!text) return;
+
+            const guestName = guestNameInput ? guestNameInput.value.trim() : '';
 
             if (btn) {
                 btn.disabled = true;
@@ -2601,19 +2792,26 @@
             }
 
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (auth && auth.token) {
+                    headers['Authorization'] = `Bearer ${auth.token}`;
+                }
+
+                const payload = {
+                    message: text,
+                    author_name: auth ? null : (guestName || 'Гость')
+                };
+
                 const res = await fetch('/api/v1/public/chat', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${auth.token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ message: text })
+                    headers: headers,
+                    body: JSON.stringify(payload)
                 });
 
                 if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     if (res.status === 429) {
-                        throw new Error(err.detail || 'Слишком много сообщений. Пожалуйста, подождите минуту.');
+                        throw new Error(err.detail || 'Превышен лимит отправки сообщений (до 3 сообщений в час для гостей). Пожалуйста, подождите.');
                     }
                     if (res.status === 401) {
                         logoutCommunityUser();

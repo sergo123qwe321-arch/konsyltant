@@ -225,7 +225,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS public_chat_messages (
                 id SERIAL PRIMARY KEY,
                 author_role VARCHAR(20) NOT NULL,
-                author_id VARCHAR(100) NOT NULL,
+                author_id VARCHAR(100),
                 author_name VARCHAR(150) NOT NULL,
                 message_text TEXT NOT NULL,
                 is_approved BOOLEAN DEFAULT TRUE,
@@ -233,7 +233,8 @@ def init_db():
             )
         """)
         cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_role VARCHAR(20) NOT NULL DEFAULT 'PATIENT'")
-        cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_id VARCHAR(100) NOT NULL DEFAULT ''")
+        cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_id VARCHAR(100)")
+        cursor.execute("ALTER TABLE public_chat_messages ALTER COLUMN author_id DROP NOT NULL")
         cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_name VARCHAR(150) NOT NULL DEFAULT ''")
         cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS message_text TEXT NOT NULL DEFAULT ''")
         cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT TRUE")
@@ -503,7 +504,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS public_chat_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 author_role TEXT NOT NULL,
-                author_id TEXT NOT NULL,
+                author_id TEXT,
                 author_name TEXT NOT NULL,
                 message_text TEXT NOT NULL,
                 is_approved INTEGER DEFAULT 1,
@@ -511,9 +512,31 @@ def init_db():
             )
         """)
         cursor.execute("PRAGMA table_info(public_chat_messages)")
-        chat_cols = [r[1] for r in cursor.fetchall()]
+        info_rows = cursor.fetchall()
+        chat_cols = [r[1] for r in info_rows]
         if "is_approved" not in chat_cols:
             cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN is_approved INTEGER DEFAULT 1")
+        for col in info_rows:
+            if col[1] == "author_id" and col[3] == 1:
+                # Migrate SQLite table to allow NULL author_id
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS public_chat_messages_dg_tmp (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        author_role TEXT NOT NULL,
+                        author_id TEXT,
+                        author_name TEXT NOT NULL,
+                        message_text TEXT NOT NULL,
+                        is_approved INTEGER DEFAULT 1,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                cursor.execute("""
+                    INSERT INTO public_chat_messages_dg_tmp (id, author_role, author_id, author_name, message_text, is_approved, created_at)
+                    SELECT id, author_role, author_id, author_name, message_text, is_approved, created_at FROM public_chat_messages
+                """)
+                cursor.execute("DROP TABLE public_chat_messages")
+                cursor.execute("ALTER TABLE public_chat_messages_dg_tmp RENAME TO public_chat_messages")
+                break
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS patient_chat_history (
@@ -1238,14 +1261,16 @@ def create_doctor(
             "specialty": specialty,
             "license_number": license_number,
             "is_verified": bool(is_verified if is_verified else existing[4]),
-            "created_at": str(existing[5])
+            "created_at": str(existing[5]),
+            "email": email or (existing[6] if len(existing) > 6 else ""),
+            "role": role or "DOCTOR"
         }
 
     if is_postgres:
         execute_query(cursor, """
             INSERT INTO doctors (full_name, specialty, license_number, is_verified, email, password_hash, role)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-            RETURNING id, full_name, specialty, license_number, is_verified, created_at
+            RETURNING id, full_name, specialty, license_number, is_verified, created_at, email, role
         """, (full_name, specialty, license_number, val_verified, email, password_hash, role))
         row = cursor.fetchone()
         conn.commit()
@@ -1256,7 +1281,9 @@ def create_doctor(
             "specialty": row[2],
             "license_number": row[3],
             "is_verified": bool(row[4]),
-            "created_at": str(row[5])
+            "created_at": str(row[5]),
+            "email": row[6] if len(row) > 6 and row[6] else (email or ""),
+            "role": row[7] if len(row) > 7 and row[7] else role
         }
     else:
         execute_query(cursor, """
@@ -1265,7 +1292,7 @@ def create_doctor(
         """, (full_name, specialty, license_number, val_verified, email, password_hash, role))
         doc_id = cursor.lastrowid
         conn.commit()
-        execute_query(cursor, "SELECT id, full_name, specialty, license_number, is_verified, created_at FROM doctors WHERE id = ?", (doc_id,))
+        execute_query(cursor, "SELECT id, full_name, specialty, license_number, is_verified, created_at, email, role FROM doctors WHERE id = ?", (doc_id,))
         row = cursor.fetchone()
         conn.close()
         return {
@@ -1274,13 +1301,15 @@ def create_doctor(
             "specialty": row[2],
             "license_number": row[3],
             "is_verified": bool(row[4]),
-            "created_at": str(row[5])
+            "created_at": str(row[5]),
+            "email": row[6] if len(row) > 6 and row[6] else (email or ""),
+            "role": row[7] if len(row) > 7 and row[7] else role
         }
 
 def get_doctor_by_id(doctor_id: int) -> dict:
     conn = get_connection()
     cursor = conn.cursor()
-    execute_query(cursor, "SELECT id, full_name, specialty, license_number, is_verified, created_at FROM doctors WHERE id = ?", (doctor_id,))
+    execute_query(cursor, "SELECT id, full_name, specialty, license_number, is_verified, created_at, email, role FROM doctors WHERE id = ?", (doctor_id,))
     row = cursor.fetchone()
     conn.close()
     if not row:
@@ -1291,8 +1320,61 @@ def get_doctor_by_id(doctor_id: int) -> dict:
         "specialty": row[2],
         "license_number": row[3],
         "is_verified": bool(row[4]),
-        "created_at": str(row[5])
+        "created_at": str(row[5]),
+        "email": row[6] if len(row) > 6 else "",
+        "role": row[7] if len(row) > 7 else "DOCTOR"
     }
+
+def get_doctor_by_email(email: str) -> dict:
+    """Поиск профиля врача по email (без пароля)"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "SELECT id, full_name, specialty, license_number, is_verified, created_at, email, role FROM doctors WHERE email = ?", (email.strip().lower(),))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "full_name": row[1],
+        "specialty": row[2],
+        "license_number": row[3],
+        "is_verified": bool(row[4]),
+        "created_at": str(row[5]),
+        "email": row[6] if len(row) > 6 else "",
+        "role": row[7] if len(row) > 7 else "DOCTOR"
+    }
+
+def get_all_doctors(limit: int = 100, offset: int = 0) -> list:
+    """
+    Выборка списка врачей из таблицы doctors, отсортированная по id DESC / created_at DESC.
+    Исключает поле password_hash в целях безопасности.
+    Возвращает поля: id, full_name, specialty, email, license_number, is_verified, role, created_at.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        SELECT id, full_name, specialty, email, license_number, is_verified, role, created_at
+        FROM doctors
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?
+    """, (limit, offset))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    doctors = []
+    for r in rows:
+        doctors.append({
+            "id": r[0],
+            "full_name": r[1] or "",
+            "specialty": r[2] or "",
+            "email": r[3] or "",
+            "license_number": r[4] or "",
+            "is_verified": bool(r[5]),
+            "role": r[6] or "DOCTOR",
+            "created_at": str(r[7]) if r[7] else ""
+        })
+    return doctors
 
 def verify_doctor(doctor_id: int) -> bool:
     conn = get_connection()
@@ -1971,22 +2053,26 @@ def delete_doctor_note(note_id: int, doctor_id: int) -> bool:
 
 def create_public_chat_message(
     author_role: str,
-    author_id: str,
+    author_id: Optional[str],
     author_name: str,
     message_text: str,
     is_approved: bool = True
 ) -> dict:
     """
     Сохраняет сообщение в открытый чат сообщества.
+    Поддерживает роли 'PATIENT', 'DOCTOR', 'ADMIN', 'GUEST'.
+    Для гостей author_id может принимать значение None / NULL.
     """
     conn = get_connection()
     cursor = conn.cursor()
     is_postgres = check_is_postgres()
     val_approved = is_approved if is_postgres else (1 if is_approved else 0)
+    author_id_val = str(author_id) if author_id is not None else None
+    
     execute_query(cursor, """
         INSERT INTO public_chat_messages (author_role, author_id, author_name, message_text, is_approved)
         VALUES (?, ?, ?, ?, ?)
-    """, (author_role, str(author_id), author_name, message_text, val_approved))
+    """, (author_role, author_id_val, author_name, message_text, val_approved))
     conn.commit()
     
     execute_query(cursor, """
@@ -2009,7 +2095,7 @@ def create_public_chat_message(
     return {
         "id": 1,
         "author_role": author_role,
-        "author_id": str(author_id),
+        "author_id": author_id_val,
         "author_name": author_name,
         "message_text": message_text,
         "is_approved": is_approved,

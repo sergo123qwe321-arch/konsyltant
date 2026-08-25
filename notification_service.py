@@ -134,6 +134,101 @@ def send_email_to_recipient(email: str, subject: str, html_body: str) -> bool:
     """Удобная функция отправки HTML-письма на указанный адрес."""
     return NotificationService.send_smtp_email(subject, html_body, email)
 
+def send_doctor_onboarding_email(doctor_email: str, full_name: str, temp_password: str, specialty: str) -> bool:
+    """
+    Отправляет реквизиты доступа новому врачу/специалисту с дублированием на корпоративный адрес центра.
+    """
+    base_url = os.getenv("BASE_URL", "https://xn--g1aj3a.site").rstrip("/")
+    if ":8000" in base_url:
+        base_url = "https://xn--g1aj3a.site"
+        
+    login_url = f"{base_url}/#doctor"
+    masked_email = mask_credential(doctor_email)
+    masked_pass = mask_credential(temp_password)
+    print(f"[ONBOARDING DOCTOR] Подготовка отправки доступов для врача '{full_name}' | Email: {masked_email} | Pass: {masked_pass}")
+
+    subject = "Доступ к кабинету врача — Центр «Маленькая Страна»"
+    
+    html_body = f"""
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0F172A; color: #F8FAFC; margin: 0; padding: 24px; }}
+            .container {{ max-width: 600px; margin: 0 auto; background: #1E293B; border-radius: 16px; border: 1px solid #7C3AED; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }}
+            .header {{ background: linear-gradient(135deg, #7C3AED, #06B6D4); padding: 24px; text-align: center; color: #ffffff; }}
+            .header h1 {{ margin: 0; font-size: 20px; font-weight: 700; }}
+            .header p {{ margin: 6px 0 0 0; font-size: 13px; opacity: 0.9; }}
+            .content {{ padding: 24px; }}
+            .badge {{ display: inline-block; background: rgba(124, 58, 237, 0.2); color: #C084FC; border: 1px solid #7C3AED; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }}
+            .card {{ background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 18px; margin: 18px 0; }}
+            .cred-row {{ display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; }}
+            .cred-label {{ color: #94A3B8; font-weight: 500; }}
+            .cred-value {{ color: #F8FAFC; font-weight: 600; font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 4px; }}
+            .btn {{ display: block; text-align: center; background: #7C3AED; color: #ffffff !important; text-decoration: none; padding: 14px 20px; border-radius: 8px; font-weight: 600; font-size: 15px; margin: 20px 0; }}
+            .alert-box {{ background: rgba(239, 68, 68, 0.1); border-left: 4px solid #EF4444; padding: 12px 14px; border-radius: 4px; font-size: 12px; color: #FCA5A5; line-height: 1.5; margin-top: 20px; }}
+            .footer {{ padding: 16px 24px; text-align: center; font-size: 12px; color: #64748B; border-top: 1px solid rgba(255,255,255,0.06); }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Центр ментального здоровья «Маленькая Страна»</h1>
+                <p>Единая цифровая диагностическая платформа</p>
+            </div>
+            <div class="content">
+                <span class="badge">🩺 Кабинет специалиста</span>
+                <h2 style="margin: 0 0 10px 0; font-size: 18px; color: #F8FAFC;">Здравствуйте, {full_name}!</h2>
+                <p style="font-size: 14px; line-height: 1.5; color: #CBD5E1; margin: 0 0 16px 0;">
+                    Для вас создана учетная запись врача в центре ментального здоровья детей «Маленькая Страна».
+                    Специализация: <strong>{specialty}</strong>.
+                </p>
+                
+                <div class="card">
+                    <div style="font-size: 13px; font-weight: 600; color: #A78BFA; margin-bottom: 12px;">🔑 ВАШИ РЕКВИЗИТЫ ДЛЯ ВХОДА:</div>
+                    <div style="margin-bottom: 8px;">
+                        <span style="color: #94A3B8; font-size: 13px;">Логин (Email):</span><br>
+                        <strong style="color: #38BDF8; font-size: 15px;">{doctor_email}</strong>
+                    </div>
+                    <div>
+                        <span style="color: #94A3B8; font-size: 13px;">Временный пароль:</span><br>
+                        <code style="display: inline-block; margin-top: 4px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.15); color: #4ADE80; font-size: 16px; padding: 4px 10px; border-radius: 6px; letter-spacing: 1px;">{temp_password}</code>
+                    </div>
+                </div>
+
+                <a href="{login_url}" class="btn" style="color: #ffffff;">Войти в кабинет врача 🩺</a>
+
+                <div class="alert-box">
+                    <strong>🛡️ БЕЗОПАСНОСТЬ И ВРАЧЕБНАЯ ТАЙНА (152-ФЗ):</strong><br>
+                    • Рекомендуем сменить временный пароль при первом входе.<br>
+                    • Доступ к медицинским документам и картам детей строго конфиденциален.<br>
+                    • Передача учетных данных третьим лицам категорически запрещена.
+                </div>
+            </div>
+            <div class="footer">
+                © Центр ментального здоровья детей «Маленькая Страна» | Домен: цмз.site<br>
+                По техническим вопросам: konsultantms@yandex.com
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    try:
+        # Отправка на почту врача
+        success_doc = send_email_to_recipient(doctor_email, subject, html_body)
+        
+        # Обязательное дублирование на корпоративный адрес клиники
+        primary_alert = os.getenv("PRIMARY_ALERT_EMAIL", "konsultantms@yandex.com")
+        if primary_alert and primary_alert != doctor_email:
+            send_email_to_recipient(primary_alert, f"[КОПИЯ ОНБОРДИНГА] {subject} ({full_name})", html_body)
+            
+        return success_doc
+    except Exception as e:
+        print(f"[ONBOARDING DOCTOR ERROR] Сбой отправки письма врачу {doctor_email}: {e}")
+        return False
+
 def send_dual_email(subject: str, html_body: str, primary_email: str = None, secondary_email: str = None) -> dict:
     """Отправляет письмо с дублированием на два ключевых адреса."""
     p_email = primary_email or os.getenv("PRIMARY_ALERT_EMAIL", "konsultantms@yandex.com")
@@ -147,3 +242,4 @@ def send_dual_email(subject: str, html_body: str, primary_email: str = None, sec
         s_email: res_s,
         "success": res_p or res_s
     }
+

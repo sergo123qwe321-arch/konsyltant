@@ -272,11 +272,12 @@
                 <span style="font-size: 1.4rem;">💬</span>
                 <div>
                     <h4 style="margin: 0; font-size: 1.05rem; color: #fff;">Открытый диалог сообщества</h4>
-                    <span style="font-size: 0.8rem; color: var(--text-muted);">Чтение доступно всем посетителям</span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">Чтение и публикация доступны всем посетителям</span>
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="display: flex; gap: 6px; font-size: 0.75rem;">
+                <div style="display: flex; gap: 6px; font-size: 0.75rem; flex-wrap: wrap;">
+                    <span style="color: #9CA3AF; background: rgba(156,163,175,0.15); padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(156,163,175,0.3);">⚪ Гости</span>
                     <span style="color: #34D399; background: rgba(16,185,129,0.15); padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(16,185,129,0.3);">🟢 Родители</span>
                     <span style="color: #F87171; background: rgba(239,68,68,0.15); padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(239,68,68,0.3);">🔴 Врачи</span>
                     <span style="color: #C084FC; background: rgba(168,85,247,0.15); padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(168,85,247,0.3);">🟣 Администрация</span>
@@ -290,30 +291,26 @@
             <div style="text-align: center; color: var(--text-muted); padding: 40px 0;">Загрузка сообщений сообщества...</div>
         </div>
 
-        <!-- Нижняя панель: ввод сообщения или плашка авторизации -->
+        <!-- Нижняя панель: ввод сообщения -->
         <div style="padding: 16px 20px; background: rgba(255,255,255,0.02); border-top: 1px solid rgba(255,255,255,0.08);">
-            <!-- Панель ввода для авторизованных -->
-            <div id="community-chat-input-box" style="display: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.82rem;">
-                    <span id="community-user-badge" style="color: #fff; font-weight: 500;">👤 Вы вошли как: </span>
-                    <a href="javascript:void(0)" onclick="logoutCommunityUser()" style="color: var(--accent-turquoise); text-decoration: underline;">Сменить профиль / Выйти</a>
+            <div id="community-chat-input-box" style="display: block;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.82rem; flex-wrap: wrap; gap: 6px;">
+                    <span id="community-user-badge" style="color: #9CA3AF; font-weight: 500;">
+                        ⚪ Вы пишете как гость (до 3 сообщ/час).
+                    </span>
+                    <div id="community-auth-actions" style="display: inline;">
+                        <span style="color: var(--text-muted); font-size: 0.8rem; margin-right: 6px;">Писать без ограничений:</span>
+                        <a href="javascript:void(0)" onclick="openModal('parent-modal')" style="color: #34D399; text-decoration: underline; margin-right: 8px;">🧸 Родитель</a>
+                        <a href="javascript:void(0)" onclick="openDoctorModal()" style="color: #F87171; text-decoration: underline; margin-right: 8px;">🩺 Врач</a>
+                        <a href="javascript:void(0)" onclick="openAdminModal()" style="color: #C084FC; text-decoration: underline;">🔐 Админ</a>
+                    </div>
+                    <a href="javascript:void(0)" id="community-logout-link" onclick="logoutCommunityUser()" style="display: none; color: var(--accent-turquoise); text-decoration: underline;">Сменить профиль / Выйти</a>
                 </div>
-                <form id="community-chat-form" onsubmit="handleSendCommunityMessage(event)" style="display: flex; gap: 10px;">
-                    <input class="form-input" id="community-msg-input" placeholder="Напишите сообщение в открытый чат сообщества..." maxlength="1000" style="flex: 1;" required />
+                <form id="community-chat-form" onsubmit="handleSendCommunityMessage(event)" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <input class="form-input" id="community-guest-name" placeholder="Ваше имя (необязательно)" maxlength="50" style="width: 180px; flex-shrink: 0;" />
+                    <input class="form-input" id="community-msg-input" placeholder="Напишите сообщение в открытый чат сообщества..." maxlength="1000" style="flex: 1; min-width: 220px;" required />
                     <button class="btn btn-purple" id="community-send-btn" type="submit" style="padding: 10px 20px; white-space: nowrap;">Отправить 🚀</button>
                 </form>
-            </div>
-
-            <!-- Подсказка входа для неавторизованных -->
-            <div id="community-chat-auth-prompt" style="display: block; text-align: center; padding: 6px 0;">
-                <p style="margin: 0 0 12px 0; font-size: 0.9rem; color: var(--text-muted);">
-                    🔒 Чтобы написать сообщение в чат, выберите свою роль и войдите:
-                </p>
-                <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn btn-turquoise" onclick="openModal('parent-modal')" style="padding: 8px 16px; font-size: 0.85rem;">🧸 Вход для родителей</button>
-                    <button class="btn btn-purple" onclick="openDoctorModal()" style="padding: 8px 16px; font-size: 0.85rem;">🩺 Вход для специалистов</button>
-                    <button class="btn btn-outline" onclick="openAdminModal()" style="padding: 8px 16px; font-size: 0.85rem;">🔐 Вход для администратора</button>
-                </div>
             </div>
         </div>
     </div>
@@ -674,6 +671,7 @@
 </div>
 <div class="admin-tabs" style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
 <button class="btn btn-turquoise" id="tab-btn-leads" onclick="switchAdminTab('leads')" style="padding: 8px 16px; font-size: 0.85rem;">📋 Заявки с сайта (<span id="leads-counter">0</span>)</button>
+<button class="btn btn-outline" id="tab-btn-doctors" onclick="switchAdminTab('doctors')" style="padding: 8px 16px; font-size: 0.85rem;">🩺 Специалисты и врачи (<span id="doctors-counter">0</span>)</button>
 <button class="btn btn-outline" id="tab-btn-posts" onclick="switchAdminTab('posts')" style="padding: 8px 16px; font-size: 0.85rem;">✍️ Управление блогом</button>
 <button class="btn btn-outline" id="tab-btn-ops" onclick="switchAdminTab('ops')" style="padding: 8px 16px; font-size: 0.85rem;">📊 Операционная панель</button>
 <button class="btn btn-outline" id="tab-btn-moderation" onclick="switchAdminTab('moderation')" style="padding: 8px 16px; font-size: 0.85rem;">🛡️ Модерация (<span id="moderation-counter">0</span>)</button>
@@ -687,6 +685,58 @@
 <div id="admin-leads-list" style="display: flex; flex-direction: column; gap: 10px;">
 <div style="text-align: center; color: var(--text-muted); padding: 20px;">Загрузка заявок...</div>
 </div>
+</div>
+<!-- Вкладка 5: Онбординг и управление врачами -->
+<div id="admin-tab-doctors" style="display: none; overflow-y: auto; flex: 1; padding-right: 4px;">
+    <!-- Форма регистрации врача -->
+    <div style="background: rgba(30,30,46,0.9); border: 1px solid rgba(124,58,237,0.3); border-radius: 12px; padding: 18px; margin-bottom: 20px;">
+        <h5 style="margin: 0 0 14px 0; color: var(--accent-turquoise); font-size: 1.05rem; display: flex; align-items: center; gap: 8px;">
+            <span>🩺</span> Зарегистрировать нового врача / специалиста
+        </h5>
+        <form id="admin-doctor-reg-form" onsubmit="handleRegisterDoctor(event)">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 14px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label" for="doc-reg-fullname">ФИО специалиста *</label>
+                    <input class="form-input" id="doc-reg-fullname" placeholder="Например: Сергеева Ольга Дмитриевна" required />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label" for="doc-reg-specialty">Специализация *</label>
+                    <input class="form-input" id="doc-reg-specialty" placeholder="Например: Детский клинический психолог" required />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label" for="doc-reg-email">Email для отправки доступов *</label>
+                    <input class="form-input" id="doc-reg-email" type="email" placeholder="doctor@cmz.site" required />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label" for="doc-reg-phone">Номер телефона (опционально)</label>
+                    <input class="form-input" id="doc-reg-phone" placeholder="+7 (999) 123-45-67" />
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label" for="doc-reg-license">Номер лицензии (опционально)</label>
+                    <input class="form-input" id="doc-reg-license" placeholder="Оставьте пустым для автогенерации DOC-XXXXXX" />
+                </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <span style="font-size: 0.8rem; color: var(--text-muted);">
+                    🛡️ Временный пароль сгенерируется автоматически и будет отправлен на указанный email с копией на почту клиники.
+                </span>
+                <button class="btn btn-purple" id="doc-reg-submit-btn" type="submit" style="padding: 10px 22px; font-size: 0.9rem; white-space: nowrap;">
+                    Зарегистрировать врача и отправить доступы ✉️
+                </button>
+            </div>
+        </form>
+        <!-- Блок статуса регистрации -->
+        <div id="doc-reg-result-box" style="display: none; margin-top: 16px; padding: 14px; border-radius: 8px; font-size: 0.88rem;"></div>
+    </div>
+
+    <!-- Список действующих врачей -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="margin: 0; font-size: 1.05rem;">Действующие специалисты клиники</h4>
+        <button class="btn btn-outline" onclick="loadAdminDoctors()" style="padding: 4px 10px; font-size: 0.75rem;">🔄 Обновить список</button>
+    </div>
+    <div id="admin-doctors-list" style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="text-align: center; color: var(--text-muted); padding: 20px;">Загрузка списка специалистов... ⏳</div>
+    </div>
 </div>
 <!-- Вкладка 2: Статьи блога -->
 <div id="admin-tab-posts" style="display: none; overflow-y: auto; flex: 1; padding-right: 4px;">

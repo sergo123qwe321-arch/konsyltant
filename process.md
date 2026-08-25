@@ -374,13 +374,88 @@
     - Полный тестовый набор проекта из 100 тестов выполнен со 100% успехом (`Ran 100 tests in 12.540s. OK`).
     - Затронутые файлы: `database.py`, `security_utils.py`, `rag.py`, `analyses_generator.py`, `main.py`, `templates/index.html`, `static/js/app.js`, `static/app.js`, `.gitignore`, `docker-compose.yml`, `scripts/lint_no_txt_logs.py`, `test_media_url_validation.py`, `test_chat_moderation.py`, `test_analyses_generation.py`, `test_landing_and_admin_ops.py`, `ARCHITECTURE.md`, `process.md`.
 
+- [2026-08-25] [Doctor Onboarding & Guest Chat - Step 1] Модификация слоя БД и сервиса email-уведомлений:
+  - В `database.py`:
+    - Функция `create_public_chat_message` обновлена: параметр `author_id` теперь может принимать `None` / `NULL`, поддерживается роль `author_role = 'GUEST'`.
+    - Схемы и автомиграции `public_chat_messages` в PostgreSQL и SQLite адаптированы для поддержки `NULL` в колонке `author_id`.
+    - Реализована функция `get_all_doctors(limit=100, offset=0)`: возвращает список врачей из таблицы `doctors` (поля `id`, `full_name`, `specialty`, `email`, `license_number`, `is_verified`, `role`, `created_at`) с исключением `password_hash` в целях безопасности.
+  - В `notification_service.py`:
+    - Реализована функция `send_doctor_onboarding_email(doctor_email, full_name, temp_password, specialty)`: формирует брендированный HTML-шаблон с реквизитами доступа, прямой ссылкой `https://цмз.site/#doctor`, рекомендацией смены пароля и регламентом соблюдения 152-ФЗ / врачебной тайны, осуществляет отправку через Yandex SMTP (SSL 465) с обязательным дублированием копии на `PRIMARY_ALERT_EMAIL`.
+  - Верификация: 100/100 тестов пройдены успешно без регрессий.
+
+- [2026-08-25] [Doctor Onboarding & Guest Chat - Step 2] Реализация API эндпоинтов онбординга врачей и логики гостевого чата с Rate Limiter:
+  - В `main.py`:
+    - Инициализирован `guest_chat_rate_limiter = InMemoryAuthRateLimiter(max_requests=3, window_seconds=3600, lockout_seconds=3600)` для защиты гостевого чата от спама (макс. 3 сообщения в час на IP).
+    - Внедрена вспомогательная функция `get_client_ip(request)` с поддержкой `X-Forwarded-For` и проксирования.
+    - Реализована зависимость `get_optional_community_user`: опционально валидирует Bearer JWT токен, возвращает профиль пользователя (`is_guest=False`) либо гостевую структуру (`is_guest=True`).
+    - Обновлен эндпоинт `POST /api/v1/public/chat`:
+      - Поддерживает отправку сообщений гостями (`author_role = 'GUEST'`, `author_id = None`, `author_name` из запроса или `"Гость"` по умолчанию).
+      - Гости ограничены 3 сообщениями в час с одного IP (HTTP 429 Too Many Requests с заголовком `Retry-After`).
+      - Авторизованные пользователи пропускаются без гостевых ограничений по стандартному лимитеру (10 сообщ/мин).
+      - Ко всем сообщениям безусловно применяются мат-фильтр `contains_profanity` и очередь премодерации сторонних ссылок.
+    - Реализован защищенный эндпоинт `POST /api/v1/admin/doctors` (роль `ADMIN`):
+      - Валидация входных данных `DoctorCreateRequest` (ФИО, специализация, email через regex, телефон, лицензия).
+      - Проверка уникальности email врача в таблице `doctors` (HTTP 400 при коллизии).
+      - Автогенерация номера лицензии `DOC-XXXXXX` (при отсутствии) и криптографически стойкого временного пароля (12 символов).
+      - Хэширование пароля через `bcrypt.hashpw` и сохранение врача с `is_verified = True`.
+      - Отправка email через `send_doctor_onboarding_email` на ящик врача и дублированием копии на `PRIMARY_ALERT_EMAIL`.
+    - Реализован эндпоинт `GET /api/v1/admin/doctors` (роль `ADMIN`) для получения списка врачей клиники.
+  - В `test_community_chat.py`:
+    - Обновлен тест `test_03_guest_post_allowed_and_rate_limited` для проверки гостевого постинга и срабатывания 429 лимита при 4-м сообщении.
+  - Верификация: 100/100 тестов репозитория пройдены успешно (100% PASS).
+
+- [2026-08-25] [Doctor Onboarding & Guest Chat - Step 3] Обновление фронтенда открытого чата и CMS панели администратора:
+  - В `templates/index.html`:
+    - В блоке `#community-chat`:
+      - В шапку чата добавлен бейдж `⚪ Гости` рядом с ролями родителей, врачей и администрации.
+      - Удалена блокирующая плашка входа; форма ввода сообщения сделана доступной для всех посетителей по умолчанию.
+      - Добавлено поле ввода имени гостя `<input id="community-guest-name" placeholder="Ваше имя (необязательно)">`.
+      - Интегрирована динамическая подсказка статуса: `⚪ Вы пишете как гость (до 3 сообщ/час)` с кнопками быстрого перехода к авторизации для родителей, врачей и администратора.
+    - В модальном окне CMS (`#admin-dashboard-modal`):
+      - Добавлена новая вкладка управления специалистами `#admin-tab-doctors` («🩺 Специалисты и врачи») с живым счётчиком (`#doctors-counter`).
+      - Развернута адаптивная форма регистрации нового врача (ФИО, Специализация, Email, Телефон, Лицензия).
+      - Создан блок вывода списка действующих врачей клиники с бейджами верификации и метаданными.
+  - В `static/js/app.js`:
+    - Обновлена функция `updateCommunityChatAuthState()`: динамически адаптирует интерфейс под гостя или авторизованного пользователя (скрывает/показывает поле имени гостя и ссылки авторизации).
+    - Обновлена функция `handleSendCommunityMessage()`: формирует запрос без заголовка `Authorization` и передает `author_name` при отправке от гостя, обрабатывает ошибку HTTP 429 с понятным уведомлением о часовом лимите.
+    - В функции `loadCommunityChatMessages()` добавлена визуальная стилизация сообщений гостей: нейтрально-серый бейдж «⚪ Гость» (`#9CA3AF`, `rgba(156, 163, 175, 0.15)`).
+    - Внедрены функции `switchAdminTab('doctors')`, `loadAdminDoctors()` и `handleRegisterDoctor()`: асинхронно регистрируют врача через `POST /api/v1/admin/doctors`, отображают сгенерированный временный пароль со статусом отправки email и обновляют список врачей клиники.
+    - Обновлены вызовы в `openAdminModal()` и `handleAdminLogin()` для автоматической загрузки реестра специалистов при открытии панели управления.
+  - Верификация: 100/100 тестов репозитория пройдены успешно (100% PASS).
+
+- [2026-08-25] [Doctor Onboarding & Guest Chat - Step 4] CLI-скрипт онбординга врачей, комплексный интеграционный тест-сьют и документация:
+  - Разработан CLI-скрипт `scripts/admin/register_doctor.py`:
+    - Поддержка параметров командной строки `argparse`: `--name`, `--specialty`, `--email`, `--license`, `--phone`.
+    - Поддержка интерактивного консольного ввода через `input()`.
+    - Валидация regex формата email и проверка уникальности в базе данных.
+    - Автогенерация лицензии `DOC-XXXXXX` и криптостойкого 12-значного пароля через `secrets`.
+    - Хэширование через `bcrypt`, сохранение в `doctors` (`is_verified = True`).
+    - Вызов `send_doctor_onboarding_email` с отправкой на email врача и дублированием на `PRIMARY_ALERT_EMAIL`.
+    - Вывод структурированных реквизитов доступа в консоль.
+  - Разработан интеграционный тестовый набор `test_guest_chat_and_doctor_onboarding.py` (7/7 PASS):
+    - `test_01_guest_chat_message_success`: публикация сообщений гостями без авторизации (`author_role = 'GUEST'`, `author_id = None`, кастомное имя либо дефолт `Гость`).
+    - `test_02_guest_chat_rate_limiting`: успешная отправка 3 сообщений в час от одного IP и возврат HTTP 429 Too Many Requests с заголовком `Retry-After` на 4-е сообщение.
+    - `test_03_authenticated_user_bypasses_guest_limit`: подтверждение, что авторизованные пользователи (ADMIN/PATIENT/DOCTOR) не блокируются гостевым лимитером.
+    - `test_04_guest_chat_profanity_and_url_moderation`: валидация блокировки мата и отправки внешних ссылок в очередь премодерации (`is_approved = False`).
+    - `test_05_admin_create_doctor_endpoint`: проверка `POST /api/v1/admin/doctors` с мокированием SMTP (`unittest.mock.patch`), создание записи в БД, генерация временного пароля и запрет дубликатов email.
+    - `test_06_admin_create_doctor_unauthorized`: проверка возврата 401 для неавторизованных и 403 для ролей PATIENT / DOCTOR.
+    - `test_07_admin_get_doctors_list`: проверка `GET /api/v1/admin/doctors` (структура данных, отсутствие `password_hash`, защита 401/403).
+  - В `database.py`:
+    - Добавлена вспомогательная функция `get_doctor_by_email(email: str) -> dict`.
+  - В `ARCHITECTURE.md`:
+    - Добавлен раздел 13.5 «Подсистема онбординга врачей и открытый гостевой чат сообщества».
+  - Верификация: полный регрессионный прогон из 107 тестов проекта завершен со 100% успехом (`Ran 107 tests in 12.404s. OK`).
+  - Линтер `lint_no_txt_logs.py`: 0 запрещенных текстовых логов.
+
 ## План
 - **Что сделано:**
-  - Полностью реализованы и верифицированы блоки 0, 1, 2, 3, 4, 5 релиза v7.1-production.
-  - Все 100 тестов пройдены успешно (100% PASS).
-  - Линтер логов `scripts/lint_no_txt_logs.py` подтвердил отсутствие запрещенных txt-файлов.
+  - Реализован Этап 1: Слой данных и сервис email-уведомлений для онбординга врачей и гостевого чата (`database.py`, `notification_service.py`).
+  - Реализован Этап 2: API эндпоинты онбординга врачей (`POST/GET /api/v1/admin/doctors`) и логика гостевого чата с Rate Limiter 3 сообщ/час (`POST /api/v1/public/chat` в `main.py`).
+  - Реализован Этап 3: Обновление фронтенда открытого чата и CMS панели администратора (`templates/index.html`, `static/js/app.js`).
+  - Реализован Этап 4: CLI-скрипт `scripts/admin/register_doctor.py`, интеграционный тестовый набор `test_guest_chat_and_doctor_onboarding.py`, актуализация `ARCHITECTURE.md`.
+  - Все 107 тестов проекта пройдены со 100% успехом.
 - **Что в процессе:**
-  - Деплой релиза v7.1-production на боевой VPS Beget (`159.194.232.74`).
+  - Все этапы технического задания полностью реализованы и протестированы.
 - **Что предстоит:**
-  - Создание коммита и релизного тега `v7.1-production` в Git.
+  - Финальный отчет и готовность к развертыванию на боевом сервере (v7.1-production).
 

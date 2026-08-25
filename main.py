@@ -1,4 +1,8 @@
 import os
+import secrets
+import string
+import re
+import bcrypt
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -23,8 +27,9 @@ from database import (
     get_public_events, get_public_posts, get_public_doctors,
     get_post_by_id, create_lead, get_all_leads, create_public_post,
     update_public_post, delete_public_post, verify_admin_credentials,
-    create_doctor, get_doctor_by_id, verify_doctor, create_share_grant,
-    validate_share_grant, verify_doctor_credentials, check_doctor_patient_grant,
+    create_doctor, get_doctor_by_id, verify_doctor, get_all_doctors,
+    get_connection, execute_query,
+    create_share_grant, validate_share_grant, verify_doctor_credentials, check_doctor_patient_grant,
     count_active_shares, get_share_grant_by_id, revoke_share_grant,
     get_active_shares_for_patient, get_patient_access_by_folder,
     get_latest_etl_metric_for_folder, get_all_etl_metrics,
@@ -48,6 +53,7 @@ from security_utils import (
     create_access_token, verify_token, mask_ip, mask_credential,
     InMemoryAuthRateLimiter, validate_media_url, process_chat_message_moderation
 )
+from notification_service import send_doctor_onboarding_email
 from alert_service import alert_worker_loop, send_test_alert, run_health_checks_and_alert
 
 logger = logging.getLogger(__name__)
@@ -93,9 +99,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ИИ-Консультант RAG API", lifespan=lifespan)
 
-# --- Rate Limiting Configuration (Brute-force Protection) ---
+# --- Rate Limiting Configuration (Brute-force & Guest Protection) ---
 AUTH_ENDPOINTS = {"/api/login", "/api/v1/doctor/login", "/api/v1/admin/login"}
 auth_rate_limiter = InMemoryAuthRateLimiter(max_requests=5, window_seconds=60, lockout_seconds=300)
+guest_chat_rate_limiter = InMemoryAuthRateLimiter(max_requests=3, window_seconds=3600, lockout_seconds=3600)
+chat_rate_limiter = InMemoryAuthRateLimiter(max_requests=10, window_seconds=60, lockout_seconds=60)
+
+def get_client_ip(request: Request) -> str:
+    """
+    Извлекает реальный IP-адрес клиента с учетом заголовков проксирования (X-Forwarded-For) или request.client.host.
+    """
+    x_forwarded_for = request.headers.get("x-forwarded-for")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
 
 @app.middleware("http")
 async def auth_rate_limiting_middleware(request: Request, call_next):
@@ -109,13 +128,7 @@ async def auth_rate_limiting_middleware(request: Request, call_next):
     path = request.url.path.rstrip("/")
     if request.method == "POST" and path in AUTH_ENDPOINTS:
         # Извлекаем IP клиента (с учетом Nginx X-Forwarded-For)
-        x_forwarded_for = request.headers.get("x-forwarded-for")
-        if x_forwarded_for:
-            client_ip = x_forwarded_for.split(",")[0].strip()
-        elif request.client and request.client.host:
-            client_ip = request.client.host
-        else:
-            client_ip = "unknown"
+        client_ip = get_client_ip(request)
 
         try:
             is_limited, retry_after, attempts = auth_rate_limiter.is_rate_limited(client_ip, path)
@@ -230,12 +243,14 @@ async def get_current_doctor(
         
     return payload
 
-async def get_current_community_user(
+async def get_optional_community_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     authorization: Optional[str] = Header(None)
 ) -> dict:
     """
-    Проверяет Stateless JWT токен пользователя сообщества (поддерживает роли 'PATIENT', 'DOCTOR', 'ADMIN').
+    Опционально проверяет Stateless JWT токен пользователя сообщества.
+    Если передан валидный токен (роли 'PATIENT', 'DOCTOR', 'ADMIN') -> возвращает профиль пользователя (is_guest=False).
+    Если токен отсутствует, истек или невалиден -> возвращает структуру гостя (is_guest=True).
     """
     token = None
     if credentials and credentials.credentials:
@@ -244,15 +259,30 @@ async def get_current_community_user(
         token = authorization.split(" ")[1]
         
     if not token:
-        raise HTTPException(status_code=401, detail="Для отправки сообщений в чат необходимо авторизоваться")
+        return {
+            "role": "GUEST",
+            "author_id": None,
+            "author_name": None,
+            "is_guest": True
+        }
         
     payload = verify_token(token)
     if not payload:
-        raise HTTPException(status_code=401, detail="Сессия недействительна или истекла")
+        return {
+            "role": "GUEST",
+            "author_id": None,
+            "author_name": None,
+            "is_guest": True
+        }
         
     role = payload.get("role", "PATIENT")
     if role not in ("PATIENT", "DOCTOR", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Недопустимая роль пользователя")
+        return {
+            "role": "GUEST",
+            "author_id": None,
+            "author_name": None,
+            "is_guest": True
+        }
 
     author_id = str(payload.get("sub") or payload.get("doctor_id") or "user")
     author_name = payload.get("full_name") or ""
@@ -271,8 +301,19 @@ async def get_current_community_user(
         "role": role,
         "author_id": author_id,
         "author_name": author_name,
+        "is_guest": False,
         "payload": payload
     }
+
+async def get_current_community_user(
+    user: dict = Depends(get_optional_community_user)
+) -> dict:
+    """
+    Проверяет Stateless JWT токен пользователя сообщества (требует обязательной авторизации: 'PATIENT', 'DOCTOR', 'ADMIN').
+    """
+    if user.get("is_guest"):
+        raise HTTPException(status_code=401, detail="Для выполнения этого действия необходимо авторизоваться")
+    return user
 
 class TokenVerifyRequest(BaseModel):
     token: str
@@ -289,6 +330,14 @@ class DoctorNoteSaveRequest(BaseModel):
 
 class CommunityChatMessageRequest(BaseModel):
     message: str
+    author_name: Optional[str] = None
+
+class DoctorCreateRequest(BaseModel):
+    full_name: str
+    specialty: str
+    email: str
+    phone: Optional[str] = ""
+    license_number: Optional[str] = ""
 
 class ChatReportRequest(BaseModel):
     reason: Optional[str] = ""
@@ -659,6 +708,105 @@ def admin_media_url_validation_api(
         "status": "ok",
         "validated_url": req.url,
         "type": req.type or "image"
+    }
+
+# --- Административный Онбординг Врачей ---
+
+@app.post("/api/v1/admin/doctors")
+def admin_create_doctor_api(
+    req: DoctorCreateRequest,
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Онбординг нового врача/специалиста администратором клиники.
+    Генерирует временный пароль, сохраняет врача со статусом is_verified=True,
+    отправляет письмо с реквизитами на email врача и дублирует на PRIMARY_ALERT_EMAIL.
+    """
+    full_name = req.full_name.strip()
+    specialty = req.specialty.strip()
+    email = str(req.email).strip().lower()
+    phone = (req.phone or "").strip()
+    license_number = (req.license_number or "").strip()
+    
+    if not full_name:
+        raise HTTPException(status_code=400, detail="ФИО специалиста не может быть пустым")
+    if not specialty:
+        raise HTTPException(status_code=400, detail="Специализация специалиста не может быть пустой")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email специалиста не может быть пустым")
+        
+    email_pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+    if not re.match(email_pattern, email):
+        raise HTTPException(status_code=400, detail="Некорректный формат адреса электронной почты")
+
+    # Проверка уникальности email в таблице doctors
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "SELECT id FROM doctors WHERE email = ?", (email,))
+    existing = cursor.fetchone()
+    conn.close()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Врач с адресом электронной почты '{email}' уже зарегистрирован в системе")
+
+    if not license_number:
+        license_number = f"DOC-{secrets.token_hex(3).upper()}"
+
+    # Генерация криптографически стойкого временного пароля (12 символов)
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    raw_password = "".join(secrets.choice(alphabet) for _ in range(12))
+    
+    salt = bcrypt.gensalt()
+    password_hash = bcrypt.hashpw(raw_password.encode('utf-8'), salt).decode('utf-8')
+
+    # Сохранение в doctors
+    doc = create_doctor(
+        full_name=full_name,
+        specialty=specialty,
+        license_number=license_number,
+        is_verified=True,
+        email=email,
+        password_hash=password_hash,
+        role="DOCTOR"
+    )
+
+    # Отправка уведомления на email
+    email_sent = False
+    try:
+        email_sent = send_doctor_onboarding_email(
+            doctor_email=email,
+            full_name=full_name,
+            temp_password=raw_password,
+            specialty=specialty
+        )
+    except Exception as e:
+        logger.warning(f"[ONBOARDING DOCTOR] Ошибка отправки письма: {e}")
+
+    return {
+        "status": "ok",
+        "doctor": doc,
+        "temporary_password": raw_password,
+        "email_sent": email_sent,
+        "message": f"Врач '{full_name}' успешно зарегистрирован. Доступы отправлены на {email}."
+    }
+
+@app.get("/api/v1/admin/doctors")
+def admin_get_doctors_list_api(
+    limit: int = 100,
+    offset: int = 0,
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Получение списка зарегистрированных врачей клиники для панели администратора.
+    """
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    doctors = get_all_doctors(limit=limit, offset=offset)
+    return {
+        "status": "ok",
+        "doctors": doctors,
+        "total": len(doctors),
+        "limit": limit,
+        "offset": offset
     }
 
 # --- Эндпоинты Врачей и Шеринга Данных (Phase 3) ---
@@ -1383,8 +1531,6 @@ async def admin_alerts_status_api(admin: dict = Depends(get_current_admin)):
 
 # --- Эндпоинты Открытого Чата Сообщества (Block Г) ---
 
-chat_rate_limiter = InMemoryAuthRateLimiter(max_requests=10, window_seconds=60, lockout_seconds=60)
-
 @app.get("/api/v1/public/chat")
 def public_chat_get_api(
     limit: int = 50,
@@ -1409,36 +1555,61 @@ def public_chat_get_api(
 def public_chat_post_api(
     req: CommunityChatMessageRequest,
     request: Request,
-    user: dict = Depends(get_current_community_user)
+    user: dict = Depends(get_optional_community_user)
 ):
     """
-    Отправка сообщения в открытый чат сообщества (только для авторизованных пользователей: PATIENT, DOCTOR, ADMIN).
-    Проверяет блокировки (баны), мат-фильтр, валидность ссылок и rate limiting (до 10 сообщений в минуту).
+    Отправка сообщения в открытый чат сообщества.
+    Поддерживает как авторизованных пользователей (PATIENT, DOCTOR, ADMIN), так и гостей (GUEST).
+    Для гостей действует лимит: не более 3 сообщений в час с одного IP.
+    Для всех сообщений применяется мат-фильтр, проверка длины и очередь премодерации сторонних ссылок.
     """
-    author_id = user.get("author_id", "")
-    author_role = user.get("role", "PATIENT")
-
-    # 1. Проверка блокировки пользователя
-    banned, ban_reason, banned_until = is_user_banned(author_id, author_role)
-    if banned:
-        raise HTTPException(status_code=403, detail="Вы заблокированы в чате за нарушение правил")
-
-    # 2. Rate Limiting
-    client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "127.0.0.1").split(",")[0].strip()
-    rate_key = f"chat:{client_ip}:{author_role}:{author_id}"
-    
-    is_limited, retry_after, _ = chat_rate_limiter.is_rate_limited(rate_key)
-    if is_limited:
-        raise HTTPException(status_code=429, detail=f"Слишком много сообщений. Пожалуйста, подождите {retry_after} сек. перед следующей отправкой.")
-    chat_rate_limiter.record_attempt(rate_key)
-
     msg_text = (req.message or "").strip()
     if not msg_text:
         raise HTTPException(status_code=400, detail="Текст сообщения не может быть пустым")
     if len(msg_text) > 1000:
         raise HTTPException(status_code=400, detail="Длина сообщения превышает 1000 символов")
 
-    # 3. Модерация контента: мат-фильтр, схемы, сервисы сокращения и белые списки ссылок
+    client_ip = get_client_ip(request)
+
+    if user.get("is_guest"):
+        # 1. Гостевой Rate Limiting (3 сообщения в час)
+        rate_key = f"guest_chat:{client_ip}"
+        is_limited, retry_after, _ = guest_chat_rate_limiter.is_rate_limited(rate_key)
+        if is_limited:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Лимит для гостей: не более 3 сообщений в час. Пожалуйста, подождите {retry_after} сек. или войдите в личный кабинет.",
+                headers={"Retry-After": str(retry_after)}
+            )
+        guest_chat_rate_limiter.record_attempt(rate_key)
+        
+        author_role = "GUEST"
+        author_id = None
+        custom_name = (req.author_name or "").strip()
+        author_name = custom_name if custom_name else "Гость"
+    else:
+        # Авторизованный пользователь
+        author_id = user.get("author_id", "")
+        author_role = user.get("role", "PATIENT")
+        author_name = user.get("author_name", "Пользователь")
+
+        # Проверка блокировки пользователя
+        banned, ban_reason, banned_until = is_user_banned(author_id, author_role)
+        if banned:
+            raise HTTPException(status_code=403, detail="Вы заблокированы в чате за нарушение правил")
+
+        # Стандартный лимитер для авторизованных (10 сообщений в минуту)
+        rate_key = f"chat:{client_ip}:{author_role}:{author_id}"
+        is_limited, retry_after, _ = chat_rate_limiter.is_rate_limited(rate_key)
+        if is_limited:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Слишком много сообщений. Пожалуйста, подождите {retry_after} сек. перед следующей отправкой.",
+                headers={"Retry-After": str(retry_after)}
+            )
+        chat_rate_limiter.record_attempt(rate_key)
+
+    # 2. Модерация контента: мат-фильтр, схемы, сервисы сокращения и белые списки ссылок
     try:
         processed_text, is_approved = process_chat_message_moderation(msg_text)
     except ValueError as val_err:
@@ -1447,7 +1618,7 @@ def public_chat_post_api(
     msg = create_public_chat_message(
         author_role=author_role,
         author_id=author_id,
-        author_name=user["author_name"],
+        author_name=author_name,
         message_text=processed_text,
         is_approved=is_approved
     )

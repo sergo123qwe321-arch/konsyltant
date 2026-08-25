@@ -58,10 +58,25 @@ class TestCommunityChat(unittest.TestCase):
         self.assertEqual(msg_a["author_role"], "ADMIN")
         self.assertEqual(msg_a["author_name"], "Главный Врач")
 
-    def test_03_unauthorized_post_rejected(self):
-        """Неавторизованный пользователь не может писать в чат"""
-        res = self.client.post("/api/v1/public/chat", json={"message": "Спам сообщение"})
-        self.assertEqual(res.status_code, 401)
+    def test_03_guest_post_allowed_and_rate_limited(self):
+        """Неавторизованный гость может отправлять сообщения до 3 раз в час с IP-лимитом"""
+        from main import guest_chat_rate_limiter
+        guest_chat_rate_limiter.reset("guest_chat:testclient")
+        
+        # 1. Первое сообщение гостя
+        res = self.client.post("/api/v1/public/chat", json={"message": "Вопрос от гостя сайта", "author_name": "Елена"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["message"]["author_role"], "GUEST")
+        self.assertEqual(res.json()["message"]["author_name"], "Елена")
+        
+        # 2. Второе и третье сообщения
+        self.assertEqual(self.client.post("/api/v1/public/chat", json={"message": "Сообщение 2"}).status_code, 200)
+        self.assertEqual(self.client.post("/api/v1/public/chat", json={"message": "Сообщение 3"}).status_code, 200)
+        
+        # 3. Четвертое сообщение превышает лимит (429)
+        res_429 = self.client.post("/api/v1/public/chat", json={"message": "Сообщение 4 (лимит)"})
+        self.assertEqual(res_429.status_code, 429)
+        self.assertIn("Retry-After", res_429.headers)
 
     def test_04_admin_moderation_deletion(self):
         """Администратор может удалять сообщения из ленты чата"""
