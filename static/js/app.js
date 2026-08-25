@@ -346,6 +346,88 @@
             });
         }
 
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function getEmbedVideoUrl(url) {
+            if (!url) return '';
+            const trimmed = url.trim();
+            if (trimmed.includes('rutube.ru')) {
+                const match = trimmed.match(/rutube\.ru\/(?:video|play\/embed)\/([a-zA-Z0-9]+)/);
+                if (match && match[1]) {
+                    return `https://rutube.ru/play/embed/${match[1]}`;
+                }
+                return trimmed;
+            }
+            if (trimmed.includes('vk.com') || trimmed.includes('vkvideo.ru')) {
+                if (trimmed.includes('video_ext.php')) return trimmed;
+                const match = trimmed.match(/video(-?\d+)_(\d+)/);
+                if (match) {
+                    return `https://vk.com/video_ext.php?oid=${match[1]}&id=${match[2]}&hd=2`;
+                }
+                return trimmed;
+            }
+            if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) {
+                let videoId = '';
+                if (trimmed.includes('youtu.be/')) {
+                    videoId = trimmed.split('youtu.be/')[1].split(/[?&]/)[0];
+                } else if (trimmed.includes('v=')) {
+                    videoId = trimmed.split('v=')[1].split('&')[0];
+                } else if (trimmed.includes('embed/')) {
+                    return trimmed;
+                }
+                if (videoId) {
+                    return `https://www.youtube.com/embed/${videoId}`;
+                }
+            }
+            return trimmed;
+        }
+
+        function renderMediaBlock(videoUrl, coverImageUrl) {
+            if (!videoUrl && !coverImageUrl) return '';
+            let html = '';
+            
+            if (videoUrl) {
+                const isLocalVideo = videoUrl.endsWith('.mp4') || videoUrl.endsWith('.webm') || videoUrl.includes('/static/uploads/');
+                if (isLocalVideo) {
+                    const posterAttr = coverImageUrl ? `poster="${coverImageUrl}"` : '';
+                    html += `
+                        <div style="margin-bottom: 14px;">
+                            <video controls ${posterAttr} style="width: 100%; max-height: 340px; border-radius: 12px; background: #000; display: block;" src="${videoUrl}"></video>
+                            <div style="margin-top: 8px; font-size: 0.85rem;">
+                                <a href="${videoUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-turquoise); text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
+                                    <span>🔗 Смотреть на первоисточнике</span> <span style="font-size: 0.75rem;">↗</span>
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    const embedUrl = getEmbedVideoUrl(videoUrl);
+                    html += `
+                        <div style="margin-bottom: 14px;">
+                            <iframe src="${embedUrl}" style="width: 100%; height: 320px; border: none; border-radius: 12px; background: #000;" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                            <div style="margin-top: 8px; font-size: 0.85rem;">
+                                <a href="${videoUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-turquoise); text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
+                                    <span>🔗 Смотреть на первоисточнике</span> <span style="font-size: 0.75rem;">↗</span>
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                }
+            } else if (coverImageUrl) {
+                html += `<img src="${coverImageUrl}" style="width: 100%; max-height: 280px; object-fit: cover; border-radius: 12px; margin-bottom: 14px;" alt="Обложка"/>`;
+            }
+            
+            return html;
+        }
+
         async function openArticleReader(postId) {
             let post = (cachedPosts || []).find(p => p.id === postId);
             if (!post || !post.content) {
@@ -369,25 +451,11 @@
             if (Array.isArray(post.tags)) tagsList = post.tags;
             else if (typeof post.tags === 'string') tagsList = post.tags.split(',').map(t => t.trim().replace(/[\[\]"]/g, ''));
             
-            document.getElementById('article-modal-tags').innerHTML = tagsList.map(t => `<span class="blog-tag" style="margin-right: 6px;">${t}</span>`).join('');
+            document.getElementById('article-modal-tags').innerHTML = tagsList.map(t => `<span class="blog-tag" style="margin-right: 6px;">${escapeHtml(t)}</span>`).join('');
             
             const mediaContainer = document.getElementById('article-modal-media');
             if (mediaContainer) {
-                let mediaHTML = '';
-                if (post.video_url) {
-                    if (post.video_url.endsWith('.mp4') || post.video_url.endsWith('.webm')) {
-                        mediaHTML += `<video controls style="width: 100%; max-height: 320px; border-radius: 10px; background: #000;" src="${post.video_url}"></video>`;
-                    } else {
-                        mediaHTML += `
-                            <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px;">
-                                <span style="font-size: 0.9rem; color: #fff;">🎬 Видеоматериал к статье</span>
-                                <a href="${post.video_url}" target="_blank" class="btn btn-purple" style="padding: 6px 12px; font-size: 0.8rem; text-decoration: none;">Смотреть видео ↗️</a>
-                            </div>
-                        `;
-                    }
-                } else if (post.cover_image_url) {
-                    mediaHTML += `<img src="${post.cover_image_url}" style="width: 100%; max-height: 280px; object-fit: cover; border-radius: 10px;" alt="Обложка"/>`;
-                }
+                const mediaHTML = renderMediaBlock(post.video_url, post.cover_image_url);
                 if (mediaHTML) {
                     mediaContainer.innerHTML = mediaHTML;
                     mediaContainer.style.display = 'block';
@@ -1258,6 +1326,9 @@
 
                 const data = await res.json();
                 
+                currentDoctorPatientFolderId = data.patient_folder_id || '';
+                currentDoctorShareToken = shareToken;
+
                 // Заполняем данные карты
                 document.getElementById('doc-view-patient-id').textContent = data.patient_folder_id || 'ID: Confidential';
                 document.getElementById('doc-view-expiry').textContent = `⏱️ Доступ активен до: ${data.expires_at}`;
@@ -1282,18 +1353,30 @@
                             <div style="display: flex; align-items: flex-start; gap: 10px;">
                                 <span style="font-size: 1.4rem; line-height: 1;">${icon}</span>
                                 <div style="flex: 1; min-width: 0;">
-                                    <div style="font-size: 0.9rem; font-weight: 600; color: #fff; word-break: break-word;" title="${doc.name}">${doc.name}</div>
+                                    <div style="font-size: 0.9rem; font-weight: 600; color: #fff; word-break: break-word;" title="${escapeHtml(doc.name)}">${escapeHtml(doc.name)}</div>
                                     <div style="font-size: 0.75rem; color: var(--accent-turquoise); margin-top: 4px;">Диагностический документ ${size}</div>
                                 </div>
                             </div>
                             <div style="display: flex; gap: 8px; margin-top: 6px;">
-                                <button class="btn btn-outline" style="flex: 1; padding: 6px 10px; font-size: 0.8rem;" onclick="alert('Документ: ${doc.name}\\nФайл расшифрован и готов к клиническому анализу.')">👁️ Просмотр</button>
-                                <button class="btn btn-turquoise" style="padding: 6px 12px; font-size: 0.8rem;" onclick="alert('Скачивание зашифрованного файла ${doc.name}...')">💾</button>
+                                <button class="btn btn-outline" style="flex: 1; padding: 6px 10px; font-size: 0.8rem;" onclick="viewDoctorDocument('${escapeHtml(shareToken)}', '${encodeURIComponent(doc.name)}')">👁️ Просмотр</button>
+                                <button class="btn btn-turquoise" style="padding: 6px 12px; font-size: 0.8rem;" onclick="downloadDoctorDocument('${escapeHtml(shareToken)}', '${encodeURIComponent(doc.name)}')">💾 Скачать</button>
                             </div>
                         `;
                         grid.appendChild(card);
                     });
                 }
+
+                // Загружаем сохраненные заметки врача
+                loadDoctorNotes(data.patient_folder_id);
+
+                // Сбрасываем отображение резюме
+                const summaryContainer = document.getElementById('doc-summary-container');
+                if (summaryContainer) {
+                    summaryContainer.style.display = 'none';
+                    summaryContainer.innerHTML = '';
+                }
+                const pdfBtn = document.getElementById('doc-download-pdf-btn');
+                if (pdfBtn) pdfBtn.style.display = 'none';
 
                 if (recordEmpty) recordEmpty.style.display = 'none';
                 if (recordView) recordView.style.display = 'block';
@@ -1308,6 +1391,268 @@
                 if (searchBtn) {
                     searchBtn.disabled = false;
                     searchBtn.textContent = '🔍 Открыть карту';
+                }
+            }
+        }
+
+        let currentDoctorPatientFolderId = '';
+        let currentDoctorShareToken = '';
+
+        async function viewDoctorDocument(shareToken, encodedDocName) {
+            const docName = decodeURIComponent(encodedDocName);
+            const docToken = localStorage.getItem('doctor_token');
+            if (!docToken) {
+                alert('Сессия врача не активна. Пожалуйста, выполните вход.');
+                return;
+            }
+            try {
+                const res = await fetch(`/api/v1/doctor/patient-records/${encodeURIComponent(shareToken)}/document/${encodeURIComponent(docName)}`, {
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Не удалось открыть документ');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+            } catch (err) {
+                alert('Ошибка открытия документа: ' + err.message);
+            }
+        }
+
+        async function downloadDoctorDocument(shareToken, encodedDocName) {
+            const docName = decodeURIComponent(encodedDocName);
+            const docToken = localStorage.getItem('doctor_token');
+            if (!docToken) {
+                alert('Сессия врача не активна. Пожалуйста, выполните вход.');
+                return;
+            }
+            try {
+                const res = await fetch(`/api/v1/doctor/patient-records/${encodeURIComponent(shareToken)}/document/${encodeURIComponent(docName)}`, {
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Не удалось скачать документ');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = docName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            } catch (err) {
+                alert('Ошибка скачивания документа: ' + err.message);
+            }
+        }
+
+        async function loadDoctorNotes(patientFolderId) {
+            const docToken = localStorage.getItem('doctor_token');
+            const input = document.getElementById('doc-notes-input');
+            const status = document.getElementById('doc-notes-status');
+            if (status) status.style.display = 'none';
+            if (!docToken || !patientFolderId) return;
+            try {
+                const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(patientFolderId)}/notes`, {
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (input && data.note && data.note.note_text) {
+                        input.value = data.note.note_text;
+                    } else if (input) {
+                        input.value = '';
+                    }
+                }
+            } catch (e) {
+                console.warn('Ошибка загрузки заметок врача:', e);
+            }
+        }
+
+        async function handleSaveDoctorNotes() {
+            const docToken = localStorage.getItem('doctor_token');
+            const input = document.getElementById('doc-notes-input');
+            const btn = document.getElementById('doc-save-notes-btn');
+            const status = document.getElementById('doc-notes-status');
+            if (!docToken || !currentDoctorPatientFolderId || !input) return;
+            
+            const noteText = input.value.trim();
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Сохранение...';
+            }
+            try {
+                const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(currentDoctorPatientFolderId)}/notes`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${docToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ note_text: noteText })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Не удалось сохранить заметку');
+                }
+                if (status) {
+                    status.textContent = '✓ Заметка сохранена';
+                    status.style.display = 'inline';
+                    setTimeout(() => { status.style.display = 'none'; }, 4000);
+                }
+            } catch (err) {
+                alert('Ошибка: ' + err.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Сохранить 💾';
+                }
+            }
+        }
+
+        async function handleDoctorGenerateSummary() {
+            const docToken = localStorage.getItem('doctor_token');
+            const btn = document.getElementById('doc-generate-summary-btn');
+            const loader = document.getElementById('doc-summary-loading');
+            const container = document.getElementById('doc-summary-container');
+            const pdfBtn = document.getElementById('doc-download-pdf-btn');
+
+            if (!docToken || !currentDoctorPatientFolderId) {
+                alert('Сессия врача не найдена или не выбрана папка пациента.');
+                return;
+            }
+
+            if (btn) btn.disabled = true;
+            if (loader) loader.style.display = 'block';
+            if (container) {
+                container.style.display = 'none';
+                container.innerHTML = '';
+            }
+            if (pdfBtn) pdfBtn.style.display = 'none';
+
+            try {
+                const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(currentDoctorPatientFolderId)}/summary`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Ошибка генерации клинического резюме');
+                }
+
+                const data = await res.json();
+                const s = data.summary || {};
+
+                if (container) {
+                    let cardsHTML = '';
+
+                    // 1. Анамнез
+                    if (s.anamnesis) {
+                        cardsHTML += `
+                            <div style="background: rgba(255,255,255,0.03); border-left: 4px solid var(--accent-purple); border-radius: 8px; padding: 12px 14px;">
+                                <h5 style="margin: 0 0 6px 0; color: #fff; font-size: 0.95rem;">📋 Анамнез и развитие</h5>
+                                <p style="margin: 0; font-size: 0.88rem; color: #E2E8F0; line-height: 1.5; white-space: pre-wrap;">${escapeHtml(s.anamnesis)}</p>
+                            </div>
+                        `;
+                    }
+
+                    // 2. Диагнозы
+                    if (s.diagnoses && (Array.isArray(s.diagnoses) ? s.diagnoses.length : s.diagnoses)) {
+                        const diagList = Array.isArray(s.diagnoses) ? s.diagnoses.map(d => `<li>${escapeHtml(d)}</li>`).join('') : `<li>${escapeHtml(s.diagnoses)}</li>`;
+                        cardsHTML += `
+                            <div style="background: rgba(255,255,255,0.03); border-left: 4px solid var(--accent-turquoise); border-radius: 8px; padding: 12px 14px;">
+                                <h5 style="margin: 0 0 6px 0; color: #fff; font-size: 0.95rem;">🩺 Установленные диагнозы и особенности</h5>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 0.88rem; color: #E2E8F0; line-height: 1.5;">${diagList}</ul>
+                            </div>
+                        `;
+                    }
+
+                    // 3. Противопоказания (КРАСНЫМ АКЦЕНТОМ)
+                    if (s.contraindications && (Array.isArray(s.contraindications) ? s.contraindications.length : s.contraindications)) {
+                        const contraList = Array.isArray(s.contraindications) ? s.contraindications.map(c => `<li>${escapeHtml(c)}</li>`).join('') : `<li>${escapeHtml(s.contraindications)}</li>`;
+                        cardsHTML += `
+                            <div style="background: rgba(239, 68, 68, 0.12); border-left: 4px solid #EF4444; border-radius: 8px; padding: 12px 14px;">
+                                <h5 style="margin: 0 0 6px 0; color: #F87171; font-size: 0.95rem;">⚠️ Абсолютные противопоказания и риски</h5>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 0.88rem; color: #FCA5A5; line-height: 1.5;">${contraList}</ul>
+                            </div>
+                        `;
+                    }
+
+                    // 4. Несовместимые препараты (ЯНТАРНЫМ АКЦЕНТОМ)
+                    if (s.drug_interactions && (Array.isArray(s.drug_interactions) ? s.drug_interactions.length : s.drug_interactions)) {
+                        const drugsList = Array.isArray(s.drug_interactions) ? s.drug_interactions.map(d => `<li>${escapeHtml(d)}</li>`).join('') : `<li>${escapeHtml(s.drug_interactions)}</li>`;
+                        cardsHTML += `
+                            <div style="background: rgba(245, 158, 11, 0.12); border-left: 4px solid #F59E0B; border-radius: 8px; padding: 12px 14px;">
+                                <h5 style="margin: 0 0 6px 0; color: #FBBF24; font-size: 0.95rem;">💊 Межлекарственные взаимодействия и несовместимость</h5>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 0.88rem; color: #FDE68A; line-height: 1.5;">${drugsList}</ul>
+                            </div>
+                        `;
+                    }
+
+                    // 5. Рекомендации
+                    if (s.recommendations && (Array.isArray(s.recommendations) ? s.recommendations.length : s.recommendations)) {
+                        const recList = Array.isArray(s.recommendations) ? s.recommendations.map(r => `<li>${escapeHtml(r)}</li>`).join('') : `<li>${escapeHtml(s.recommendations)}</li>`;
+                        cardsHTML += `
+                            <div style="background: rgba(16, 185, 129, 0.1); border-left: 4px solid #10B981; border-radius: 8px; padding: 12px 14px;">
+                                <h5 style="margin: 0 0 6px 0; color: #34D399; font-size: 0.95rem;">💡 Рекомендации консилиума специалистов</h5>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 0.88rem; color: #D1FAE5; line-height: 1.5;">${recList}</ul>
+                            </div>
+                        `;
+                    }
+
+                    container.innerHTML = cardsHTML || '<div style="color: var(--text-muted); font-size: 0.9rem;">Резюме сформировано.</div>';
+                    container.style.display = 'flex';
+                }
+
+                if (pdfBtn) {
+                    pdfBtn.style.display = 'inline-block';
+                }
+            } catch (err) {
+                alert('Ошибка формирования резюме: ' + err.message);
+            } finally {
+                if (btn) btn.disabled = false;
+                if (loader) loader.style.display = 'none';
+            }
+        }
+
+        async function handleDoctorDownloadSummaryPdf() {
+            const docToken = localStorage.getItem('doctor_token');
+            const pdfBtn = document.getElementById('doc-download-pdf-btn');
+            if (!docToken || !currentDoctorPatientFolderId) return;
+
+            if (pdfBtn) {
+                pdfBtn.disabled = true;
+                pdfBtn.textContent = 'Скачивание...';
+            }
+
+            try {
+                const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(currentDoctorPatientFolderId)}/summary/pdf`, {
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Не удалось скачать PDF');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const cleanName = currentDoctorPatientFolderId.replace('disk:/', '').replace(/[\/\\]/g, '_').trim();
+                a.download = `medical_summary_${cleanName}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            } catch (err) {
+                alert('Ошибка скачивания PDF: ' + err.message);
+            } finally {
+                if (pdfBtn) {
+                    pdfBtn.disabled = false;
+                    pdfBtn.textContent = 'Скачать PDF 📄';
                 }
             }
         }
@@ -1694,9 +2039,283 @@
             }
         }
 
+        /* ==========================================================================
+           14. ОТКРЫТЫЙ ЧАТ СООБЩЕСТВА (COMMUNITY CHAT - BLOCK Г)
+           ========================================================================== */
+        function getActiveCommunityAuth() {
+            const adminToken = localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token');
+            if (adminToken) {
+                return { token: adminToken, role: 'ADMIN', name: 'Администрация' };
+            }
+            const docToken = localStorage.getItem('doctor_token');
+            if (docToken) {
+                const docName = localStorage.getItem('doctor_name') || 'Врач-специалист';
+                return { token: docToken, role: 'DOCTOR', name: docName };
+            }
+            const patientToken = localStorage.getItem('patient_token') || sessionStorage.getItem('patient_token');
+            if (patientToken) {
+                const patientName = localStorage.getItem('patient_name') || 'Родитель';
+                return { token: patientToken, role: 'PATIENT', name: patientName };
+            }
+            return null;
+        }
+
+        function updateCommunityChatAuthState() {
+            const auth = getActiveCommunityAuth();
+            const inputBox = document.getElementById('community-chat-input-box');
+            const authPrompt = document.getElementById('community-chat-auth-prompt');
+            const userBadge = document.getElementById('community-user-badge');
+
+            if (auth) {
+                if (inputBox) inputBox.style.display = 'block';
+                if (authPrompt) authPrompt.style.display = 'none';
+                if (userBadge) {
+                    let roleTag = 'Родитель';
+                    let color = '#34D399';
+                    if (auth.role === 'DOCTOR') {
+                        roleTag = 'Врач';
+                        color = '#F87171';
+                    } else if (auth.role === 'ADMIN') {
+                        roleTag = 'Администрация';
+                        color = '#C084FC';
+                    }
+                    userBadge.innerHTML = `👤 Вы вошли как: <strong style="color: ${color};">${escapeHtml(auth.name)}</strong> (${roleTag})`;
+                }
+            } else {
+                if (inputBox) inputBox.style.display = 'none';
+                if (authPrompt) authPrompt.style.display = 'block';
+            }
+        }
+
+        function logoutCommunityUser() {
+            localStorage.removeItem('patient_token');
+            localStorage.removeItem('patient_name');
+            sessionStorage.removeItem('patient_token');
+            logoutDoctor();
+            logoutAdmin();
+            updateCommunityChatAuthState();
+            loadCommunityChatMessages();
+        }
+
+        async function loadCommunityChatMessages() {
+            const feed = document.getElementById('community-chat-feed');
+            if (!feed) return;
+            try {
+                const res = await fetch('/api/v1/public/chat?limit=50');
+                if (!res.ok) return;
+                const data = await res.json();
+                const messages = data.messages || [];
+                const auth = getActiveCommunityAuth();
+                const isAdmin = auth && auth.role === 'ADMIN';
+
+                if (messages.length === 0) {
+                    feed.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 40px 0;">В сообществе пока нет сообщений. Будьте первыми! ✨</div>';
+                    return;
+                }
+
+                let html = '';
+                messages.forEach(m => {
+                    let roleName = 'Родитель';
+                    let roleColor = '#34D399';
+                    let roleBg = 'rgba(16,185,129,0.15)';
+                    let roleBorder = 'rgba(16,185,129,0.3)';
+
+                    if (m.author_role === 'DOCTOR') {
+                        roleName = 'Врач / Специалист';
+                        roleColor = '#F87171';
+                        roleBg = 'rgba(239,68,68,0.15)';
+                        roleBorder = 'rgba(239,68,68,0.3)';
+                    } else if (m.author_role === 'ADMIN') {
+                        roleName = 'Администрация';
+                        roleColor = '#C084FC';
+                        roleBg = 'rgba(168,85,247,0.15)';
+                        roleBorder = 'rgba(168,85,247,0.3)';
+                    }
+
+                    let dateStr = 'Недавно';
+                    if (m.created_at) {
+                        try {
+                            const dt = new Date(m.created_at);
+                            if (!isNaN(dt.getTime())) {
+                                const time = dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                                const date = dt.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+                                dateStr = `${date} ${time}`;
+                            } else {
+                                dateStr = m.created_at.slice(0, 16);
+                            }
+                        } catch(e) {
+                            dateStr = m.created_at;
+                        }
+                    }
+
+                    const deleteBtn = isAdmin ? `
+                        <button onclick="deleteCommunityMessage(${m.id})" style="background: none; border: none; color: #EF4444; font-size: 0.8rem; cursor: pointer; padding: 2px 4px; border-radius: 4px;" title="Удалить сообщение модератором">🗑️</button>
+                    ` : '';
+
+                    html += `
+                        <div style="background: rgba(30, 30, 46, 0.75); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <strong style="color: ${roleColor}; font-size: 0.92rem;">${escapeHtml(m.author_name || 'Пользователь')}</strong>
+                                    <span style="color: ${roleColor}; background: ${roleBg}; border: 1px solid ${roleBorder}; font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; font-weight: 500;">${roleName}</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <span style="font-size: 0.75rem; color: var(--text-muted);">${dateStr}</span>
+                                    ${deleteBtn}
+                                </div>
+                            </div>
+                            <div style="font-size: 0.9rem; color: #F1F5F9; line-height: 1.45; word-break: break-word; white-space: pre-wrap;">${escapeHtml(m.message_text)}</div>
+                        </div>
+                    `;
+                });
+
+                feed.innerHTML = html;
+                feed.scrollTop = feed.scrollHeight;
+            } catch (e) {
+                console.warn('Ошибка загрузки чата:', e);
+            }
+        }
+
+        async function handleSendCommunityMessage(event) {
+            event.preventDefault();
+            const input = document.getElementById('community-msg-input');
+            const btn = document.getElementById('community-send-btn');
+            const auth = getActiveCommunityAuth();
+
+            if (!auth || !auth.token) {
+                alert('Для отправки сообщения необходимо авторизоваться.');
+                updateCommunityChatAuthState();
+                return;
+            }
+
+            const text = input ? input.value.trim() : '';
+            if (!text) return;
+
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Отправка...';
+            }
+
+            try {
+                const res = await fetch('/api/v1/public/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${auth.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message: text })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    if (res.status === 429) {
+                        throw new Error(err.detail || 'Слишком много сообщений. Пожалуйста, подождите минуту.');
+                    }
+                    if (res.status === 401) {
+                        logoutCommunityUser();
+                        throw new Error('Сессия истекла. Пожалуйста, войдите снова.');
+                    }
+                    throw new Error(err.detail || 'Не удалось отправить сообщение');
+                }
+
+                if (input) input.value = '';
+                await loadCommunityChatMessages();
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Отправить 🚀';
+                }
+            }
+        }
+
+        async function deleteCommunityMessage(messageId) {
+            if (!confirm('Вы действительно хотите удалить это сообщение?')) return;
+            const auth = getActiveCommunityAuth();
+            if (!auth || auth.role !== 'ADMIN') {
+                alert('Только администратор может удалять сообщения.');
+                return;
+            }
+            try {
+                const res = await fetch(`/api/v1/public/chat/${messageId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${auth.token}` }
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Ошибка удаления сообщения');
+                }
+                await loadCommunityChatMessages();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function handleParentLogin(event) {
+            event.preventDefault();
+            let token = document.getElementById('parent-token-input').value.trim();
+            const pass = document.getElementById('parent-pass-input').value.trim();
+            const btn = document.getElementById('parent-login-btn');
+            const errDiv = document.getElementById('parent-login-error');
+
+            if (token.includes('token=')) {
+                token = token.split('token=')[1].split('&')[0];
+            }
+
+            if (!token || !pass) {
+                if (errDiv) {
+                    errDiv.textContent = 'Пожалуйста, заполните все поля.';
+                    errDiv.style.display = 'block';
+                }
+                return;
+            }
+
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Вход...';
+            }
+            if (errDiv) errDiv.style.display = 'none';
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: token, password: pass })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Неверный токен или пароль');
+                }
+
+                const data = await res.json();
+                const jwtToken = data.access_token || data.session_token;
+                localStorage.setItem('patient_token', jwtToken);
+                localStorage.setItem('patient_name', 'Родитель');
+
+                closeModal('parent-modal');
+                updateCommunityChatAuthState();
+                await loadCommunityChatMessages();
+            } catch (err) {
+                if (errDiv) {
+                    errDiv.textContent = '❌ ' + err.message;
+                    errDiv.style.display = 'block';
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '🧸 Войти в систему';
+                }
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             preserveQueryParameters();
             initFloatingAlik();
+            updateCommunityChatAuthState();
+            loadCommunityChatMessages();
+            setInterval(loadCommunityChatMessages, 15000);
 
             // Проверка URL параметров для глубоких ссылок (Deep-linking)
             const urlParams = new URLSearchParams(window.location.search);
@@ -1728,7 +2347,7 @@
                 renderBlog(),
                 renderEvents()
             ]).then(() => {
-                console.log('🌌 Все сказочные блоки, CMS, Докторский портал и помощник Алик готовы к работе!');
+                console.log('🌌 Все сказочные блоки, CMS, Докторский портал, Чат Сообщества и помощник Алик готовы к работе!');
             });
         });
 

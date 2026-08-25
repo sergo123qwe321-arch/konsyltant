@@ -262,6 +262,63 @@
 </div>
 </div>
 </section>
+<!-- БЛОК: СООБЩЕСТВО И ОТКРЫТЫЙ ЧАТ (Community Chat) -->
+<section id="community-chat" data-alik-comment="Здесь родители делятся опытом, врачи отвечают на важные вопросы, а администрация всегда на связи! 💬✨">
+    <h2>💬 Сообщество центра</h2>
+    <div style="max-width: 900px; margin: 0 auto; background: rgba(30, 30, 46, 0.8); border: 1px solid rgba(124, 58, 237, 0.3); border-radius: 20px; overflow: hidden; backdrop-filter: blur(16px); box-shadow: 0 12px 36px rgba(0,0,0,0.35);">
+        <!-- Шапка чата -->
+        <div style="padding: 16px 20px; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.4rem;">💬</span>
+                <div>
+                    <h4 style="margin: 0; font-size: 1.05rem; color: #fff;">Открытый диалог сообщества</h4>
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">Чтение доступно всем посетителям</span>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="display: flex; gap: 6px; font-size: 0.75rem;">
+                    <span style="color: #34D399; background: rgba(16,185,129,0.15); padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(16,185,129,0.3);">🟢 Родители</span>
+                    <span style="color: #F87171; background: rgba(239,68,68,0.15); padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(239,68,68,0.3);">🔴 Врачи</span>
+                    <span style="color: #C084FC; background: rgba(168,85,247,0.15); padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(168,85,247,0.3);">🟣 Администрация</span>
+                </div>
+                <button class="btn btn-outline" onclick="loadCommunityChatMessages()" style="padding: 5px 10px; font-size: 0.78rem;" title="Обновить сообщения">🔄</button>
+            </div>
+        </div>
+
+        <!-- Лента сообщений -->
+        <div id="community-chat-feed" style="height: 380px; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; background: rgba(15, 15, 26, 0.4);">
+            <div style="text-align: center; color: var(--text-muted); padding: 40px 0;">Загрузка сообщений сообщества...</div>
+        </div>
+
+        <!-- Нижняя панель: ввод сообщения или плашка авторизации -->
+        <div style="padding: 16px 20px; background: rgba(255,255,255,0.02); border-top: 1px solid rgba(255,255,255,0.08);">
+            <!-- Панель ввода для авторизованных -->
+            <div id="community-chat-input-box" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.82rem;">
+                    <span id="community-user-badge" style="color: #fff; font-weight: 500;">👤 Вы вошли как: </span>
+                    <a href="javascript:void(0)" onclick="logoutCommunityUser()" style="color: var(--accent-turquoise); text-decoration: underline;">Сменить профиль / Выйти</a>
+                </div>
+                <form id="community-chat-form" onsubmit="handleSendCommunityMessage(event)" style="display: flex; gap: 10px;">
+                    <input class="form-input" id="community-msg-input" placeholder="Напишите сообщение в открытый чат сообщества..." maxlength="1000" style="flex: 1;" required />
+                    <button class="btn btn-purple" id="community-send-btn" type="submit" style="padding: 10px 20px; white-space: nowrap;">Отправить 🚀</button>
+                </form>
+            </div>
+
+            <!-- Подсказка входа для неавторизованных -->
+            <div id="community-chat-auth-prompt" style="display: block; text-align: center; padding: 6px 0;">
+                <p style="margin: 0 0 12px 0; font-size: 0.9rem; color: var(--text-muted);">
+                    🔒 Чтобы написать сообщение в чат, выберите свою роль и войдите:
+                </p>
+                <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-turquoise" onclick="openModal('parent-modal')" style="padding: 8px 16px; font-size: 0.85rem;">🧸 Вход для родителей</button>
+                    <button class="btn btn-purple" onclick="openDoctorModal()" style="padding: 8px 16px; font-size: 0.85rem;">🩺 Вход для специалистов</button>
+                    <button class="btn btn-outline" onclick="openAdminModal()" style="padding: 8px 16px; font-size: 0.85rem;">🔐 Вход для администратора</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
 <!-- БЛОК 8: РАЗДЕЛ "ОСОБАЯ ЗАБОТА" -->
 <section id="special-care-section" style="padding-top: 0; padding-bottom: 50px;" data-alik-comment="Медицинские данные и анкеты надёжно зашифрованы по стандартам 152-ФЗ и доступны только вашему врачу. 🛡️">
 <div class="special-care">
@@ -354,6 +411,7 @@
 <li><a href="#services">Услуги</a></li>
 <li><a href="#doctors">Специалисты</a></li>
 <li><a href="#events">Мероприятия</a></li>
+<li><a href="#community-chat">Сообщество</a></li>
 <li><a href="#contacts">Контакты</a></li>
 </ul>
 </div>
@@ -373,6 +431,29 @@
 </div>
 </footer>
 <!-- МОДАЛЬНЫЕ ОКНА -->
+<!-- МОДАЛЬНОЕ ОКНО: ВХОД ДЛЯ РОДИТЕЛЕЙ (PARENT LOGIN) -->
+<div class="modal" id="parent-modal">
+<div class="modal-content" style="max-width: 440px;">
+<button class="close-modal" onclick="closeModal('parent-modal')">×</button>
+<h3>🧸 Вход для родителей</h3>
+<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Войдите по ссылке или коду доступа из письма</p>
+<form id="parent-login-form" onsubmit="handleParentLogin(event)">
+<div class="form-group">
+<label class="form-label" for="parent-token-input">Ссылка или токен доступа</label>
+<input class="form-input" id="parent-token-input" placeholder="Введите токен или вставьте ссылку..." required="" type="text"/>
+</div>
+<div class="form-group">
+<label class="form-label" for="parent-pass-input">Пароль доступа</label>
+<input class="form-input" id="parent-pass-input" placeholder="••••••••" required="" type="password"/>
+</div>
+<div id="parent-login-error" style="color: #EF4444; font-size: 0.85rem; margin-bottom: 10px; display: none;"></div>
+<button class="btn btn-turquoise" id="parent-login-btn" style="width: 100%; margin-top: 10px;" type="submit">
+    🧸 Войти в систему
+</button>
+</form>
+</div>
+</div>
+
 <div class="modal" id="doctor-modal">
 <div class="modal-content" style="max-width: 440px;">
 <button class="close-modal" onclick="closeModal('doctor-modal')">×</button>
@@ -436,6 +517,41 @@
         <h4 style="margin: 0 0 12px 0; font-size: 1.05rem;">📁 Документы и результаты диагностики:</h4>
         <div id="doc-files-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px;">
             <!-- Карточки документов пациента -->
+        </div>
+
+        <!-- СЕКЦИЯ: ЗАМЕТКИ ВРАЧА ПО ПАЦИЕНТУ (Doctor Notes) -->
+        <div style="background: rgba(30,30,46,0.85); border: 1px solid rgba(124,58,237,0.3); border-radius: 14px; padding: 16px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0; font-size: 1rem; color: #fff;">📝 Заметки врача по пациенту:</h4>
+                <span id="doc-notes-status" style="font-size: 0.8rem; color: #34D399; font-weight: 500; display: none;"></span>
+            </div>
+            <textarea class="form-input" id="doc-notes-input" placeholder="Введите клинические заметки, план обследования или замечания по динамике..." rows="3" style="width: 100%; box-sizing: border-box; resize: vertical; margin-bottom: 10px;"></textarea>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="btn btn-purple" id="doc-save-notes-btn" onclick="handleSaveDoctorNotes()" style="padding: 8px 16px; font-size: 0.85rem;">Сохранить 💾</button>
+            </div>
+        </div>
+
+        <!-- СЕКЦИЯ: КЛИНИЧЕСКИЙ КОНСИЛИУМ И СУММАРИЗАЦИЯ (RAG Summary & PDF) -->
+        <div style="background: rgba(30,30,46,0.85); border: 1px solid rgba(6,182,212,0.3); border-radius: 14px; padding: 16px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                <div>
+                    <h4 style="margin: 0; font-size: 1rem; color: #fff;">🩺 Клинический консилиум (RAG-резюме)</h4>
+                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: var(--text-muted);">Автоматический анализ документов и формирование заключения</p>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-turquoise" id="doc-generate-summary-btn" onclick="handleDoctorGenerateSummary()" style="padding: 8px 16px; font-size: 0.85rem;">Сгенерировать резюме 🩺</button>
+                    <button class="btn btn-purple" id="doc-download-pdf-btn" onclick="handleDoctorDownloadSummaryPdf()" style="padding: 8px 16px; font-size: 0.85rem; display: none;">Скачать PDF 📄</button>
+                </div>
+            </div>
+            
+            <div id="doc-summary-loading" style="display: none; text-align: center; padding: 24px; color: var(--accent-turquoise);">
+                <div style="font-size: 1.8rem; margin-bottom: 8px;">⏳</div>
+                <div style="font-weight: 500; font-size: 0.95rem;">Консилиум анализирует документы...</div>
+            </div>
+            
+            <div id="doc-summary-container" style="display: none; flex-direction: column; gap: 12px;">
+                <!-- Структурированные карточки: анамнез, диагнозы, противопоказания (красный), препараты (янтарный), рекомендации -->
+            </div>
         </div>
 
         <div style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.15); border-radius: 14px; padding: 16px;">

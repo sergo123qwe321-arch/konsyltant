@@ -204,6 +204,37 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS doctor_notes (
+                id SERIAL PRIMARY KEY,
+                doctor_id INTEGER NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
+                patient_folder_id VARCHAR(255) NOT NULL,
+                note_text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("ALTER TABLE doctor_notes ADD COLUMN IF NOT EXISTS doctor_id INTEGER")
+        cursor.execute("ALTER TABLE doctor_notes ADD COLUMN IF NOT EXISTS patient_folder_id VARCHAR(255)")
+        cursor.execute("ALTER TABLE doctor_notes ADD COLUMN IF NOT EXISTS note_text TEXT")
+        cursor.execute("ALTER TABLE doctor_notes ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        cursor.execute("ALTER TABLE doctor_notes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public_chat_messages (
+                id SERIAL PRIMARY KEY,
+                author_role VARCHAR(20) NOT NULL,
+                author_id VARCHAR(100) NOT NULL,
+                author_name VARCHAR(150) NOT NULL,
+                message_text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_role VARCHAR(20) NOT NULL DEFAULT 'PATIENT'")
+        cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_id VARCHAR(100) NOT NULL DEFAULT ''")
+        cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_name VARCHAR(150) NOT NULL DEFAULT ''")
+        cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS message_text TEXT NOT NULL DEFAULT ''")
+        cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         conn.commit()
     else:
         cursor.execute("""
@@ -404,6 +435,26 @@ def init_db():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS doctor_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER NOT NULL,
+                patient_folder_id TEXT NOT NULL,
+                note_text TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS public_chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                author_role TEXT NOT NULL,
+                author_id TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                message_text TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
     
     # 1. Сидирование врачей
@@ -576,6 +627,8 @@ def ensure_indexes(conn=None):
         ("idx_llm_usage_created_at", "llm_usage", "created_at", False),
         ("idx_llm_usage_model", "llm_usage", "model", False),
         ("idx_llm_usage_request_type", "llm_usage", "request_type", False),
+        ("idx_doctor_notes_doc_patient", "doctor_notes", "doctor_id, patient_folder_id", False),
+        ("idx_public_chat_messages_created_at", "public_chat_messages", "created_at", False),
     ]
 
     for idx_name, table_name, cols, is_unique in INDEX_SPECS:
@@ -1676,4 +1729,201 @@ def get_llm_usage_summary() -> dict:
         "by_model": by_model,
         "by_request_type": by_type
     }
+
+
+# --- Doctor Notes Helper Functions (Block A) ---
+
+def save_doctor_note(doctor_id: int, patient_folder_id: str, note_text: str) -> dict:
+    """
+    Создает или обновляет клиническую заметку врача по конкретному пациенту.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    clean_folder = patient_folder_id.replace("disk:/", "").strip("/")
+    folder_variants = (patient_folder_id, clean_folder, f"disk:/{clean_folder}")
+    
+    execute_query(cursor, """
+        SELECT id, doctor_id, patient_folder_id, note_text, created_at, updated_at 
+        FROM doctor_notes 
+        WHERE doctor_id = ? AND (patient_folder_id = ? OR patient_folder_id = ? OR patient_folder_id = ?)
+        ORDER BY id DESC LIMIT 1
+    """, (doctor_id, folder_variants[0], folder_variants[1], folder_variants[2]))
+    row = cursor.fetchone()
+    
+    if row:
+        note_id = row[0]
+        execute_query(cursor, """
+            UPDATE doctor_notes 
+            SET note_text = ?, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        """, (note_text, note_id))
+        conn.commit()
+    else:
+        execute_query(cursor, """
+            INSERT INTO doctor_notes (doctor_id, patient_folder_id, note_text)
+            VALUES (?, ?, ?)
+        """, (doctor_id, patient_folder_id, note_text))
+        conn.commit()
+        execute_query(cursor, """
+            SELECT id, doctor_id, patient_folder_id, note_text, created_at, updated_at 
+            FROM doctor_notes 
+            WHERE doctor_id = ? AND patient_folder_id = ?
+            ORDER BY id DESC LIMIT 1
+        """, (doctor_id, patient_folder_id))
+        row = cursor.fetchone()
+        note_id = row[0] if row else 1
+
+    execute_query(cursor, """
+        SELECT id, doctor_id, patient_folder_id, note_text, created_at, updated_at 
+        FROM doctor_notes 
+        WHERE id = ?
+    """, (note_id,))
+    res_row = cursor.fetchone()
+    conn.close()
+
+    if res_row:
+        return {
+            "id": res_row[0],
+            "doctor_id": res_row[1],
+            "patient_folder_id": res_row[2],
+            "note_text": res_row[3],
+            "created_at": str(res_row[4]),
+            "updated_at": str(res_row[5])
+        }
+    return {
+        "id": note_id,
+        "doctor_id": doctor_id,
+        "patient_folder_id": patient_folder_id,
+        "note_text": note_text,
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat()
+    }
+
+def get_doctor_note(doctor_id: int, patient_folder_id: str) -> Optional[dict]:
+    """
+    Возвращает актуальную заметку врача по пациенту.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    clean_folder = patient_folder_id.replace("disk:/", "").strip("/")
+    folder_variants = (patient_folder_id, clean_folder, f"disk:/{clean_folder}")
+    
+    execute_query(cursor, """
+        SELECT id, doctor_id, patient_folder_id, note_text, created_at, updated_at 
+        FROM doctor_notes 
+        WHERE doctor_id = ? AND (patient_folder_id = ? OR patient_folder_id = ? OR patient_folder_id = ?)
+        ORDER BY updated_at DESC, id DESC LIMIT 1
+    """, (doctor_id, folder_variants[0], folder_variants[1], folder_variants[2]))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "doctor_id": row[1],
+        "patient_folder_id": row[2],
+        "note_text": row[3],
+        "created_at": str(row[4]),
+        "updated_at": str(row[5])
+    }
+
+def get_doctor_notes(doctor_id: int, patient_folder_id: str) -> list:
+    note = get_doctor_note(doctor_id, patient_folder_id)
+    return [note] if note else []
+
+def delete_doctor_note(note_id: int, doctor_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "DELETE FROM doctor_notes WHERE id = ? AND doctor_id = ?", (note_id, doctor_id))
+    conn.commit()
+    conn.close()
+    return True
+
+
+# --- Public Community Chat Helper Functions (Block Г) ---
+
+def create_public_chat_message(author_role: str, author_id: str, author_name: str, message_text: str) -> dict:
+    """
+    Создает новое сообщение в открытом чате сообщества.
+    author_role: 'PATIENT' | 'DOCTOR' | 'ADMIN'
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        INSERT INTO public_chat_messages (author_role, author_id, author_name, message_text)
+        VALUES (?, ?, ?, ?)
+    """, (author_role, str(author_id), author_name, message_text))
+    conn.commit()
+    
+    execute_query(cursor, """
+        SELECT id, author_role, author_id, author_name, message_text, created_at
+        FROM public_chat_messages
+        ORDER BY id DESC LIMIT 1
+    """)
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row[0],
+            "author_role": row[1],
+            "author_id": row[2],
+            "author_name": row[3],
+            "message_text": row[4],
+            "created_at": str(row[5])
+        }
+    return {
+        "id": 1,
+        "author_role": author_role,
+        "author_id": str(author_id),
+        "author_name": author_name,
+        "message_text": message_text,
+        "created_at": datetime.now().isoformat()
+    }
+
+def get_public_chat_messages(limit: int = 50, offset: int = 0) -> list:
+    """
+    Возвращает список сообщений чата сообщества в хронологическом порядке.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        SELECT id, author_role, author_id, author_name, message_text, created_at
+        FROM public_chat_messages
+        ORDER BY created_at ASC, id ASC
+        LIMIT ? OFFSET ?
+    """, (limit, offset))
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "author_role": r[1],
+            "author_id": r[2],
+            "author_name": r[3],
+            "message_text": r[4],
+            "created_at": str(r[5])
+        }
+        for r in rows
+    ]
+
+def count_public_chat_messages() -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM public_chat_messages")
+    cnt = cursor.fetchone()[0]
+    conn.close()
+    return cnt
+
+def delete_public_chat_message(message_id: int) -> bool:
+    """
+    Удаляет сообщение чата модератором (ADMIN).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "DELETE FROM public_chat_messages WHERE id = ?", (message_id,))
+    conn.commit()
+    conn.close()
+    return True
+
 

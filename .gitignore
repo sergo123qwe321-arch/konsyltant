@@ -4,4 +4,6 @@ copy.env
 __pycache__/
 *.pyc
 konsyltant.db
-
+*.db
+static/uploads/*
+!static/uploads/.gitkeep
