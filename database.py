@@ -1478,6 +1478,13 @@ def create_share_grant(patient_folder_id: str, doctor_id: Optional[int] = None, 
     conn = get_connection()
     cursor = conn.cursor()
     is_postgres = check_is_postgres()
+
+    # Защита от ForeignKeyViolation в PostgreSQL если передан несуществующий doctor_id
+    if doctor_id is not None:
+        execute_query(cursor, "SELECT id FROM doctors WHERE id = ?", (doctor_id,))
+        if not cursor.fetchone():
+            doctor_id = None
+
     share_token = f"grant_{secrets.token_urlsafe(32)}"
     now_utc = datetime.now(timezone.utc)
     expires_at = now_utc + timedelta(hours=ttl_hours)
