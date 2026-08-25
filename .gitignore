@@ -7,3 +7,8 @@ konsyltant.db
 *.db
 static/uploads/*
 !static/uploads/.gitkeep
+процесс.txt
+Процесс для Гемини.txt
+log.txt
+history.txt
+*.log.txt

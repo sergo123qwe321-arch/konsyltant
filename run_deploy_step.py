@@ -53,4 +53,5 @@ print('Alerts Status:', res_health.status_code)
 """
 
 stdin, stdout, stderr = ssh.exec_command(script, get_pty=True)
-
+print(stdout.read().decode('utf-8', errors='replace'))
+ssh.close()
