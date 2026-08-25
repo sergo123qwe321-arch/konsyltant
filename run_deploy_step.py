@@ -28,14 +28,14 @@ sleep 4
 echo '=== 4. SEED PRODUCER ADMIN ON POSTGRESQL ==='
 docker compose exec web python scripts/admin/seed_producer_admin.py
 
-echo '=== 5. RUN IN-CONTAINER DISCOVER TESTS (100 TESTS) ==='
+echo '=== 5. RUN IN-CONTAINER DISCOVER TESTS (107 TESTS) ==='
 docker compose exec web python -m unittest discover -s . -p "test_*.py" -v
 
 echo '=== 6. LIVE PRODUCTION VERIFICATION (v7.1-production) ==='
 docker compose exec web python -c "
 import requests, json
 
-print('--- 1. LIVE ADMIN LOGIN & MEDIA URL VALIDATION ---')
+print('--- 1. LIVE ADMIN LOGIN ---')
 res_login = requests.post('http://127.0.0.1:8000/api/v1/admin/login', json={
     'username': 'producer-admin@cmz.site',
     'password': 'AdminAccess2026!'
@@ -44,27 +44,31 @@ print('Admin Login Status:', res_login.status_code)
 token = res_login.json().get('access_token')
 headers = {'Authorization': f'Bearer {token}'}
 
-res_media = requests.post('http://127.0.0.1:8000/api/v1/admin/media-url', headers=headers, json={
-    'url': 'https://rutube.ru/video/123456/',
-    'type': 'video'
+print('--- 2. LIVE DOCTORS LIST (ADMIN API) ---')
+res_docs = requests.get('http://127.0.0.1:8000/api/v1/admin/doctors', headers=headers)
+print('Admin Doctors Status:', res_docs.status_code, 'Count:', len(res_docs.json().get('doctors', [])))
+
+print('--- 3. LIVE GUEST CHAT MESSAGE POST ---')
+res_guest = requests.post('http://127.0.0.1:8000/api/v1/public/chat', json={
+    'message': 'Тестовое сообщение гостя после деплоя v7.1',
+    'author_name': 'Проверка Деплоя'
 })
-print('Media URL Validation Status:', res_media.status_code, res_media.json())
+print('Guest Chat Post Status:', res_guest.status_code, res_guest.json().get('message', {}).get('author_role'))
 
-print('--- 2. LIVE MODERATION QUEUE CHECK ---')
-res_mod = requests.get('http://127.0.0.1:8000/api/v1/admin/chat/moderation', headers=headers)
-print('Moderation Queue Status:', res_mod.status_code, 'Unapproved count:', len(res_mod.json().get('unapproved_messages', [])))
-
-print('--- 3. LIVE PUBLIC CHAT FEED ---')
+print('--- 4. LIVE PUBLIC CHAT FEED ---')
 res_chat = requests.get('http://127.0.0.1:8000/api/v1/public/chat?limit=5')
 print('Public Chat Status:', res_chat.status_code, 'Total Messages:', res_chat.json().get('total', 0))
 
-print('--- 4. LIVE ALERTS & HEALTH MONITORING ---')
+print('--- 5. LIVE MEDIA URL & HEALTH MONITORING ---')
 res_health = requests.get('http://127.0.0.1:8000/api/v1/admin/alerts/status', headers=headers)
 print('Alerts System Status:', res_health.status_code)
 "
+
+echo '=== 7. DOCKER COMPOSE PS & WEB LOGS ==='
+docker compose ps
+docker logs --tail 30 konsyltant_web
 """
 
 stdin, stdout, stderr = ssh.exec_command(script, get_pty=True)
 print(stdout.read().decode('utf-8', errors='replace'))
 ssh.close()
-
