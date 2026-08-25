@@ -33,14 +33,20 @@ from database import (
     get_library_item_by_id, update_public_library_item, delete_public_library_item,
     save_doctor_note, get_doctor_note, get_doctor_notes, delete_doctor_note,
     create_public_chat_message, get_public_chat_messages, delete_public_chat_message,
-    count_public_chat_messages
+    count_public_chat_messages, approve_public_chat_message, get_unapproved_chat_messages,
+    ban_user, is_user_banned, create_chat_report, get_message_reports_count,
+    save_patient_chat_message, get_patient_chat_history, delete_patient_chat_history,
+    save_doctor_chat_message, get_doctor_chat_history, delete_doctor_chat_history,
+    save_patient_analyses_doc, get_patient_analyses_docs, get_patient_analyses_doc_by_id,
+    delete_patient_analyses_doc
 )
-from rag import ask_consultant, generate_medical_summary, get_gigachat_balance
+from rag import ask_consultant, generate_medical_summary, get_gigachat_balance, extract_patient_analyses
 from pdf_generator import generate_summary_pdf
+from analyses_generator import generate_analyses_docx
 from folder_watcher import scan_folders, get_last_etl_logs
 from security_utils import (
     create_access_token, verify_token, mask_ip, mask_credential,
-    InMemoryAuthRateLimiter
+    InMemoryAuthRateLimiter, validate_media_url, process_chat_message_moderation
 )
 from alert_service import alert_worker_loop, send_test_alert, run_health_checks_and_alert
 
@@ -284,6 +290,19 @@ class DoctorNoteSaveRequest(BaseModel):
 class CommunityChatMessageRequest(BaseModel):
     message: str
 
+class ChatReportRequest(BaseModel):
+    reason: Optional[str] = ""
+
+class AdminBanRequest(BaseModel):
+    user_id: str
+    role: str = "PATIENT"
+    reason: Optional[str] = "Нарушение правил сообщества"
+    duration_hours: int = 24
+
+class AdminMediaUrlRequest(BaseModel):
+    url: str
+    type: Optional[str] = "image"
+
 class LeadCreateRequest(BaseModel):
     name: str
     phone: str
@@ -417,13 +436,71 @@ async def get_patient_files(patient: dict = Depends(get_current_patient)):
 def chat_api(req: ChatRequest, patient: dict = Depends(get_current_patient)):
     """
     Эндпоинт чата. Принимает сообщение пользователя, извлекает контекст файлов 
-    и обращается к консультанту.
+    и обращается к консультанту с фиксацией истории диалогов (152-ФЗ).
     """
     folder_id = patient.get("allowed_folder")
+    user_msg = (req.message or "").strip()
+    if not user_msg:
+        raise HTTPException(status_code=400, detail="Сообщение не может быть пустым")
+
+    # 1. Сохраняем запрос пользователя
+    save_patient_chat_message(folder_id, "user", user_msg, tokens_used=0)
         
-    # Передаем запрос в ИИ Консультанта
-    reply = ask_consultant(req.message, folder_id)
+    # 2. Передаем запрос в ИИ Консультанта
+    reply = ask_consultant(user_msg, folder_id)
+
+    # 3. Сохраняем ответ ассистента
+    save_patient_chat_message(folder_id, "assistant", reply, tokens_used=0)
+
     return {"reply": reply}
+
+@app.get("/api/patient/chat/history")
+def patient_chat_history_api(
+    limit: int = 50,
+    offset: int = 0,
+    patient: dict = Depends(get_current_patient)
+):
+    """
+    Получение истории диалогов пациента с ИИ-Консультантом (152-ФЗ).
+    """
+    folder_id = patient.get("allowed_folder")
+    history = get_patient_chat_history(folder_id, limit=limit, offset=offset)
+    return {
+        "status": "ok",
+        "history": history
+    }
+
+@app.get("/api/v1/doctor/patient/{patient_folder_id:path}/chat/history")
+def doctor_patient_chat_history_api(
+    patient_folder_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Просмотр врачом истории диалогов пациента с ИИ-Консультантом по активному шеринг-гранту (152-ФЗ).
+    """
+    history = get_patient_chat_history(patient_folder_id, limit=limit, offset=offset)
+    return {
+        "status": "ok",
+        "history": history
+    }
+
+@app.delete("/api/v1/admin/chat/history/patient/{patient_folder_id:path}")
+def admin_delete_patient_chat_history_api(
+    patient_folder_id: str,
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Удаление истории диалогов пациента администратором (152-ФЗ право на забвение).
+    """
+    cnt = delete_patient_chat_history(patient_folder_id)
+    return {
+        "status": "ok",
+        "deleted_count": cnt,
+        "patient_folder_id": patient_folder_id
+    }
+
 
 # --- Публичные эндпоинты лендинга ---
 
@@ -563,40 +640,25 @@ def admin_delete_library_item_api(item_id: int, admin: dict = Depends(get_curren
     delete_public_library_item(item_id)
     return {"status": "ok", "message": "Материал библиотеки успешно удален"}
 
-# --- Эндпоинт загрузки медиафайлов на Яндекс.Диск ---
+# --- Эндпоинт валидации внешних медиа URL (Block 1) ---
 
-@app.post("/api/v1/admin/upload")
-async def admin_upload_file_api(
-    file: UploadFile = File(...),
+@app.post("/api/v1/admin/media-url")
+def admin_media_url_validation_api(
+    req: AdminMediaUrlRequest,
     admin: dict = Depends(get_current_admin)
 ):
     """
-    Загрузка изображений, видео или документов администратором.
-    Сохраняет файл локально в static/uploads/ для прямой раздачи Nginx.
+    Валидация внешнего URL медиа-файла (обложки, видео, материалов) перед сохранением в БД.
+    Проверяет принадлежность домена к белому списку разрешенных платформ (Rutube, VK, YouTube, Dzen, Яндекс.Видео).
     """
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Файл не содержит данных")
-
-    ext = os.path.splitext(file.filename)[1].lower() if file.filename else ".bin"
-    safe_name = f"{int(time.time())}_{uuid.uuid4().hex[:8]}{ext}"
-
-    # Локальное сохранение в static/uploads/
-    upload_dir = os.path.join(STATIC_DIR, "uploads")
-    os.makedirs(upload_dir, exist_ok=True)
-    local_path = os.path.join(upload_dir, safe_name)
-    with open(local_path, "wb") as f:
-        f.write(content)
-
-    local_url = f"/static/uploads/{safe_name}"
-
+    is_valid, err_msg = validate_media_url(req.url, req.type or "image")
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=err_msg)
     return {
+        "success": True,
         "status": "ok",
-        "url": local_url,
-        "local_url": local_url,
-        "filename": safe_name,
-        "original_name": file.filename,
-        "size": len(content)
+        "validated_url": req.url,
+        "type": req.type or "image"
     }
 
 # --- Эндпоинты Врачей и Шеринга Данных (Phase 3) ---
@@ -1000,6 +1062,123 @@ async def doctor_download_patient_summary_pdf(
         }
     )
 
+# --- Эндпоинты Генерации Хронологии Анализов Пациента (Block 4) ---
+
+@app.post("/api/v1/doctor/patient/{patient_folder_id:path}/generate-analyses")
+def doctor_generate_analyses_api(
+    patient_folder_id: str,
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Генерация и структурирование хронологии анализов пациента на базе RAG-пайплайна.
+    Проверяет активный шеринг-грант врача.
+    """
+    doc_id_raw = doctor.get("doctor_id") or doctor.get("sub")
+    doc_id = None
+    if isinstance(doc_id_raw, int):
+        doc_id = doc_id_raw
+    elif isinstance(doc_id_raw, str) and doc_id_raw.isdigit():
+        doc_id = int(doc_id_raw)
+
+    has_grant = check_doctor_patient_grant(doc_id, patient_folder_id)
+    if not has_grant:
+        raise HTTPException(status_code=403, detail="Доступ к медицинской карте пациента не предоставлен или срок действия истек")
+
+    analyses_data = extract_patient_analyses(patient_folder_id)
+    doc_record = save_patient_analyses_doc(patient_folder_id, doc_id or 1, analyses_data)
+
+    return {
+        "status": "ok",
+        "doc_id": doc_record.get("id"),
+        "analyses": analyses_data,
+        "doc": doc_record
+    }
+
+@app.get("/api/v1/doctor/patient/{patient_folder_id:path}/analyses")
+def doctor_get_analyses_list_api(
+    patient_folder_id: str,
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Получение списка ранее сгенерированных выписок анализов пациента.
+    """
+    doc_id_raw = doctor.get("doctor_id") or doctor.get("sub")
+    doc_id = int(doc_id_raw) if (isinstance(doc_id_raw, int) or (isinstance(doc_id_raw, str) and doc_id_raw.isdigit())) else None
+
+    has_grant = check_doctor_patient_grant(doc_id, patient_folder_id)
+    if not has_grant:
+        raise HTTPException(status_code=403, detail="Доступ к медицинской карте пациента не предоставлен или срок действия истек")
+
+    docs = get_patient_analyses_docs(patient_folder_id, doc_id)
+    return {
+        "status": "ok",
+        "analyses_documents": docs
+    }
+
+@app.get("/api/v1/doctor/patient/{patient_folder_id:path}/analyses/{doc_id}/preview")
+def doctor_preview_analyses_api(
+    patient_folder_id: str,
+    doc_id: int,
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Предпросмотр данных документа анализов в формате JSON.
+    """
+    doc = get_patient_analyses_doc_by_id(doc_id)
+    if not doc or doc.get("patient_folder_id") != patient_folder_id:
+        raise HTTPException(status_code=404, detail="Документ анализов не найден")
+    return {
+        "status": "ok",
+        "doc": doc
+    }
+
+@app.get("/api/v1/doctor/patient/{patient_folder_id:path}/analyses/{doc_id}/download")
+def doctor_download_analyses_docx_api(
+    patient_folder_id: str,
+    doc_id: int,
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Генерация и скачивание официального DOCX документа хронологии анализов «на лету».
+    """
+    doc = get_patient_analyses_doc_by_id(doc_id)
+    if not doc or doc.get("patient_folder_id") != patient_folder_id:
+        raise HTTPException(status_code=404, detail="Документ анализов не найден")
+
+    docx_bytes = generate_analyses_docx(
+        patient_name=patient_folder_id,
+        analyses_data=doc.get("analyses_data", []),
+        doctor_name=doctor.get("full_name", "Врач-специалист")
+    )
+
+    clean_patient_id = patient_folder_id.replace("disk:/", "").replace("/", "_").strip()
+    date_str = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"analyses_{clean_patient_id}_{date_str}.docx"
+
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+@app.delete("/api/v1/doctor/patient/{patient_folder_id:path}/analyses/{doc_id}")
+def doctor_delete_analyses_api(
+    patient_folder_id: str,
+    doc_id: int,
+    doctor: dict = Depends(get_current_doctor)
+):
+    """
+    Удаление документа анализов врачом.
+    """
+    delete_patient_analyses_doc(doc_id)
+    return {
+        "status": "ok",
+        "deleted_id": doc_id,
+        "message": "Документ анализов успешно удален"
+    }
+
 @app.get("/api/v1/health/yandex-disk")
 def yandex_disk_health_check(admin: dict = Depends(get_current_admin)):
     """
@@ -1212,12 +1391,12 @@ def public_chat_get_api(
     offset: int = 0
 ):
     """
-    Публичное чтение ленты сообщений сообщества без авторизации.
+    Публичное чтение ленты сообщений сообщества без авторизации (только одобренные сообщения).
     """
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
-    messages = get_public_chat_messages(limit=limit, offset=offset)
-    total = count_public_chat_messages()
+    messages = get_public_chat_messages(limit=limit, offset=offset, only_approved=True)
+    total = count_public_chat_messages(only_approved=True)
     return {
         "status": "ok",
         "messages": messages,
@@ -1233,11 +1412,20 @@ def public_chat_post_api(
     user: dict = Depends(get_current_community_user)
 ):
     """
-    Отправка сообщения в открытый чат сообщества (только для авторизованных пользователей любой роли: PATIENT, DOCTOR, ADMIN).
-    Rate limiting: до 10 сообщений в минуту.
+    Отправка сообщения в открытый чат сообщества (только для авторизованных пользователей: PATIENT, DOCTOR, ADMIN).
+    Проверяет блокировки (баны), мат-фильтр, валидность ссылок и rate limiting (до 10 сообщений в минуту).
     """
+    author_id = user.get("author_id", "")
+    author_role = user.get("role", "PATIENT")
+
+    # 1. Проверка блокировки пользователя
+    banned, ban_reason, banned_until = is_user_banned(author_id, author_role)
+    if banned:
+        raise HTTPException(status_code=403, detail="Вы заблокированы в чате за нарушение правил")
+
+    # 2. Rate Limiting
     client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "127.0.0.1").split(",")[0].strip()
-    rate_key = f"chat:{client_ip}:{user.get('role')}:{user.get('author_id')}"
+    rate_key = f"chat:{client_ip}:{author_role}:{author_id}"
     
     is_limited, retry_after, _ = chat_rate_limiter.is_rate_limited(rate_key)
     if is_limited:
@@ -1250,15 +1438,93 @@ def public_chat_post_api(
     if len(msg_text) > 1000:
         raise HTTPException(status_code=400, detail="Длина сообщения превышает 1000 символов")
 
+    # 3. Модерация контента: мат-фильтр, схемы, сервисы сокращения и белые списки ссылок
+    try:
+        processed_text, is_approved = process_chat_message_moderation(msg_text)
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+
     msg = create_public_chat_message(
-        author_role=user["role"],
-        author_id=user["author_id"],
+        author_role=author_role,
+        author_id=author_id,
         author_name=user["author_name"],
-        message_text=msg_text
+        message_text=processed_text,
+        is_approved=is_approved
     )
     return {
         "status": "ok",
-        "message": msg
+        "message": msg,
+        "is_approved": is_approved
+    }
+
+@app.post("/api/v1/public/chat/{message_id}/report")
+def public_chat_report_api(
+    message_id: int,
+    req: ChatReportRequest,
+    user: dict = Depends(get_current_community_user)
+):
+    """
+    Отправка жалобы на сообщение в чате. При накоплении 3+ жалоб автор автоматически банится на 24 часа.
+    """
+    res = create_chat_report(
+        message_id=message_id,
+        reporter_id=user.get("author_id", "anon"),
+        reporter_role=user.get("role", "PATIENT"),
+        reason=(req.reason or "").strip()
+    )
+    return {
+        "status": "ok",
+        "message_id": message_id,
+        "report_count": res["report_count"]
+    }
+
+@app.get("/api/v1/admin/chat/moderation")
+def admin_chat_moderation_queue_api(
+    limit: int = 50,
+    offset: int = 0,
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Очередь модерации: список сообщений с внешними ссылками, ожидающими проверки (только ADMIN).
+    """
+    msgs = get_unapproved_chat_messages(limit=limit, offset=offset)
+    return {
+        "status": "ok",
+        "unapproved_messages": msgs
+    }
+
+@app.post("/api/v1/admin/chat/moderation/{message_id}/approve")
+def admin_chat_approve_api(
+    message_id: int,
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Одобрение сообщения администратором (делает сообщение видимым всем).
+    """
+    approve_public_chat_message(message_id)
+    return {
+        "status": "ok",
+        "approved_id": message_id,
+        "message": "Сообщение одобрено и опубликовано в ленте"
+    }
+
+@app.post("/api/v1/admin/ban")
+def admin_ban_user_api(
+    req: AdminBanRequest,
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Блокировка пользователя в чате сообщества администратором.
+    """
+    res = ban_user(
+        user_id=req.user_id,
+        role=req.role,
+        reason=req.reason or "Нарушение правил сообщества",
+        duration_hours=req.duration_hours
+    )
+    return {
+        "status": "ok",
+        "ban": res
     }
 
 @app.delete("/api/v1/public/chat/{message_id}")

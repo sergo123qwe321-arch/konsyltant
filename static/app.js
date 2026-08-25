@@ -56,6 +56,32 @@ document.addEventListener('DOMContentLoaded', () => {
         showScreen('login');
     }
 
+    async function loadPatientHistory() {
+        if (!sessionToken) return;
+        try {
+            const res = await fetch('/api/patient/chat/history?limit=50', {
+                headers: { 'Authorization': `Bearer ${sessionToken}` }
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const history = data.history || [];
+            if (history.length > 0) {
+                chatHistory.innerHTML = `
+                    <div class="message bot-message">
+                        <div class="msg-avatar">ИИ</div>
+                        <div class="msg-content">Здравствуйте! Я ваш медицинский ИИ-Консультант. Предыдущая история диалога восстановлена (152-ФЗ). Чем могу помочь?</div>
+                    </div>
+                `;
+                history.forEach(m => {
+                    const sender = m.sender === 'user' ? 'user' : 'bot';
+                    appendMessage(sender, m.message_text);
+                });
+            }
+        } catch(e) {
+            console.warn('Ошибка загрузки истории консультации:', e);
+        }
+    }
+
     function showScreen(screen) {
         if (screen === 'login') {
             loginScreen.classList.add('active');
@@ -65,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chatScreen.classList.add('active');
             chatInput.focus();
             initPatientVoiceInput();
+            loadPatientHistory();
         }
     }
 

@@ -2,6 +2,7 @@ import sqlite3
 import bcrypt
 import secrets
 import os
+import json
 import logging
 from typing import Optional
 from datetime import datetime, timedelta, timezone
@@ -227,6 +228,7 @@ def init_db():
                 author_id VARCHAR(100) NOT NULL,
                 author_name VARCHAR(150) NOT NULL,
                 message_text TEXT NOT NULL,
+                is_approved BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -234,7 +236,59 @@ def init_db():
         cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_id VARCHAR(100) NOT NULL DEFAULT ''")
         cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS author_name VARCHAR(150) NOT NULL DEFAULT ''")
         cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS message_text TEXT NOT NULL DEFAULT ''")
+        cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT TRUE")
         cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patient_chat_history (
+                id SERIAL PRIMARY KEY,
+                patient_folder_id VARCHAR(255) NOT NULL,
+                role VARCHAR(50) NOT NULL,
+                message_text TEXT NOT NULL,
+                tokens_used INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS doctor_chat_history (
+                id SERIAL PRIMARY KEY,
+                doctor_id INTEGER NOT NULL,
+                patient_folder_id VARCHAR(255) NOT NULL,
+                role VARCHAR(50) NOT NULL,
+                message_text TEXT NOT NULL,
+                tokens_used INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS banned_users (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(255) NOT NULL,
+                role VARCHAR(50) NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                banned_until TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_reports (
+                id SERIAL PRIMARY KEY,
+                message_id INTEGER NOT NULL,
+                reporter_id VARCHAR(255) NOT NULL,
+                reporter_role VARCHAR(50) NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patient_analyses_documents (
+                id SERIAL PRIMARY KEY,
+                patient_folder_id VARCHAR(255) NOT NULL,
+                doctor_id INTEGER NOT NULL,
+                generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                analyses_data TEXT NOT NULL
+            )
+        """)
         conn.commit()
     else:
         cursor.execute("""
@@ -452,7 +506,63 @@ def init_db():
                 author_id TEXT NOT NULL,
                 author_name TEXT NOT NULL,
                 message_text TEXT NOT NULL,
+                is_approved INTEGER DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("PRAGMA table_info(public_chat_messages)")
+        chat_cols = [r[1] for r in cursor.fetchall()]
+        if "is_approved" not in chat_cols:
+            cursor.execute("ALTER TABLE public_chat_messages ADD COLUMN is_approved INTEGER DEFAULT 1")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patient_chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_folder_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                message_text TEXT NOT NULL,
+                tokens_used INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS doctor_chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER NOT NULL,
+                patient_folder_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                message_text TEXT NOT NULL,
+                tokens_used INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS banned_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                banned_until DATETIME NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                reporter_id TEXT NOT NULL,
+                reporter_role TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS patient_analyses_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_folder_id TEXT NOT NULL,
+                doctor_id INTEGER NOT NULL,
+                generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                analyses_data TEXT NOT NULL
             )
         """)
         conn.commit()
@@ -629,6 +739,15 @@ def ensure_indexes(conn=None):
         ("idx_llm_usage_request_type", "llm_usage", "request_type", False),
         ("idx_doctor_notes_doc_patient", "doctor_notes", "doctor_id, patient_folder_id", False),
         ("idx_public_chat_messages_created_at", "public_chat_messages", "created_at", False),
+        ("idx_patient_chat_hist_folder", "patient_chat_history", "patient_folder_id", False),
+        ("idx_patient_chat_hist_created", "patient_chat_history", "created_at", False),
+        ("idx_doctor_chat_hist_doc", "doctor_chat_history", "doctor_id", False),
+        ("idx_doctor_chat_hist_folder", "doctor_chat_history", "patient_folder_id", False),
+        ("idx_doctor_chat_hist_created", "doctor_chat_history", "created_at", False),
+        ("idx_banned_users_lookup", "banned_users", "user_id, role, banned_until", False),
+        ("idx_chat_reports_msg", "chat_reports", "message_id", False),
+        ("idx_patient_analyses_folder", "patient_analyses_documents", "patient_folder_id", False),
+        ("idx_patient_analyses_doc", "patient_analyses_documents", "doctor_id", False),
     ]
 
     for idx_name, table_name, cols, is_unique in INDEX_SPECS:
@@ -1843,21 +1962,28 @@ def delete_doctor_note(note_id: int, doctor_id: int) -> bool:
 
 # --- Public Community Chat Helper Functions (Block Г) ---
 
-def create_public_chat_message(author_role: str, author_id: str, author_name: str, message_text: str) -> dict:
+def create_public_chat_message(
+    author_role: str,
+    author_id: str,
+    author_name: str,
+    message_text: str,
+    is_approved: bool = True
+) -> dict:
     """
-    Создает новое сообщение в открытом чате сообщества.
-    author_role: 'PATIENT' | 'DOCTOR' | 'ADMIN'
+    Сохраняет сообщение в открытый чат сообщества.
     """
     conn = get_connection()
     cursor = conn.cursor()
+    is_postgres = check_is_postgres()
+    val_approved = is_approved if is_postgres else (1 if is_approved else 0)
     execute_query(cursor, """
-        INSERT INTO public_chat_messages (author_role, author_id, author_name, message_text)
-        VALUES (?, ?, ?, ?)
-    """, (author_role, str(author_id), author_name, message_text))
+        INSERT INTO public_chat_messages (author_role, author_id, author_name, message_text, is_approved)
+        VALUES (?, ?, ?, ?, ?)
+    """, (author_role, str(author_id), author_name, message_text, val_approved))
     conn.commit()
     
     execute_query(cursor, """
-        SELECT id, author_role, author_id, author_name, message_text, created_at
+        SELECT id, author_role, author_id, author_name, message_text, is_approved, created_at
         FROM public_chat_messages
         ORDER BY id DESC LIMIT 1
     """)
@@ -1870,7 +1996,8 @@ def create_public_chat_message(author_role: str, author_id: str, author_name: st
             "author_id": row[2],
             "author_name": row[3],
             "message_text": row[4],
-            "created_at": str(row[5])
+            "is_approved": bool(row[5]),
+            "created_at": str(row[6])
         }
     return {
         "id": 1,
@@ -1878,21 +2005,33 @@ def create_public_chat_message(author_role: str, author_id: str, author_name: st
         "author_id": str(author_id),
         "author_name": author_name,
         "message_text": message_text,
+        "is_approved": is_approved,
         "created_at": datetime.now().isoformat()
     }
 
-def get_public_chat_messages(limit: int = 50, offset: int = 0) -> list:
+def get_public_chat_messages(limit: int = 50, offset: int = 0, only_approved: bool = True) -> list:
     """
     Возвращает список сообщений чата сообщества в хронологическом порядке.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    execute_query(cursor, """
-        SELECT id, author_role, author_id, author_name, message_text, created_at
-        FROM public_chat_messages
-        ORDER BY created_at ASC, id ASC
-        LIMIT ? OFFSET ?
-    """, (limit, offset))
+    is_postgres = check_is_postgres()
+    val_approved = True if is_postgres else 1
+    if only_approved:
+        execute_query(cursor, """
+            SELECT id, author_role, author_id, author_name, message_text, is_approved, created_at
+            FROM public_chat_messages
+            WHERE is_approved = ?
+            ORDER BY created_at ASC, id ASC
+            LIMIT ? OFFSET ?
+        """, (val_approved, limit, offset))
+    else:
+        execute_query(cursor, """
+            SELECT id, author_role, author_id, author_name, message_text, is_approved, created_at
+            FROM public_chat_messages
+            ORDER BY created_at ASC, id ASC
+            LIMIT ? OFFSET ?
+        """, (limit, offset))
     rows = cursor.fetchall()
     conn.close()
     return [
@@ -1902,18 +2041,67 @@ def get_public_chat_messages(limit: int = 50, offset: int = 0) -> list:
             "author_id": r[2],
             "author_name": r[3],
             "message_text": r[4],
-            "created_at": str(r[5])
+            "is_approved": bool(r[5]) if len(r) > 5 else True,
+            "created_at": str(r[6]) if len(r) > 6 else str(r[5])
         }
         for r in rows
     ]
 
-def count_public_chat_messages() -> int:
+def count_public_chat_messages(only_approved: bool = True) -> int:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM public_chat_messages")
+    is_postgres = check_is_postgres()
+    val_approved = True if is_postgres else 1
+    if only_approved:
+        execute_query(cursor, "SELECT COUNT(*) FROM public_chat_messages WHERE is_approved = ?", (val_approved,))
+    else:
+        cursor.execute("SELECT COUNT(*) FROM public_chat_messages")
     cnt = cursor.fetchone()[0]
     conn.close()
     return cnt
+
+def approve_public_chat_message(message_id: int) -> bool:
+    """
+    Одобряет сообщение модератором (is_approved = True).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = check_is_postgres()
+    val_approved = True if is_postgres else 1
+    execute_query(cursor, "UPDATE public_chat_messages SET is_approved = ? WHERE id = ?", (val_approved, message_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_unapproved_chat_messages(limit: int = 50, offset: int = 0) -> list:
+    """
+    Возвращает сообщения, ожидающие модерации (is_approved = False).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = check_is_postgres()
+    val_unapproved = False if is_postgres else 0
+    execute_query(cursor, """
+        SELECT id, author_role, author_id, author_name, message_text, is_approved, created_at
+        FROM public_chat_messages
+        WHERE is_approved = ?
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+    """, (val_unapproved, limit, offset))
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "author_role": r[1],
+            "author_id": r[2],
+            "author_name": r[3],
+            "message_text": r[4],
+            "is_approved": False,
+            "created_at": str(r[6])
+        }
+        for r in rows
+    ]
 
 def delete_public_chat_message(message_id: int) -> bool:
     """
@@ -1925,5 +2113,306 @@ def delete_public_chat_message(message_id: int) -> bool:
     conn.commit()
     conn.close()
     return True
+
+# --- ИСТОРИЯ ЧАТОВ С ИИ-КОНСУЛЬТАНТОМ (152-ФЗ) ---
+
+def save_patient_chat_message(patient_folder_id: str, role: str, message_text: str, tokens_used: int = 0) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        INSERT INTO patient_chat_history (patient_folder_id, role, message_text, tokens_used)
+        VALUES (?, ?, ?, ?)
+    """, (patient_folder_id, role, message_text, tokens_used))
+    conn.commit()
+    execute_query(cursor, """
+        SELECT id, patient_folder_id, role, message_text, tokens_used, created_at
+        FROM patient_chat_history
+        ORDER BY id DESC LIMIT 1
+    """)
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row[0],
+            "patient_folder_id": row[1],
+            "role": row[2],
+            "message_text": row[3],
+            "tokens_used": row[4],
+            "created_at": str(row[5])
+        }
+    return {}
+
+def get_patient_chat_history(patient_folder_id: str, limit: int = 50, offset: int = 0) -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        SELECT id, patient_folder_id, role, message_text, tokens_used, created_at
+        FROM patient_chat_history
+        WHERE patient_folder_id = ?
+        ORDER BY created_at ASC, id ASC
+        LIMIT ? OFFSET ?
+    """, (patient_folder_id, limit, offset))
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "patient_folder_id": r[1],
+            "role": r[2],
+            "message_text": r[3],
+            "tokens_used": r[4],
+            "created_at": str(r[5])
+        }
+        for r in rows
+    ]
+
+def delete_patient_chat_history(patient_folder_id: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "DELETE FROM patient_chat_history WHERE patient_folder_id = ?", (patient_folder_id,))
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+def save_doctor_chat_message(doctor_id: int, patient_folder_id: str, role: str, message_text: str, tokens_used: int = 0) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        INSERT INTO doctor_chat_history (doctor_id, patient_folder_id, role, message_text, tokens_used)
+        VALUES (?, ?, ?, ?, ?)
+    """, (doctor_id, patient_folder_id, role, message_text, tokens_used))
+    conn.commit()
+    execute_query(cursor, """
+        SELECT id, doctor_id, patient_folder_id, role, message_text, tokens_used, created_at
+        FROM doctor_chat_history
+        ORDER BY id DESC LIMIT 1
+    """)
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row[0],
+            "doctor_id": row[1],
+            "patient_folder_id": row[2],
+            "role": row[3],
+            "message_text": row[4],
+            "tokens_used": row[5],
+            "created_at": str(row[6])
+        }
+    return {}
+
+def get_doctor_chat_history(doctor_id: int, patient_folder_id: str, limit: int = 50, offset: int = 0) -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        SELECT id, doctor_id, patient_folder_id, role, message_text, tokens_used, created_at
+        FROM doctor_chat_history
+        WHERE doctor_id = ? AND patient_folder_id = ?
+        ORDER BY created_at ASC, id ASC
+        LIMIT ? OFFSET ?
+    """, (doctor_id, patient_folder_id, limit, offset))
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "doctor_id": r[1],
+            "patient_folder_id": r[2],
+            "role": r[3],
+            "message_text": r[4],
+            "tokens_used": r[5],
+            "created_at": str(r[6])
+        }
+        for r in rows
+    ]
+
+def delete_doctor_chat_history(doctor_id: int, patient_folder_id: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "DELETE FROM doctor_chat_history WHERE doctor_id = ? AND patient_folder_id = ?", (doctor_id, patient_folder_id))
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+# --- МОДЕРАЦИЯ И БАНЫ В ОТКРЫТОМ ЧАТЕ ---
+
+def ban_user(user_id: str, role: str, reason: str = "", duration_hours: int = 24) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = check_is_postgres()
+    now_utc = datetime.now(timezone.utc)
+    banned_until = now_utc + timedelta(hours=duration_hours)
+    banned_until_val = banned_until if is_postgres else banned_until.strftime("%Y-%m-%d %H:%M:%S")
+    execute_query(cursor, """
+        INSERT INTO banned_users (user_id, role, reason, banned_until)
+        VALUES (?, ?, ?, ?)
+    """, (str(user_id), role, reason, banned_until_val))
+    conn.commit()
+    conn.close()
+    return {
+        "user_id": str(user_id),
+        "role": role,
+        "reason": reason,
+        "banned_until": banned_until.isoformat()
+    }
+
+def is_user_banned(user_id: str, role: str) -> tuple:
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = check_is_postgres()
+    now_sql = "CURRENT_TIMESTAMP" if is_postgres else "datetime('now')"
+    execute_query(cursor, f"""
+        SELECT id, reason, banned_until
+        FROM banned_users
+        WHERE user_id = ? AND role = ? AND banned_until > {now_sql}
+        ORDER BY banned_until DESC LIMIT 1
+    """, (str(user_id), role))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return True, row[1], str(row[2])
+    return False, None, None
+
+def create_chat_report(message_id: int, reporter_id: str, reporter_role: str, reason: str = "") -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        INSERT INTO chat_reports (message_id, reporter_id, reporter_role, reason)
+        VALUES (?, ?, ?, ?)
+    """, (message_id, str(reporter_id), reporter_role, reason))
+    conn.commit()
+    
+    execute_query(cursor, "SELECT COUNT(DISTINCT reporter_id) FROM chat_reports WHERE message_id = ?", (message_id,))
+    report_count = cursor.fetchone()[0]
+    
+    if report_count >= 3:
+        execute_query(cursor, "SELECT author_id, author_role FROM public_chat_messages WHERE id = ?", (message_id,))
+        msg_row = cursor.fetchone()
+        if msg_row:
+            author_id, author_role = msg_row
+            is_postgres = check_is_postgres()
+            val_unapproved = False if is_postgres else 0
+            execute_query(cursor, "UPDATE public_chat_messages SET is_approved = ? WHERE id = ?", (val_unapproved, message_id))
+            now_utc = datetime.now(timezone.utc)
+            banned_until = now_utc + timedelta(hours=24)
+            banned_until_val = banned_until if is_postgres else banned_until.strftime("%Y-%m-%d %H:%M:%S")
+            execute_query(cursor, """
+                INSERT INTO banned_users (user_id, role, reason, banned_until)
+                VALUES (?, ?, ?, ?)
+            """, (str(author_id), str(author_role), f"Автоматическая блокировка: 3+ жалобы на сообщение #{message_id}", banned_until_val))
+            conn.commit()
+            
+    conn.close()
+    return {
+        "message_id": message_id,
+        "reporter_id": str(reporter_id),
+        "report_count": report_count,
+        "is_banned": report_count >= 3
+    }
+
+def get_message_reports_count(message_id: int) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "SELECT COUNT(*) FROM chat_reports WHERE message_id = ?", (message_id,))
+    cnt = cursor.fetchone()[0]
+    conn.close()
+    return cnt
+
+# --- ГЕНЕРАЦИЯ И ХРАНЕНИЕ АНАЛИЗОВ В КАБИНЕТЕ ВРАЧА ---
+
+def save_patient_analyses_doc(patient_folder_id: str, doctor_id: int, analyses_data: list | dict) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    data_str = json.dumps(analyses_data, ensure_ascii=False)
+    execute_query(cursor, """
+        INSERT INTO patient_analyses_documents (patient_folder_id, doctor_id, analyses_data)
+        VALUES (?, ?, ?)
+    """, (patient_folder_id, doctor_id, data_str))
+    conn.commit()
+    execute_query(cursor, """
+        SELECT id, patient_folder_id, doctor_id, generated_at, analyses_data
+        FROM patient_analyses_documents
+        ORDER BY id DESC LIMIT 1
+    """)
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            "id": row[0],
+            "patient_folder_id": row[1],
+            "doctor_id": row[2],
+            "generated_at": str(row[3]),
+            "analyses_data": json.loads(row[4]) if isinstance(row[4], str) else row[4]
+        }
+    return {}
+
+def get_patient_analyses_docs(patient_folder_id: str, doctor_id: Optional[int] = None) -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    if doctor_id is not None:
+        execute_query(cursor, """
+            SELECT id, patient_folder_id, doctor_id, generated_at, analyses_data
+            FROM patient_analyses_documents
+            WHERE patient_folder_id = ? AND doctor_id = ?
+            ORDER BY generated_at DESC, id DESC
+        """, (patient_folder_id, doctor_id))
+    else:
+        execute_query(cursor, """
+            SELECT id, patient_folder_id, doctor_id, generated_at, analyses_data
+            FROM patient_analyses_documents
+            WHERE patient_folder_id = ?
+            ORDER BY generated_at DESC, id DESC
+        """, (patient_folder_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    res = []
+    for r in rows:
+        try:
+            parsed_data = json.loads(r[4]) if isinstance(r[4], str) else r[4]
+        except Exception:
+            parsed_data = []
+        res.append({
+            "id": r[0],
+            "patient_folder_id": r[1],
+            "doctor_id": r[2],
+            "generated_at": str(r[3]),
+            "analyses_data": parsed_data
+        })
+    return res
+
+def get_patient_analyses_doc_by_id(doc_id: int) -> Optional[dict]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, """
+        SELECT id, patient_folder_id, doctor_id, generated_at, analyses_data
+        FROM patient_analyses_documents
+        WHERE id = ?
+    """, (doc_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    try:
+        parsed_data = json.loads(row[4]) if isinstance(row[4], str) else row[4]
+    except Exception:
+        parsed_data = []
+    return {
+        "id": row[0],
+        "patient_folder_id": row[1],
+        "doctor_id": row[2],
+        "generated_at": str(row[3]),
+        "analyses_data": parsed_data
+    }
+
+def delete_patient_analyses_doc(doc_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    execute_query(cursor, "DELETE FROM patient_analyses_documents WHERE id = ?", (doc_id,))
+    conn.commit()
+    conn.close()
+    return True
+
 
 

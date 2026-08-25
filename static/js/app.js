@@ -619,34 +619,52 @@
             const tabLeads = document.getElementById('admin-tab-leads');
             const tabPosts = document.getElementById('admin-tab-posts');
             const tabOps = document.getElementById('admin-tab-ops');
+            const tabModeration = document.getElementById('admin-tab-moderation');
             const btnLeads = document.getElementById('tab-btn-leads');
             const btnPosts = document.getElementById('tab-btn-posts');
             const btnOps = document.getElementById('tab-btn-ops');
+            const btnModeration = document.getElementById('tab-btn-moderation');
 
             if (tab === 'leads') {
                 if (tabLeads) tabLeads.style.display = 'block';
                 if (tabPosts) tabPosts.style.display = 'none';
                 if (tabOps) tabOps.style.display = 'none';
+                if (tabModeration) tabModeration.style.display = 'none';
                 if (btnLeads) btnLeads.className = 'btn btn-turquoise';
                 if (btnPosts) btnPosts.className = 'btn btn-outline';
                 if (btnOps) btnOps.className = 'btn btn-outline';
+                if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminLeads();
             } else if (tab === 'posts') {
                 if (tabLeads) tabLeads.style.display = 'none';
                 if (tabPosts) tabPosts.style.display = 'block';
                 if (tabOps) tabOps.style.display = 'none';
+                if (tabModeration) tabModeration.style.display = 'none';
                 if (btnLeads) btnLeads.className = 'btn btn-outline';
                 if (btnPosts) btnPosts.className = 'btn btn-turquoise';
                 if (btnOps) btnOps.className = 'btn btn-outline';
+                if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminPosts();
             } else if (tab === 'ops') {
                 if (tabLeads) tabLeads.style.display = 'none';
                 if (tabPosts) tabPosts.style.display = 'none';
                 if (tabOps) tabOps.style.display = 'block';
+                if (tabModeration) tabModeration.style.display = 'none';
                 if (btnLeads) btnLeads.className = 'btn btn-outline';
                 if (btnPosts) btnPosts.className = 'btn btn-outline';
                 if (btnOps) btnOps.className = 'btn btn-turquoise';
+                if (btnModeration) btnModeration.className = 'btn btn-outline';
                 loadAdminOperations();
+            } else if (tab === 'moderation') {
+                if (tabLeads) tabLeads.style.display = 'none';
+                if (tabPosts) tabPosts.style.display = 'none';
+                if (tabOps) tabOps.style.display = 'none';
+                if (tabModeration) tabModeration.style.display = 'block';
+                if (btnLeads) btnLeads.className = 'btn btn-outline';
+                if (btnPosts) btnPosts.className = 'btn btn-outline';
+                if (btnOps) btnOps.className = 'btn btn-outline';
+                if (btnModeration) btnModeration.className = 'btn btn-turquoise';
+                loadAdminModerationQueue();
             }
         }
 
@@ -998,39 +1016,38 @@
             }
         }
 
-        async function handleAdminFileUpload(event, targetInputId) {
-            const file = event.target.files && event.target.files[0];
-            if (!file) return;
+        async function checkAdminMediaUrl(inputId, mediaType = 'image') {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            const url = input.value.trim();
+            if (!url) {
+                alert('Пожалуйста, сначала вставьте URL ссылки для проверки.');
+                return;
+            }
             const token = getAdminToken();
             if (!token) {
                 alert('Сессия администратора не активна. Войдите в CMS.');
                 return;
             }
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            const targetInput = document.getElementById(targetInputId);
-            if (targetInput) targetInput.placeholder = 'Загрузка на Яндекс.Диск... ⏳';
-
             try {
-                const res = await fetch('/api/v1/admin/upload', {
+                const res = await fetch('/api/v1/admin/media-url', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    body: formData
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ url: url, type: mediaType })
                 });
                 if (!res.ok) {
                     const errData = await res.json().catch(() => ({}));
-                    throw new Error(errData.detail || 'Ошибка загрузки файла');
+                    throw new Error(errData.detail || 'Недопустимый домен или формат URL');
                 }
-                const data = await res.json();
-                if (targetInput) {
-                    targetInput.value = data.url || data.local_url;
+                alert('✅ Ссылка успешно прошла проверку безопасности и допущена к публикации!');
+                if (mediaType === 'image') {
                     updateCoverPreview();
                 }
-                alert('Файл успешно загружен на Яндекс.Диск! ☁️✨');
             } catch (err) {
-                alert(`Ошибка загрузки: ${err.message}`);
-                if (targetInput) targetInput.placeholder = 'https://... или выберите файл';
+                alert(`❌ Ошибка проверки ссылки: ${err.message}`);
             }
         }
 
@@ -1369,7 +1386,10 @@
                 // Загружаем сохраненные заметки врача
                 loadDoctorNotes(data.patient_folder_id);
 
-                // Сбрасываем отображение резюме
+                // Загружаем ранее сгенерированные анализы
+                loadDoctorPatientAnalysesHistory(data.patient_folder_id);
+
+                // Сбрасываем отображение резюме и анализов
                 const summaryContainer = document.getElementById('doc-summary-container');
                 if (summaryContainer) {
                     summaryContainer.style.display = 'none';
@@ -1377,6 +1397,9 @@
                 }
                 const pdfBtn = document.getElementById('doc-download-pdf-btn');
                 if (pdfBtn) pdfBtn.style.display = 'none';
+                
+                const analysesResult = document.getElementById('doc-analyses-result');
+                if (analysesResult) analysesResult.style.display = 'none';
 
                 if (recordEmpty) recordEmpty.style.display = 'none';
                 if (recordView) recordView.style.display = 'block';
@@ -1658,8 +1681,384 @@
         }
 
         /* ==========================================================================
-           6. КЛИЕНТСКИЙ ИНТЕРФЕЙС И НАВИГАЦИЯ
+           5.1. ХРОНОЛОГИЯ АНАЛИЗОВ И МОДЕРАЦИЯ ЧАТА (Release v7.1)
            ========================================================================== */
+        let currentLatestAnalysesDocId = null;
+        let currentLatestAnalysesData = [];
+
+        async function handleDoctorGenerateAnalyses() {
+            const docToken = localStorage.getItem('doctor_token');
+            const btn = document.getElementById('doc-generate-analyses-btn');
+            const loader = document.getElementById('doc-analyses-loading');
+            const resultBox = document.getElementById('doc-analyses-result');
+
+            if (!docToken || !currentDoctorPatientFolderId) {
+                alert('Сессия врача не активна или не выбрана папка пациента.');
+                return;
+            }
+
+            if (btn) btn.disabled = true;
+            if (loader) loader.style.display = 'block';
+            if (resultBox) resultBox.style.display = 'none';
+
+            try {
+                const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(currentDoctorPatientFolderId)}/generate-analyses`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Ошибка структурирования анализов');
+                }
+
+                const data = await res.json();
+                currentLatestAnalysesDocId = data.doc_id;
+                currentLatestAnalysesData = data.analyses || [];
+
+                if (resultBox) resultBox.style.display = 'block';
+                await loadDoctorPatientAnalysesHistory(currentDoctorPatientFolderId);
+                alert(`✅ Выписка анализов сформирована! Извлечено показателей: ${currentLatestAnalysesData.length}`);
+            } catch (err) {
+                alert(`❌ Ошибка формирования анализов: ${err.message}`);
+            } finally {
+                if (btn) btn.disabled = false;
+                if (loader) loader.style.display = 'none';
+            }
+        }
+
+        async function loadDoctorPatientAnalysesHistory(patientFolderId) {
+            const docToken = localStorage.getItem('doctor_token');
+            const listEl = document.getElementById('doc-analyses-list');
+            if (!listEl || !docToken || !patientFolderId) return;
+
+            try {
+                const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(patientFolderId)}/analyses`, {
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                const docs = data.analyses_documents || [];
+
+                if (docs.length === 0) {
+                    listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">Пока нет сохраненных выписок анализов.</div>';
+                    return;
+                }
+
+                let html = '';
+                docs.forEach(d => {
+                    const dt = d.created_at ? d.created_at.slice(0, 16).replace('T', ' ') : 'Недавно';
+                    const cnt = Array.isArray(d.analyses_data) ? d.analyses_data.length : 0;
+                    html += `
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                            <div style="font-size: 0.82rem; color: #E2E8F0;">
+                                <strong>Выписка #${d.id}</strong> (${dt}) — <span style="color: var(--accent-turquoise);">${cnt} показ.</span>
+                            </div>
+                            <div style="display: flex; gap: 6px;">
+                                <button class="btn btn-outline" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openAnalysesPreviewModal(${d.id})">👁️ Превью</button>
+                                <button class="btn btn-purple" style="padding: 4px 8px; font-size: 0.75rem;" onclick="downloadDoctorAnalysesDocx(${d.id})">📄 DOCX</button>
+                                <button class="btn btn-outline" style="padding: 4px 6px; font-size: 0.75rem; color: #EF4444;" onclick="deleteDoctorAnalysesDoc(${d.id})" title="Удалить">🗑️</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                listEl.innerHTML = html;
+            } catch (e) {
+                console.warn('Ошибка загрузки истории анализов:', e);
+            }
+        }
+
+        async function openAnalysesPreviewModal(docId = null) {
+            const docToken = localStorage.getItem('doctor_token');
+            const tableBox = document.getElementById('analyses-preview-table-container');
+            if (!tableBox) return;
+
+            let items = currentLatestAnalysesData;
+
+            if (docId) {
+                try {
+                    const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(currentDoctorPatientFolderId)}/analyses/${docId}/preview`, {
+                        headers: { 'Authorization': `Bearer ${docToken}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        items = (data.doc && data.doc.analyses_data) || [];
+                        currentLatestAnalysesDocId = docId;
+                    }
+                } catch(e) {}
+            }
+
+            if (!items || items.length === 0) {
+                tableBox.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Нет данных анализов для предпросмотра.</div>';
+            } else {
+                let tableHtml = `
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+                        <thead>
+                            <tr style="background: rgba(37,99,235,0.2); border-bottom: 2px solid var(--accent-purple);">
+                                <th style="padding: 8px; color: #fff;">Дата</th>
+                                <th style="padding: 8px; color: #fff;">Анализ / Показатель</th>
+                                <th style="padding: 8px; color: #fff;">Результат</th>
+                                <th style="padding: 8px; color: #fff;">Норма</th>
+                                <th style="padding: 8px; color: #fff;">Отклонение</th>
+                                <th style="padding: 8px; color: #fff;">Комментарий</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                items.forEach(it => {
+                    const isOut = it.is_out_of_norm;
+                    const isRep = it.is_repeated;
+                    const dyn = it.dynamics ? ` (${it.dynamics})` : '';
+                    const valColor = isOut ? '#EF4444; font-weight: bold;' : '#E2E8F0;';
+                    const devColor = isOut ? '#EF4444; font-weight: bold;' : '#34D399;';
+                    const rowBg = isRep ? 'background: rgba(124,58,237,0.08);' : '';
+                    const titleWeight = isRep ? 'font-weight: bold;' : '';
+
+                    tableHtml += `
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.06); ${rowBg}">
+                            <td style="padding: 8px; color: var(--text-muted);">${escapeHtml(it.date || '-')}</td>
+                            <td style="padding: 8px; color: #fff; ${titleWeight}">${escapeHtml(it.test_name || it.parameter || '-')}</td>
+                            <td style="padding: 8px; color: ${valColor}">${escapeHtml(it.value || '-')}</td>
+                            <td style="padding: 8px; color: var(--text-muted);">${escapeHtml(it.norm || '-')}</td>
+                            <td style="padding: 8px; color: ${devColor}">${escapeHtml((it.deviation || 'В норме') + dyn)}</td>
+                            <td style="padding: 8px; color: var(--text-gray); font-size: 0.8rem;">${escapeHtml(it.comment || '-')}</td>
+                        </tr>
+                    `;
+                });
+
+                tableHtml += '</tbody></table>';
+                tableBox.innerHTML = tableHtml;
+            }
+
+            openModal('analyses-preview-modal');
+        }
+
+        async function handleDoctorDownloadLatestAnalysesDocx() {
+            if (!currentLatestAnalysesDocId) {
+                alert('Сначала сформируйте выписку анализов.');
+                return;
+            }
+            await downloadDoctorAnalysesDocx(currentLatestAnalysesDocId);
+        }
+
+        async function downloadDoctorAnalysesDocx(docId) {
+            const docToken = localStorage.getItem('doctor_token');
+            if (!docToken || !currentDoctorPatientFolderId) return;
+
+            try {
+                const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(currentDoctorPatientFolderId)}/analyses/${docId}/download`, {
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Не удалось скачать DOCX');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const cleanName = currentDoctorPatientFolderId.replace('disk:/', '').replace(/[\/\\]/g, '_').trim();
+                a.download = `analyses_${cleanName}_doc${docId}.docx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            } catch (err) {
+                alert('Ошибка скачивания DOCX: ' + err.message);
+            }
+        }
+
+        async function deleteDoctorAnalysesDoc(docId) {
+            if (!confirm('Вы уверены, что хотите удалить этот документ анализов?')) return;
+            const docToken = localStorage.getItem('doctor_token');
+            if (!docToken || !currentDoctorPatientFolderId) return;
+
+            try {
+                const res = await fetch(`/api/v1/doctor/patient/${encodeURIComponent(currentDoctorPatientFolderId)}/analyses/${docId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${docToken}` }
+                });
+                if (!res.ok) throw new Error('Ошибка при удалении');
+                await loadDoctorPatientAnalysesHistory(currentDoctorPatientFolderId);
+            } catch (err) {
+                alert('Ошибка: ' + err.message);
+            }
+        }
+
+        // --- МОДЕРАЦИЯ ОТКРЫТОГО ЧАТА ДЛЯ АДМИНИСТРАТОРА (Block 3) ---
+
+        async function loadAdminModerationQueue() {
+            const token = getAdminToken();
+            const listEl = document.getElementById('admin-moderation-list');
+            const counterEl = document.getElementById('moderation-counter');
+            if (!listEl || !token) return;
+
+            try {
+                const res = await fetch('/api/v1/admin/chat/moderation', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error('Ошибка загрузки очереди модерации');
+                const data = await res.json();
+                const msgs = data.unapproved_messages || [];
+
+                if (counterEl) counterEl.textContent = msgs.length;
+
+                if (msgs.length === 0) {
+                    listEl.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 30px;">✅ Очередь модерации пуста. Все ссылки проверены!</div>';
+                    return;
+                }
+
+                let html = '';
+                msgs.forEach(m => {
+                    const dt = m.created_at ? m.created_at.slice(0, 16).replace('T', ' ') : 'Недавно';
+                    html += `
+                        <div style="background: rgba(30,30,46,0.9); border: 1px solid rgba(239,68,68,0.3); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <strong style="color: #fff; font-size: 0.9rem;">${escapeHtml(m.author_name)}</strong>
+                                    <span style="font-size: 0.75rem; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${m.author_role}</span>
+                                    <span style="font-size: 0.75rem; color: var(--text-muted);">${dt}</span>
+                                </div>
+                                <span style="color: #F87171; font-size: 0.8rem; font-weight: 500;">⏳ Ожидает проверки</span>
+                            </div>
+                            <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; font-size: 0.88rem; color: #F1F5F9; line-height: 1.4; word-break: break-word;">
+                                ${escapeHtml(m.message_text)}
+                            </div>
+                            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px;">
+                                <button class="btn btn-turquoise" style="padding: 6px 12px; font-size: 0.8rem;" onclick="approveModerationMessage(${m.id})">✓ Одобрить и опубликовать</button>
+                                <button class="btn btn-outline" style="padding: 6px 10px; font-size: 0.8rem; color: #EF4444;" onclick="deleteModerationMessage(${m.id})">🗑️ Удалить</button>
+                                <button class="btn btn-outline" style="padding: 6px 10px; font-size: 0.8rem; color: #F59E0B;" onclick="banUserFromModeration('${escapeHtml(m.author_id)}', '${escapeHtml(m.author_role)}')">⛔ Забанить автора (24ч)</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                listEl.innerHTML = html;
+            } catch (err) {
+                listEl.innerHTML = `<div style="color: #EF4444; padding: 20px;">Ошибка: ${err.message}</div>`;
+            }
+        }
+
+        async function approveModerationMessage(msgId) {
+            const token = getAdminToken();
+            if (!token) return;
+            try {
+                const res = await fetch(`/api/v1/admin/chat/moderation/${msgId}/approve`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error('Ошибка одобрения');
+                await loadAdminModerationQueue();
+                await loadCommunityChatMessages();
+            } catch (err) {
+                alert('Ошибка: ' + err.message);
+            }
+        }
+
+        async function deleteModerationMessage(msgId) {
+            if (!confirm('Удалить это сообщение?')) return;
+            const token = getAdminToken();
+            if (!token) return;
+            try {
+                const res = await fetch(`/api/v1/public/chat/${msgId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error('Ошибка удаления');
+                await loadAdminModerationQueue();
+                await loadCommunityChatMessages();
+            } catch (err) {
+                alert('Ошибка: ' + err.message);
+            }
+        }
+
+        async function banUserFromModeration(userId, userRole) {
+            const reason = prompt('Причина блокировки:', 'Нарушение правил безопасности сообщества (сторонние ссылки / спам)');
+            if (reason === null) return;
+            const token = getAdminToken();
+            if (!token) return;
+            try {
+                const res = await fetch('/api/v1/admin/ban', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        role: userRole,
+                        reason: reason,
+                        duration_hours: 24
+                    })
+                });
+                if (!res.ok) throw new Error('Ошибка блокировки');
+                alert('Пользователь успешно заблокирован на 24 часа.');
+                await loadAdminModerationQueue();
+            } catch (err) {
+                alert('Ошибка: ' + err.message);
+            }
+        }
+
+        async function reportCommunityMessage(msgId) {
+            const auth = getActiveCommunityAuth();
+            if (!auth || !auth.token) {
+                alert('Для отправки жалобы необходимо авторизоваться в чате.');
+                return;
+            }
+            const reason = prompt('Укажите причину жалобы (спам, оскорбления, ненормативная лексика):');
+            if (reason === null) return;
+            try {
+                const res = await fetch(`/api/v1/public/chat/${msgId}/report`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${auth.token}`
+                    },
+                    body: JSON.stringify({ reason: reason || 'Нарушение правил сообщества' })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Ошибка отправки жалобы');
+                }
+                const data = await res.json();
+                alert(`Спасибо! Ваша жалоба принята (жалоб на сообщение: ${data.report_count}). При накоплении нарушений сообщение будет скрыто автоматически.`);
+                loadCommunityChatMessages();
+            } catch(err) {
+                alert(`Ошибка: ${err.message}`);
+            }
+        }
+
+        // --- ПРЕДУПРЕЖДЕНИЕ О СТОРОННИХ ССЫЛКАХ ---
+
+        function initExternalLinkSecurityWarning() {
+            document.addEventListener('click', function(e) {
+                const link = e.target.closest('a');
+                if (!link || !link.href) return;
+                const href = link.getAttribute('href') || '';
+                if (href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('/app/')) return;
+                
+                try {
+                    const url = new URL(link.href, window.location.origin);
+                    if (url.origin !== window.location.origin) {
+                        e.preventDefault();
+                        showExternalLinkWarningModal(link.href);
+                    }
+                } catch(e) {}
+            });
+        }
+
+        function showExternalLinkWarningModal(targetUrl) {
+            const displayEl = document.getElementById('external-link-target-display');
+            const confirmBtn = document.getElementById('external-link-confirm-btn');
+            if (displayEl) displayEl.textContent = targetUrl;
+            if (confirmBtn) {
+                confirmBtn.onclick = function() {
+                    closeModal('external-link-modal');
+                    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+                };
+            }
+            openModal('external-link-modal');
+        }
         function preserveQueryParameters() {
             const urlParams = window.location.search;
             if (urlParams) {
@@ -2152,6 +2551,10 @@
                         <button onclick="deleteCommunityMessage(${m.id})" style="background: none; border: none; color: #EF4444; font-size: 0.8rem; cursor: pointer; padding: 2px 4px; border-radius: 4px;" title="Удалить сообщение модератором">🗑️</button>
                     ` : '';
 
+                    const reportBtn = auth ? `
+                        <button onclick="reportCommunityMessage(${m.id})" style="background: none; border: none; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; padding: 2px 4px; border-radius: 4px;" title="Пожаловаться на сообщение">🚩</button>
+                    ` : '';
+
                     html += `
                         <div style="background: rgba(30, 30, 46, 0.75); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;">
                             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
@@ -2161,6 +2564,7 @@
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 6px;">
                                     <span style="font-size: 0.75rem; color: var(--text-muted);">${dateStr}</span>
+                                    ${reportBtn}
                                     ${deleteBtn}
                                 </div>
                             </div>
@@ -2313,6 +2717,7 @@
         window.addEventListener('DOMContentLoaded', () => {
             preserveQueryParameters();
             initFloatingAlik();
+            initExternalLinkSecurityWarning();
             updateCommunityChatAuthState();
             loadCommunityChatMessages();
             setInterval(loadCommunityChatMessages, 15000);

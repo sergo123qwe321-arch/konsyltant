@@ -5,8 +5,6 @@ __pycache__/
 *.pyc
 konsyltant.db
 *.db
-static/uploads/*
-!static/uploads/.gitkeep
 процесс.txt
 Процесс для Гемини.txt
 log.txt

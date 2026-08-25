@@ -554,6 +554,38 @@
             </div>
         </div>
 
+        <!-- СЕКЦИЯ: ХРОНОЛОГИЯ АНАЛИЗОВ И ИССЛЕДОВАНИЙ (Block 4) -->
+        <div style="background: rgba(30,30,46,0.85); border: 1px solid rgba(124,58,237,0.3); border-radius: 14px; padding: 16px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                <div>
+                    <h4 style="margin: 0; font-size: 1rem; color: #fff;">📊 Хронология анализов и исследований</h4>
+                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: var(--text-muted);">Извлечение динамики показателей и генерация DOCX</p>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-purple" id="doc-generate-analyses-btn" onclick="handleDoctorGenerateAnalyses()" style="padding: 8px 16px; font-size: 0.85rem;">Сформировать анализы 📊</button>
+                </div>
+            </div>
+            
+            <div id="doc-analyses-loading" style="display: none; text-align: center; padding: 20px; color: var(--accent-purple);">
+                <div style="font-size: 1.8rem; margin-bottom: 8px;">⏳</div>
+                <div style="font-weight: 500; font-size: 0.95rem;">Анализируем медицинские документы...</div>
+            </div>
+            
+            <div id="doc-analyses-result" style="display: none; margin-bottom: 14px;">
+                <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                    <button class="btn btn-turquoise" id="doc-analyses-preview-btn" onclick="openAnalysesPreviewModal()" style="padding: 6px 12px; font-size: 0.85rem;">Посмотреть в браузере 👁️</button>
+                    <button class="btn btn-outline" id="doc-analyses-download-btn" onclick="handleDoctorDownloadLatestAnalysesDocx()" style="padding: 6px 12px; font-size: 0.85rem;">Скачать DOCX 📄</button>
+                </div>
+            </div>
+
+            <div id="doc-analyses-history" style="margin-top: 10px;">
+                <h5 style="margin: 0 0 8px 0; font-size: 0.85rem; color: var(--text-muted);">Ранее сгенерированные документы:</h5>
+                <div id="doc-analyses-list" style="display: flex; flex-direction: column; gap: 6px;">
+                    <!-- Список ранее сохраненных анализов -->
+                </div>
+            </div>
+        </div>
+
         <div style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.15); border-radius: 14px; padding: 16px;">
             <h5 style="margin: 0 0 8px 0; color: var(--accent-turquoise);">💡 Рекомендация для врача:</h5>
             <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted); line-height: 1.5;">
@@ -644,6 +676,7 @@
 <button class="btn btn-turquoise" id="tab-btn-leads" onclick="switchAdminTab('leads')" style="padding: 8px 16px; font-size: 0.85rem;">📋 Заявки с сайта (<span id="leads-counter">0</span>)</button>
 <button class="btn btn-outline" id="tab-btn-posts" onclick="switchAdminTab('posts')" style="padding: 8px 16px; font-size: 0.85rem;">✍️ Управление блогом</button>
 <button class="btn btn-outline" id="tab-btn-ops" onclick="switchAdminTab('ops')" style="padding: 8px 16px; font-size: 0.85rem;">📊 Операционная панель</button>
+<button class="btn btn-outline" id="tab-btn-moderation" onclick="switchAdminTab('moderation')" style="padding: 8px 16px; font-size: 0.85rem;">🛡️ Модерация (<span id="moderation-counter">0</span>)</button>
 </div>
 <!-- Вкладка 1: Заявки с сайта -->
 <div id="admin-tab-leads" style="overflow-y: auto; flex: 1; padding-right: 4px;">
@@ -674,21 +707,25 @@
 <input class="form-input" id="edit-post-tags" placeholder="Развитие речи, Игры"/>
 </div>
 <div class="form-group">
-<label class="form-label">Обложка статьи (URL или Загрузка на Яндекс.Диск)</label>
+<label class="form-label">Обложка статьи (Внешний URL изображения)</label>
 <div style="display: flex; gap: 8px; margin-bottom: 6px;">
-<input class="form-input" id="edit-post-cover" placeholder="https://... или выберите файл" style="flex: 1;" oninput="updateCoverPreview()"/>
-<label class="btn btn-outline" style="cursor: pointer; padding: 8px 12px; font-size: 0.85rem; white-space: nowrap; margin: 0;">
-    📁 Загрузить файл
-    <input type="file" id="edit-post-cover-file" accept="image/*,video/*" style="display: none;" onchange="handleAdminFileUpload(event, 'edit-post-cover')"/>
-</label>
+<input class="form-input" id="edit-post-cover" placeholder="Вставьте ссылку на видео (Rutube/VK/YouTube/Dzen) или изображение" style="flex: 1;" oninput="updateCoverPreview()"/>
+<button class="btn btn-outline" style="padding: 8px 12px; font-size: 0.85rem; white-space: nowrap;" type="button" onclick="checkAdminMediaUrl('edit-post-cover', 'image')">
+    Проверить ссылку 🔍
+</button>
 </div>
 <div id="edit-post-cover-preview" style="display: none; max-height: 120px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); margin-top: 4px;">
 <img id="cover-preview-img" src="" style="width: 100%; height: 120px; object-fit: cover;" alt="Превью"/>
 </div>
 </div>
 <div class="form-group">
-<label class="form-label" for="edit-post-video">Видеоматериал (URL)</label>
-<input class="form-input" id="edit-post-video" placeholder="Ссылка на видео (Яндекс.Диск, MP4, Rutube, YouTube, VK Video)"/>
+<label class="form-label" for="edit-post-video">Видеоматериал (Внешний URL)</label>
+<div style="display: flex; gap: 8px;">
+<input class="form-input" id="edit-post-video" placeholder="Ссылка на видео (Rutube, YouTube, VK Video, Dzen)" style="flex: 1;"/>
+<button class="btn btn-outline" style="padding: 8px 12px; font-size: 0.85rem; white-space: nowrap;" type="button" onclick="checkAdminMediaUrl('edit-post-video', 'video')">
+    Проверить ссылку 🔍
+</button>
+</div>
 </div>
 <div class="form-group">
 <label class="form-label" for="edit-post-summary">Краткий анонс</label>
@@ -718,6 +755,46 @@
 <div style="text-align: center; color: var(--text-muted); padding: 30px;">Загрузка операционных метрик... ⏳</div>
 </div>
 </div>
+<!-- Вкладка 4: Очередь модерации открытого чата -->
+<div id="admin-tab-moderation" style="display: none; overflow-y: auto; flex: 1; padding-right: 4px;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+<h4 style="margin: 0; font-size: 1.05rem;">🛡️ Очередь модерации внешних ссылок</h4>
+<button class="btn btn-outline" onclick="loadAdminModerationQueue()" style="padding: 4px 10px; font-size: 0.75rem;">🔄 Обновить очередь</button>
+</div>
+<div id="admin-moderation-list" style="display: flex; flex-direction: column; gap: 10px;">
+<div style="text-align: center; color: var(--text-muted); padding: 30px;">Загрузка сообщений на проверку... ⏳</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО: ПРЕДПРОСМОТР ХРОНОЛОГИИ АНАЛИЗОВ -->
+<div class="modal" id="analyses-preview-modal">
+<div class="modal-content" style="max-width: 800px; max-height: 85vh; overflow-y: auto;">
+<button class="close-modal" onclick="closeModal('analyses-preview-modal')">×</button>
+<h3 style="color: var(--accent-turquoise); margin-bottom: 8px;">📊 Хронология анализов пациента</h3>
+<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Структурированная таблица медицинских показателей и динамики</p>
+<div id="analyses-preview-table-container" style="overflow-x: auto; margin-bottom: 16px;"></div>
+<div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+<button class="btn btn-outline" onclick="closeModal('analyses-preview-modal')">Закрыть</button>
+<button class="btn btn-purple" id="analyses-modal-download-btn" onclick="handleDoctorDownloadLatestAnalysesDocx()">Скачать DOCX 📄</button>
+</div>
+</div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО ПРЕДУПРЕЖДЕНИЯ О СТОРОННИХ ССЫЛКАХ -->
+<div class="modal" id="external-link-modal">
+<div class="modal-content" style="max-width: 500px;">
+<button class="close-modal" onclick="closeModal('external-link-modal')">×</button>
+<h3 style="color: #F87171; font-size: 1.2rem; margin-bottom: 12px;">⚠️ Предупреждение о безопасности</h3>
+<p style="font-size: 0.92rem; line-height: 1.6; color: var(--text-gray); margin-bottom: 16px;">
+Если вы зарегистрированный пользователь (специалист или родитель), будьте осторожны при использовании сторонних ссылок. Возможно похищение данных и взлом личного кабинета.
+</p>
+<div id="external-link-target-display" style="background: rgba(255,255,255,0.05); padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; word-break: break-all; color: var(--accent-turquoise); margin-bottom: 20px;"></div>
+<div style="display: flex; gap: 10px; justify-content: flex-end;">
+<button class="btn btn-outline" onclick="closeModal('external-link-modal')">Отмена</button>
+<button class="btn btn-turquoise" id="external-link-confirm-btn">Перейти</button>
 </div>
 </div>
 </div>

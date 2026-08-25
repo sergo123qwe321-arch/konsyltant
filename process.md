@@ -334,11 +334,53 @@
     - Полный тестовый набор из 85 тестов выполнен со 100% успехом.
     - Затронутые файлы: database.py, main.py, folder_watcher.py, docker-compose.yml, .gitignore, templates/index.html, static/js/app.js, test_doctor_notes_and_dashboard.py, test_local_uploads.py, test_community_chat.py, test_technological_sovereignty.py, scripts/admin/migrate_cover_images.py, process.md, ARCHITECTURE.md.
 
+- [2026-08-25] [Release v7.1-production] Безопасность, 152-ФЗ, Модерация чата, Отказ от локального хранения медиа, Хронология анализов и очистка репозитория:
+  - Блок 0 (Критическая очистка репозитория):
+    - Полностью удалены файлы `процесс.txt` и `Процесс для Гемини.txt`.
+    - В `.gitignore` добавлены правила исключения: `процесс.txt`, `Процесс для Гемини.txt`, `log.txt`, `history.txt`, `*.log.txt`.
+    - Разработан скрипт-линтер `scripts/lint_no_txt_logs.py` и настроен pre-commit hook `.git/hooks/pre-commit` для блокировки любых попыток создания `.txt` логов.
+  - Блок 1 (Отказ от локального хранилища медиа):
+    - Полностью удалена директория `static/uploads/`, скрипты миграции и тесты локального хранилища.
+    - Из `docker-compose.yml` удален том `uploads_data`.
+    - Внедрен эндпоинт `POST /api/v1/admin/media-url` для валидации внешних URL по белым спискам видеоплатформ (Rutube, VK Video, YouTube, Dzen, Яндекс.Видео) и хостингов изображений (Yandex, VK, Pikabu, Imgur, Ibb).
+    - В CMS интерфейсе удалены кнопки загрузки файлов и добавлены кнопки «Проверить ссылку 🔍».
+    - Разработан тестовый набор `test_media_url_validation.py` (6/6 PASS).
+  - Блок 2 (История консультаций с ИИ по 152-ФЗ):
+    - Созданы таблицы `patient_chat_history` и `doctor_chat_history` с B-tree индексами `idx_patient_chat_folder_created` и `idx_doctor_chat_doctor_patient`.
+    - В эндпоинте `/api/chat` внедрено автоматическое сохранение каждого сообщения пациента и ответа ассистента с фиксацией расхода токенов.
+    - Внедрены эндпоинты чтения и удаления истории: `GET /api/patient/chat/history`, `GET /api/v1/doctor/patient/{folder_id}/chat/history`, `DELETE /api/v1/admin/chat/history/patient/{folder_id}` (право на забвение).
+    - В SPA пациента (`static/app.js`) реализовано автоматическое восстановление предыдущей истории диалога при входе.
+  - Блок 3 (Безопасность и модерация открытого чата сообщества):
+    - В `security_utils.py` внедрен мат-фильтр `contains_profanity` на базе корневого словаря русского языка (HTTP 400 при нарушении).
+    - Обеспечено сохранение номеров телефонов родителей в формате `+7/8 (XXX) XXX-XX-XX`.
+    - Внедрена фильтрация ссылок и очередь модерации (`get_unapproved_chat_messages`):
+      - Ссылки из белого списка публикуются сразу (`is_approved = True`).
+      - Ссылки не из белого списка заменяются на текст `[ссылка ожидает проверки модератором]` (`is_approved = False`) и поступают в очередь модерации администратора.
+      - В CMS добавлен таб `#admin-tab-moderation` с кнопками «Одобрить», «Удалить», «Забанить автора на 24ч».
+    - Внедрена система жалоб: `POST /api/v1/public/chat/{id}/report` с автоматической блокировкой автора на 24 часа при 3+ жалобах.
+    - Реализовано модальное окно `#external-link-modal` с обязательным предупреждением о безопасности при переходе по сторонним ссылкам.
+    - Все внешние ссылки снабжены `rel="noopener noreferrer ugc"`, а `iframe` защищены `sandbox="allow-scripts allow-same-origin"`.
+    - Разработан тестовый набор `test_chat_moderation.py` (8/8 PASS).
+  - Блок 4 (Хронология анализов в кабинете врача):
+    - В `rag.py` реализован RAG-пайплайн извлечения клинических и лабораторных анализов (`extract_patient_analyses`) с автоматическим определением повторных исследований и расчетом динамики (`↑`, `↓`, `→`).
+    - Разработан модуль генерации документов `analyses_generator.py` на базе `python-docx` с формированием официальной брендированной выписки `.docx` на лету.
+    - В БД создана таблица `patient_analyses_documents` для персистентного хранения структурированных JSON-выписок без сохранения файлов docx на сервере.
+    - Реализованы эндпоинты: `POST .../generate-analyses`, `GET .../analyses`, `GET .../preview`, `GET .../download`, `DELETE ...`.
+    - В интерфейсе кабинета врача добавлены кнопка «Сформировать анализы 📊», интерактивный предпросмотр в браузере, скачивание DOCX и история ранее сформированных выписок.
+    - Разработан тестовый набор `test_analyses_generation.py` (3/3 PASS).
+  - Блок 5 (Документация, верификация и тестирование):
+    - Обновлен файл `ARCHITECTURE.md` (раздел 13).
+    - Обновлен файл `process.md`.
+    - Полный тестовый набор проекта из 100 тестов выполнен со 100% успехом (`Ran 100 tests in 12.540s. OK`).
+    - Затронутые файлы: `database.py`, `security_utils.py`, `rag.py`, `analyses_generator.py`, `main.py`, `templates/index.html`, `static/js/app.js`, `static/app.js`, `.gitignore`, `docker-compose.yml`, `scripts/lint_no_txt_logs.py`, `test_media_url_validation.py`, `test_chat_moderation.py`, `test_analyses_generation.py`, `test_landing_and_admin_ops.py`, `ARCHITECTURE.md`, `process.md`.
+
 ## План
 - **Что сделано:**
-  - Полностью реализованы и верифицированы блоки А, Б, В, Г, Д.
-  - Все 85 тестов пройдены успешно.
+  - Полностью реализованы и верифицированы блоки 0, 1, 2, 3, 4, 5 релиза v7.1-production.
+  - Все 100 тестов пройдены успешно (100% PASS).
+  - Линтер логов `scripts/lint_no_txt_logs.py` подтвердил отсутствие запрещенных txt-файлов.
 - **Что в процессе:**
-  - Деплой релиза v7.0-production на боевой VPS Beget.
+  - Деплой релиза v7.1-production на боевой VPS Beget (`159.194.232.74`).
 - **Что предстоит:**
-  - Создание релизного тега v7.0-production в ветке main.
+  - Создание коммита и релизного тега `v7.1-production` в Git.
+

@@ -114,24 +114,33 @@ class TestLandingAndAdminOps(unittest.TestCase):
         self.assertEqual(res_single.json()["title"], post_data["title"])
         self.assertEqual(res_single.json()["cover_image_url"], post_data["cover_image_url"])
 
-    def test_04_admin_upload_endpoint(self):
-        """4. Загрузка файла через эндпоинт POST /api/v1/admin/upload"""
-        dummy_file_content = b"Fake image file content for testing uploads"
-        files = {
-            "file": ("test_cover.jpg", io.BytesIO(dummy_file_content), "image/jpeg")
+    def test_04_admin_media_url_validation_endpoint(self):
+        """4. Валидация внешнего URL через эндпоинт POST /api/v1/admin/media-url"""
+        valid_payload = {
+            "url": "https://rutube.ru/video/123456/",
+            "type": "video"
         }
-
-        res_upload = self.client.post(
-            "/api/v1/admin/upload",
+        res_valid = self.client.post(
+            "/api/v1/admin/media-url",
             headers={"Authorization": f"Bearer {self.admin_token}"},
-            files=files
+            json=valid_payload
         )
-        self.assertEqual(res_upload.status_code, 200)
-        data = res_upload.json()
-        self.assertEqual(data["status"], "ok")
-        self.assertIn("url", data)
-        self.assertIn("local_url", data)
-        self.assertEqual(data["original_name"], "test_cover.jpg")
+        self.assertEqual(res_valid.status_code, 200)
+        data = res_valid.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["validated_url"], valid_payload["url"])
+
+        # Проверка отклонения неразрешенных доменов
+        invalid_payload = {
+            "url": "https://untrusted-unknown-site.net/watch?v=123",
+            "type": "video"
+        }
+        res_invalid = self.client.post(
+            "/api/v1/admin/media-url",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+            json=invalid_payload
+        )
+        self.assertEqual(res_invalid.status_code, 400)
 
     def test_05_admin_leads_endpoint(self):
         """5. Получение списка заявок через GET /api/v1/admin/leads"""

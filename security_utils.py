@@ -1,4 +1,6 @@
 import os
+import re
+import urllib.parse
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
@@ -187,4 +189,135 @@ class InMemoryAuthRateLimiter:
         with self._lock:
             self.attempts.clear()
             self.lockouts.clear()
+
+# --- МОДЕРАЦИЯ И БЕЗОПАСНОСТЬ ОТКРЫТОГО ЧАТА (Block 3) ---
+
+PROFANITY_WORDS_LIST = [
+    # Базовые нецензурные корни и словоформы
+    r'\bху[йияеёю]\w*',
+    r'\bпизд\w*',
+    r'\b[её]б[а-яё]*\w*',
+    r'\bбля[тд]\w*',
+    r'\bсук[а-яё]*\b',
+    r'\bмуда[кч]\w*',
+    r'\bгондон\w*',
+    r'\bшлюх\w*',
+    r'\bпид[оа]р\w*',
+    r'\bзалуп\w*',
+    r'\bу[её]б\w*',
+    r'\bдолбо[её]б\w*',
+    r'\bчмо\b',
+    r'\bмраз[ь|и|ей]\w*',
+    r'\bговн\w*',
+    r'\bсволоч\w*',
+    r'\bдерьм\w*'
+]
+PROFANITY_REGEX = re.compile('|'.join(PROFANITY_WORDS_LIST), re.IGNORECASE)
+
+ALLOWLIST_VIDEO_DOMAINS = {
+    "rutube.ru", "vkvideo.ru", "vk.com", "dzen.ru", "youtube.com", "youtu.be", "video.yandex.ru"
+}
+ALLOWLIST_IMAGE_DOMAINS = {
+    "yandex.ru", "images.yandex.ru", "avatars.mds.yandex.net", "vk.com", "pikabu.ru", "imgur.com", "ibb.co", "i.ibb.co"
+}
+ALL_ALLOWLIST_DOMAINS = ALLOWLIST_VIDEO_DOMAINS | ALLOWLIST_IMAGE_DOMAINS
+
+BLOCKED_SHORTENERS = {
+    "bit.ly", "tinyurl.com", "clck.ru", "goo.gl", "t.co", "is.gd", "cutt.ly"
+}
+DANGEROUS_SCHEMES = ("javascript:", "data:", "vbscript:", "file:")
+
+URL_PATTERN = re.compile(r'(https?://[^\s<>"]+|www\.[^\s<>"]+)', re.IGNORECASE)
+PHONE_PATTERN = re.compile(r'(?:\+7|8)[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}')
+
+def contains_profanity(text: str) -> bool:
+    """
+    Проверяет текст на наличие нецензурной лексики и оскорблений.
+    Возвращает True, если найдено запрещенное слово.
+    """
+    if not text:
+        return False
+    return bool(PROFANITY_REGEX.search(text))
+
+def extract_domain(url: str) -> str:
+    """Извлекает нормализованный домен из URL."""
+    if not url.startswith(("http://", "https://")):
+        url = "http://" + url
+    parsed = urllib.parse.urlparse(url)
+    domain = parsed.netloc.lower()
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
+def validate_media_url(url: str, media_type: str = "image") -> tuple:
+    """
+    Валидирует внешний медиа URL (для постов, статей библиотеки и медиа-блоков).
+    Возвращает (is_valid, error_detail).
+    """
+    if not url:
+        return False, "URL не может быть пустым"
+    
+    url_lower = url.lower().strip()
+    for scheme in DANGEROUS_SCHEMES:
+        if url_lower.startswith(scheme):
+            return False, "Использование опасных схем URL запрещено"
+            
+    domain = extract_domain(url)
+    if domain in BLOCKED_SHORTENERS:
+        return False, "Использование сервисов сокращения ссылок запрещено"
+        
+    if media_type == "video":
+        if any(domain == d or domain.endswith("." + d) for d in ALLOWLIST_VIDEO_DOMAINS):
+            return True, ""
+        # Разрешаем также прямые видеофайлы (.mp4, .webm)
+        if url_lower.endswith((".mp4", ".webm")):
+            return True, ""
+        return False, "Видео ссылка должна принадлежать Rutube, VK Video, YouTube, Dzen или Яндекс.Видео"
+    else:
+        if any(domain == d or domain.endswith("." + d) for d in ALLOWLIST_IMAGE_DOMAINS):
+            return True, ""
+        # Разрешаем прямые ссылки на изображения
+        if any(url_lower.split("?")[0].endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")):
+            return True, ""
+        return False, "Ссылка на изображение должна быть из доверенного источника или иметь расширение изображения (.jpg, .png, .webp)"
+
+def process_chat_message_moderation(text: str) -> tuple:
+    """
+    Анализирует текст сообщения открытого чата:
+    1. Проверяет мат-фильтр -> если мат, выбрасывает ValueError.
+    2. Проверяет опасные схемы и короткие ссылки -> если есть, выбрасывает ValueError.
+    3. Проверяет внешние ссылки:
+       - Если все ссылки входят в allowlist -> is_approved = True.
+       - Если есть ссылка не из allowlist -> is_approved = False, заменяет ссылку на [ссылка ожидает проверки модератором].
+    Возвращает (sanitized_text, is_approved).
+    """
+    if not text:
+        return text, True
+
+    if contains_profanity(text):
+        raise ValueError("Сообщение содержит недопустимую лексику. Пожалуйста, соблюдайте правила общения")
+
+    text_lower = text.lower()
+    for scheme in DANGEROUS_SCHEMES:
+        if scheme in text_lower:
+            raise ValueError("Сообщение содержит запрещенную схему URL")
+
+    # Ищем все URL в тексте
+    found_urls = URL_PATTERN.findall(text)
+    is_approved = True
+    processed_text = text
+
+    for raw_url in found_urls:
+        domain = extract_domain(raw_url)
+        if domain in BLOCKED_SHORTENERS:
+            raise ValueError("Использование сокращенных ссылок запрещено правилами безопасности")
+            
+        # Проверяем, входит ли в белые списки
+        in_allowlist = any(domain == d or domain.endswith("." + d) for d in ALL_ALLOWLIST_DOMAINS)
+        if not in_allowlist:
+            is_approved = False
+            processed_text = processed_text.replace(raw_url, "[ссылка ожидает проверки модератором]")
+
+    return processed_text, is_approved
+
 
