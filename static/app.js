@@ -36,11 +36,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Инициализация голосового ввода (Web Speech API)
     let voiceController = null;
     function initPatientVoiceInput() {
-        if (voiceController) return;
+        const btn = document.getElementById('voice-input-btn');
+        const input = document.getElementById('chat-input');
+        if (!btn || !input) return;
+
+        if (voiceController) {
+            if (voiceController.buttonElement !== btn || voiceController.inputElement !== input) {
+                voiceController.inputElement = input;
+                voiceController.buttonElement = btn;
+                voiceController.statusContainer = document.getElementById('voice-status-container');
+                voiceController.statusText = document.getElementById('voice-status-text');
+                voiceController.fallbackHint = document.getElementById('voice-fallback-hint');
+                voiceController.bindEvents();
+            }
+            return;
+        }
+
         if (typeof VoiceInputController !== 'undefined') {
             voiceController = new VoiceInputController({
-                inputElement: document.getElementById('chat-input'),
-                buttonElement: document.getElementById('voice-input-btn'),
+                inputElement: input,
+                buttonElement: btn,
                 statusContainer: document.getElementById('voice-status-container'),
                 statusText: document.getElementById('voice-status-text'),
                 fallbackHint: document.getElementById('voice-fallback-hint'),

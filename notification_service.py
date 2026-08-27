@@ -11,11 +11,16 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.yandex.ru")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 465))
-SMTP_USER = os.getenv("SMTP_USER", os.getenv("YANDEX_EMAIL", "konsultantms@yandex.com"))
-DEFAULT_NOTIFICATION_EMAIL = os.getenv("DEFAULT_NOTIFICATION_EMAIL", "konsultantms@yandex.com")
-UNISENDER_API_KEY = os.getenv("UNISENDER_API_KEY", "")
+SMTP_SERVER = (os.getenv("SMTP_SERVER") or "smtp.yandex.ru").strip()
+try:
+    SMTP_PORT = int((os.getenv("SMTP_PORT") or "465").strip())
+except Exception:
+    SMTP_PORT = 465
+SMTP_USER = (os.getenv("SMTP_USER") or os.getenv("YANDEX_EMAIL") or "konsultantms@yandex.com").strip()
+DEFAULT_NOTIFICATION_EMAIL = (os.getenv("DEFAULT_NOTIFICATION_EMAIL") or "konsultantms@yandex.com").strip()
+PRIMARY_ALERT_EMAIL = (os.getenv("PRIMARY_ALERT_EMAIL") or "konsultantms@yandex.com").strip()
+SECONDARY_ALERT_EMAIL = (os.getenv("SECONDARY_ALERT_EMAIL") or "sergo123qwe321@gmail.com").strip()
+UNISENDER_API_KEY = (os.getenv("UNISENDER_API_KEY") or "").strip()
 
 class NotificationService:
     @staticmethod
@@ -23,11 +28,17 @@ class NotificationService:
         """
         Отправляет email через Yandex SMTP (SSL порт 465).
         """
-        smtp_pass = os.getenv("SMTP_PASSWORD", "").replace(" ", "")
-        target_email = recipient_email or DEFAULT_NOTIFICATION_EMAIL
+        smtp_pass = (os.getenv("SMTP_PASSWORD") or "").strip().replace(" ", "")
+        target_email = (recipient_email or os.getenv("DEFAULT_NOTIFICATION_EMAIL") or DEFAULT_NOTIFICATION_EMAIL).strip()
+        smtp_user = (os.getenv("SMTP_USER") or os.getenv("YANDEX_EMAIL") or SMTP_USER).strip()
+        smtp_server = (os.getenv("SMTP_SERVER") or SMTP_SERVER).strip()
+        try:
+            smtp_port = int((os.getenv("SMTP_PORT") or str(SMTP_PORT)).strip())
+        except Exception:
+            smtp_port = 465
 
         print(f"[NOTIFICATION SERVICE] SMTP Password status: loaded (length: {len(smtp_pass)})")
-        print(f"[NOTIFICATION SERVICE] Отправка через Yandex SMTP ({SMTP_SERVER}:{SMTP_PORT}) на {target_email}...")
+        print(f"[NOTIFICATION SERVICE] Отправка через Yandex SMTP ({smtp_server}:{smtp_port}) на {target_email}...")
 
         if not smtp_pass:
             print("[NOTIFICATION SERVICE WARNING] SMTP_PASSWORD не задан в .env.")
@@ -36,14 +47,14 @@ class NotificationService:
         try:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
-            msg["From"] = SMTP_USER
+            msg["From"] = smtp_user
             msg["To"] = target_email
             msg.attach(MIMEText(body, "html", "utf-8"))
 
-            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=15) as server:
+            with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
                 server.set_debuglevel(0)  # Безопасное логирование без вывода сырых данных аутентификации
-                server.login(SMTP_USER, smtp_pass)
-                server.sendmail(SMTP_USER, target_email, msg.as_string())
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_user, target_email, msg.as_string())
 
             print(f"[NOTIFICATION SERVICE SUCCESS] [250 OK] Письмо успешно отправлено через Yandex SMTP на {target_email}!")
             return True
@@ -53,17 +64,21 @@ class NotificationService:
 
     @staticmethod
     def send_unisender_email(subject: str, body: str, recipient_email: str = None) -> bool:
-        target_email = recipient_email or DEFAULT_NOTIFICATION_EMAIL
-        if not UNISENDER_API_KEY:
+        target_email = (recipient_email or os.getenv("DEFAULT_NOTIFICATION_EMAIL") or DEFAULT_NOTIFICATION_EMAIL).strip()
+        api_key = (os.getenv("UNISENDER_API_KEY") or UNISENDER_API_KEY or "").strip()
+        sender_email = (os.getenv("SMTP_USER") or os.getenv("YANDEX_EMAIL") or SMTP_USER).strip()
+
+        if not api_key:
+            print("[UNISENDER WARNING] UNISENDER_API_KEY не задан в .env.")
             return False
 
         url = "https://api.unisender.com/ru/api/sendEmail"
         params = {
             "format": "json",
-            "api_key": UNISENDER_API_KEY,
+            "api_key": api_key,
             "email": target_email,
             "sender_name": "ИИ-Консультант",
-            "sender_email": SMTP_USER,
+            "sender_email": sender_email,
             "subject": subject,
             "body": body,
             "list_id": 1
@@ -87,7 +102,7 @@ class NotificationService:
         cache_public_url: str = None
     ) -> bool:
         if not base_url or ":8000" in base_url:
-            base_url = os.getenv("BASE_URL", "https://xn--g1aj3a.site")
+            base_url = (os.getenv("BASE_URL") or "https://xn--g1aj3a.site").strip()
             if ":8000" in base_url:
                 base_url = "https://xn--g1aj3a.site"
         base_url = base_url.rstrip("/")
@@ -131,14 +146,36 @@ class NotificationService:
         return success
 
 def send_email_to_recipient(email: str, subject: str, html_body: str) -> bool:
-    """Удобная функция отправки HTML-письма на указанный адрес."""
-    return NotificationService.send_smtp_email(subject, html_body, email)
+    """Удобная функция отправки HTML-письма на указанный адрес с каскадным переключением (SMTP -> UniSender)."""
+    success = False
+    try:
+        success = NotificationService.send_smtp_email(subject, html_body, email)
+    except Exception as e:
+        print(f"[NOTIFICATION SERVICE ERROR] SMTP exception for {email}: {e}")
+        success = False
 
-def send_doctor_onboarding_email(doctor_email: str, full_name: str, temp_password: str, specialty: str) -> bool:
+    if not success:
+        print(f"[EMAIL FALLBACK] Yandex SMTP failed, switching to UniSender API for {email}...")
+        try:
+            success = NotificationService.send_unisender_email(subject, html_body, email)
+        except Exception as ue:
+            print(f"[UNISENDER ERROR] Fallback failed for {email}: {ue}")
+            success = False
+
+    return success
+
+def send_doctor_onboarding_email(
+    doctor_email: str, 
+    full_name: str, 
+    temp_password: str, 
+    specialty: str,
+    return_details: bool = False
+) -> bool | tuple:
     """
-    Отправляет реквизиты доступа новому врачу/специалисту с дублированием на корпоративный адрес центра.
+    Отправляет реквизиты доступа новому врачу/специалисту с каскадным переключением (SMTP -> UniSender)
+    и обязательным дублированием на корпоративный адрес центра.
     """
-    base_url = os.getenv("BASE_URL", "https://xn--g1aj3a.site").rstrip("/")
+    base_url = (os.getenv("BASE_URL") or "https://xn--g1aj3a.site").strip().rstrip("/")
     if ":8000" in base_url:
         base_url = "https://xn--g1aj3a.site"
         
@@ -215,24 +252,53 @@ def send_doctor_onboarding_email(doctor_email: str, full_name: str, temp_passwor
     </html>
     """
 
+    transport_used = "failed"
+    success_doc = False
+
+    # Шаг 1: Попытка отправки врачу через Yandex SMTP
     try:
-        # Отправка на почту врача
-        success_doc = send_email_to_recipient(doctor_email, subject, html_body)
-        
-        # Обязательное дублирование на корпоративный адрес клиники
-        primary_alert = os.getenv("PRIMARY_ALERT_EMAIL", "konsultantms@yandex.com")
-        if primary_alert and primary_alert != doctor_email:
-            send_email_to_recipient(primary_alert, f"[КОПИЯ ОНБОРДИНГА] {subject} ({full_name})", html_body)
-            
-        return success_doc
+        if NotificationService.send_smtp_email(subject, html_body, doctor_email):
+            success_doc = True
+            transport_used = "smtp"
+            print(f"[ONBOARDING DOCTOR] Письмо врачу {doctor_email} успешно доставлено через Yandex SMTP.")
+        else:
+            raise Exception("SMTP returned False")
     except Exception as e:
-        print(f"[ONBOARDING DOCTOR ERROR] Сбой отправки письма врачу {doctor_email}: {e}")
-        return False
+        print(f"[EMAIL FALLBACK] Yandex SMTP failed ({e}), switching to UniSender API for doctor {doctor_email}...")
+        # Шаг 2: Резервная доставка врачу через UniSender API
+        try:
+            if NotificationService.send_unisender_email(subject, html_body, doctor_email):
+                success_doc = True
+                transport_used = "unisender"
+                print(f"[ONBOARDING DOCTOR] Письмо врачу {doctor_email} успешно доставлено через UniSender API fallback.")
+            else:
+                print(f"[ONBOARDING DOCTOR ERROR] Резервная отправка через UniSender API для {doctor_email} не удалась.")
+        except Exception as ue:
+            print(f"[ONBOARDING DOCTOR ERROR] Исключение при вызове UniSender API: {ue}")
+
+    # Обязательное дублирование копии на корпоративный адрес клиники
+    primary_alert = (os.getenv("PRIMARY_ALERT_EMAIL") or PRIMARY_ALERT_EMAIL or "konsultantms@yandex.com").strip()
+    if primary_alert and primary_alert.lower() != doctor_email.lower():
+        copy_subject = f"[КОПИЯ ОНБОРДИНГА] {subject} ({full_name})"
+        try:
+            if not NotificationService.send_smtp_email(copy_subject, html_body, primary_alert):
+                print(f"[EMAIL FALLBACK] Yandex SMTP failed for corporate copy, switching to UniSender API...")
+                NotificationService.send_unisender_email(copy_subject, html_body, primary_alert)
+        except Exception as ce:
+            print(f"[ONBOARDING DOCTOR] Ошибка отправки копии на {primary_alert}: {ce}")
+            try:
+                NotificationService.send_unisender_email(copy_subject, html_body, primary_alert)
+            except Exception:
+                pass
+
+    if return_details:
+        return success_doc, transport_used
+    return success_doc
 
 def send_dual_email(subject: str, html_body: str, primary_email: str = None, secondary_email: str = None) -> dict:
-    """Отправляет письмо с дублированием на два ключевых адреса."""
-    p_email = primary_email or os.getenv("PRIMARY_ALERT_EMAIL", "konsultantms@yandex.com")
-    s_email = secondary_email or os.getenv("SECONDARY_ALERT_EMAIL", "sergo123qwe321@gmail.com")
+    """Отправляет письмо с дублированием на два ключевых адреса с поддержкой каскада."""
+    p_email = (primary_email or os.getenv("PRIMARY_ALERT_EMAIL") or PRIMARY_ALERT_EMAIL or "konsultantms@yandex.com").strip()
+    s_email = (secondary_email or os.getenv("SECONDARY_ALERT_EMAIL") or SECONDARY_ALERT_EMAIL or "sergo123qwe321@gmail.com").strip()
     
     res_p = send_email_to_recipient(p_email, subject, html_body)
     res_s = send_email_to_recipient(s_email, subject, html_body) if s_email else False

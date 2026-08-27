@@ -232,6 +232,33 @@ class TestGuestChatAndDoctorOnboarding(unittest.TestCase):
         )
         self.assertEqual(res_forbidden.status_code, 403)
 
+    @patch("notification_service.NotificationService.send_smtp_email", return_value=False)
+    @patch("notification_service.NotificationService.send_unisender_email", return_value=True)
+    def test_08_doctor_onboarding_email_cascade_fallback(self, mock_unisender, mock_smtp):
+        """8. Проверка каскадного переключения: при сбое SMTP письмо отправляется через UniSender API"""
+        from notification_service import send_doctor_onboarding_email
+
+        res, transport = send_doctor_onboarding_email(
+            doctor_email="doc_fallback_test@cmz.site",
+            full_name="Смирнов Алексей Петрович",
+            temp_password="TempPass2026!",
+            specialty="Логопед-дефектолог",
+            return_details=True
+        )
+        self.assertTrue(res)
+        self.assertEqual(transport, "unisender")
+        self.assertTrue(mock_smtp.called)
+        self.assertTrue(mock_unisender.called)
+
+        # Проверка стандартного возврата bool
+        res_bool = send_doctor_onboarding_email(
+            doctor_email="doc_fallback_test2@cmz.site",
+            full_name="Ковалева Анна Дмитриевна",
+            temp_password="TempPass2026!",
+            specialty="Нейропсихолог"
+        )
+        self.assertTrue(res_bool)
+
 
 if __name__ == "__main__":
     unittest.main()

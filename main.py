@@ -770,24 +770,29 @@ def admin_create_doctor_api(
         role="DOCTOR"
     )
 
-    # Отправка уведомления на email
+    # Отправка уведомления на email (с каскадным переключением SMTP -> UniSender)
     email_sent = False
     try:
-        email_sent = send_doctor_onboarding_email(
+        email_res = send_doctor_onboarding_email(
             doctor_email=email,
             full_name=full_name,
             temp_password=raw_password,
             specialty=specialty
         )
+        if isinstance(email_res, tuple):
+            email_sent = bool(email_res[0])
+        else:
+            email_sent = bool(email_res)
+        logger.info(f"[ONBOARDING DOCTOR] Статус доставки email для {email}: {'УСПЕХ' if email_sent else 'СБОЙ'}")
     except Exception as e:
-        logger.warning(f"[ONBOARDING DOCTOR] Ошибка отправки письма: {e}")
+        logger.warning(f"[ONBOARDING DOCTOR] Ошибка при вызове сервиса отправки писем: {e}")
 
     return {
         "status": "ok",
         "doctor": doc,
         "temporary_password": raw_password,
         "email_sent": email_sent,
-        "message": f"Врач '{full_name}' успешно зарегистрирован. Доступы отправлены на {email}."
+        "message": f"Врач '{full_name}' успешно зарегистрирован. Доступы отправлены на {email}." if email_sent else f"Врач '{full_name}' успешно зарегистрирован, но письмо не удалось доставить автоматически. Передайте реквизиты специалисту лично."
     }
 
 @app.get("/api/v1/admin/doctors")

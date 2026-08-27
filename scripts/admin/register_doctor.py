@@ -79,23 +79,31 @@ def register_doctor(full_name: str, specialty: str, email: str, license_number: 
         role="DOCTOR"
     )
 
-    # Отправка email
+    # Отправка email с поддержкой каскада
     print(f"\n[EMAIL] Отправка учетных данных на '{email}'...")
     email_sent = False
+    transport_used = "failed"
     try:
-        email_sent = notification_service.send_doctor_onboarding_email(
+        email_res = notification_service.send_doctor_onboarding_email(
             doctor_email=email,
             full_name=full_name,
             temp_password=temp_password,
-            specialty=specialty
+            specialty=specialty,
+            return_details=True
         )
+        if isinstance(email_res, tuple):
+            email_sent, transport_used = email_res
+        else:
+            email_sent = bool(email_res)
+            transport_used = "smtp" if email_sent else "failed"
     except Exception as e:
         print(f"[EMAIL ERROR] Ошибка при отправке письма: {e}")
 
     return {
         "doctor": doctor,
         "temporary_password": temp_password,
-        "email_sent": email_sent
+        "email_sent": email_sent,
+        "transport_used": transport_used
     }
 
 def main():
@@ -150,6 +158,7 @@ def main():
         doc = result["doctor"]
         temp_pass = result["temporary_password"]
         email_sent = result["email_sent"]
+        transport_used = result.get("transport_used", "smtp" if email_sent else "failed")
 
         print("\n" + "=" * 60)
         print("🎉 СПЕЦИАЛИСТ УСПЕШНО ЗАРЕГИСТРИРОВАН В СИСТЕМЕ!")
@@ -163,9 +172,10 @@ def main():
         print(f"🔗 Ссылка для входа:  https://xn--g1aj3a.site/#doctor (https://цмз.site/#doctor)")
         print("-" * 60)
         if email_sent:
-            print("✉️ Статус уведомления: Письмо с доступом отправлено врачу и продублировано на ящик клиники.")
+            channel_name = "Yandex SMTP (SSL 465)" if transport_used == "smtp" else "UniSender API (HTTPS fallback)"
+            print(f"✉️ Статус уведомления: Письмо с доступом отправлено через {channel_name} и продублировано на ящик клиники.")
         else:
-            print("⚠️ Статус уведомления: Не удалось отправить письмо через SMTP. Передайте пароль врачу вручную.")
+            print("⚠️ Статус уведомления: Не удалось отправить письмо через SMTP / UniSender. Передайте пароль врачу вручную.")
         print("=" * 60 + "\n")
 
     except Exception as err:

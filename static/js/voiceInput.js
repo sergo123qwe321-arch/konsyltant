@@ -175,7 +175,25 @@ class VoiceInputController {
     }
 
     toggleRecording() {
-        if (!this.recognition) return;
+        if (!this.recognition) {
+            this.init();
+            if (!this.recognition) return;
+        }
+
+        // При повторном клике пользователя при ошибке сбрасываем ошибку и пытаемся запустить запись заново
+        if (this.buttonElement && this.buttonElement.classList.contains('error')) {
+            this.setButtonState('inactive');
+            if (this.statusContainer) {
+                this.statusContainer.classList.add('hidden');
+                this.statusContainer.style.display = 'none';
+            }
+            if (this.statusText) {
+                this.statusText.textContent = '';
+            }
+            this.isRecording = false;
+            this.startRecording();
+            return;
+        }
 
         if (this.isRecording) {
             this.stopRecording();
@@ -187,19 +205,43 @@ class VoiceInputController {
     startRecording() {
         if (!this.recognition || this.isRecording) return;
         try {
+            this.setButtonState('inactive');
             this.recognition.start();
         } catch (e) {
             console.warn('[VoiceInput] Ошибка запуска recognition.start():', e);
+            if (e.name === 'InvalidStateError') {
+                // Если сервис уже запущен, синхронизируем внутреннее состояние
+                this.isRecording = true;
+                this.setButtonState('recording');
+            } else {
+                this.setButtonState('error', 'Не удалось запустить микрофон');
+                this.isRecording = false;
+            }
         }
     }
 
     stopRecording() {
         this.clearSilenceTimer();
-        if (!this.recognition || !this.isRecording) return;
+        if (!this.recognition) {
+            this.isRecording = false;
+            return;
+        }
         try {
             this.recognition.stop();
         } catch (e) {
             console.warn('[VoiceInput] Ошибка остановки recognition.stop():', e);
+        } finally {
+            this.isRecording = false;
+            if (this.inputElement) {
+                this.inputElement.classList.remove('recording-focus');
+            }
+            if (this.buttonElement && !this.buttonElement.classList.contains('error')) {
+                this.setButtonState('inactive');
+            }
+            if (this.statusContainer && (!this.buttonElement || !this.buttonElement.classList.contains('error'))) {
+                this.statusContainer.classList.add('hidden');
+                this.statusContainer.style.display = 'none';
+            }
         }
     }
 
