@@ -203,6 +203,39 @@ class TestLandingAndAdminOps(unittest.TestCase):
             res_admin = self.client.get(ep, headers={"Authorization": f"Bearer {self.admin_token}"})
             self.assertEqual(res_admin.status_code, 200, f"{ep} для ADMIN должен быть 200")
 
+    def test_08_admin_ops_backup_ui_and_endpoints(self):
+        """8. Проверка элементов UI резервного копирования в index.html и работы API бэкапов"""
+        with open("templates/index.html", "r", encoding="utf-8") as f:
+            html = f.read()
+
+        # 1. Проверка наличия элементов UI в templates/index.html
+        self.assertIn('id="admin-tab-ops"', html)
+        self.assertIn('id="btn-create-backup"', html)
+        self.assertIn('id="admin-backups-container"', html)
+        self.assertIn('id="admin-backup-action-status"', html)
+        self.assertIn('Резервное копирование БД (152-ФЗ)', html)
+        self.assertIn('Ротация: 7 дней / макс. 7 копий', html)
+
+        # 2. Проверка GET /api/v1/admin/backups
+        res_list = self.client.get("/api/v1/admin/backups", headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(res_list.status_code, 200)
+        data = res_list.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertIsInstance(data["backups"], list)
+
+        # 3. Проверка POST /api/v1/admin/backup (dry-run=True)
+        res_backup = self.client.post(
+            "/api/v1/admin/backup",
+            headers={"Authorization": f"Bearer {self.admin_token}"},
+            json={"dry_run": True, "retention_days": 7, "max_backups": 7}
+        )
+        self.assertEqual(res_backup.status_code, 200)
+        backup_data = res_backup.json()
+        self.assertEqual(backup_data["status"], "ok")
+        self.assertTrue(backup_data["backup"]["dry_run"])
+        self.assertTrue(backup_data["backup"]["filename"].endswith(".sql.gz"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

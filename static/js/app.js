@@ -687,6 +687,7 @@
                 loadAdminPosts();
             } else if (tab === 'ops') {
                 loadAdminOperations();
+                loadAdminBackups();
             } else if (tab === 'moderation') {
                 loadAdminModerationQueue();
             }
@@ -858,6 +859,7 @@
             }
 
             container.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px;">Загрузка операционных метрик и баланса... ⏳</div>';
+            loadAdminBackups();
 
             try {
                 const headers = { 'Authorization': `Bearer ${token}` };
@@ -1098,6 +1100,147 @@
                 if (btn) {
                     btn.disabled = false;
                     btn.textContent = '🔔 Проверить оповещения (Тест)';
+                }
+            }
+        }
+
+        /* ==========================================================================
+           УПРАВЛЕНИЕ РЕЗЕРВНЫМ КОПИРОВАНИЕМ БД (152-ФЗ)
+           ========================================================================== */
+        async function loadAdminBackups() {
+            const container = document.getElementById('admin-backups-container');
+            const token = getAdminToken();
+            if (!container) return;
+            if (!token) {
+                container.innerHTML = '<div style="color:#EF4444;text-align:center;padding:15px;font-size:0.85rem;">Требуется авторизация администратора.</div>';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/v1/admin/backups', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) {
+                    throw new Error(`Ошибка сервера (${res.status})`);
+                }
+                const data = await res.json();
+                const backups = data.backups || [];
+
+                if (backups.length === 0) {
+                    container.innerHTML = `
+                        <div style="text-align:center;color:var(--text-muted);padding:24px 12px;background:rgba(0,0,0,0.2);border-radius:8px;font-size:0.88rem;">
+                            📁 Резервные копии еще не создавались
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '<div style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;padding-right:4px;">';
+
+                backups.forEach(b => {
+                    const dateStr = b.created_at ? new Date(b.created_at).toLocaleString('ru-RU', {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    }) : 'Неизвестно';
+
+                    html += `
+                        <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);padding:10px 14px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="font-size:1.2rem;">💾</span>
+                                <div>
+                                    <div style="color:#fff;font-family:monospace;font-size:0.85rem;font-weight:600;">${b.filename}</div>
+                                    <div style="font-size:0.75rem;color:var(--text-muted);">Создан: ${dateStr}</div>
+                                </div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="background:rgba(16,185,129,0.15);color:#34D399;padding:3px 8px;border-radius:6px;font-size:0.75rem;font-weight:600;">
+                                    ${b.size_human || (b.size_bytes + ' B')}
+                                </span>
+                                <span style="background:rgba(255,255,255,0.05);color:var(--text-muted);padding:3px 8px;border-radius:6px;font-size:0.75rem;font-family:monospace;">
+                                    .sql.gz
+                                </span>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += '</div>';
+                container.innerHTML = html;
+            } catch (err) {
+                container.innerHTML = `
+                    <div style="color:#EF4444;text-align:center;padding:15px;font-size:0.85rem;">
+                        ❌ Не удалось загрузить список резервных копий: ${err.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function handleCreateBackup() {
+            const btn = document.getElementById('btn-create-backup');
+            const statusDiv = document.getElementById('admin-backup-action-status');
+            const token = getAdminToken();
+
+            if (!token) {
+                alert('Сессия администратора истекла. Пожалуйста, выполните вход заново.');
+                return;
+            }
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '⏳ Создание снимка...';
+            }
+
+            if (statusDiv) {
+                statusDiv.style.display = 'block';
+                statusDiv.style.background = 'rgba(6,182,212,0.15)';
+                statusDiv.style.border = '1px solid var(--accent-turquoise)';
+                statusDiv.style.color = 'var(--accent-turquoise)';
+                statusDiv.innerHTML = '⏳ Выполняется создание и сжатие резервного дампа базы данных (152-ФЗ)...';
+            }
+
+            try {
+                const res = await fetch('/api/v1/admin/backup', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        retention_days: 7,
+                        max_backups: 7,
+                        dry_run: false
+                    })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.detail || 'Сбой при создании резервной копии');
+                }
+
+                const b = data.backup || {};
+                if (statusDiv) {
+                    statusDiv.style.background = 'rgba(16,185,129,0.15)';
+                    statusDiv.style.border = '1px solid #10B981';
+                    statusDiv.style.color = '#34D399';
+                    statusDiv.innerHTML = `✅ Резервный снимок успешно создан: <strong>${b.filename || ''}</strong> (${b.size_human || ''}).`;
+                    setTimeout(() => {
+                        if (statusDiv) statusDiv.style.display = 'none';
+                    }, 7000);
+                }
+
+                await loadAdminBackups();
+            } catch (err) {
+                if (statusDiv) {
+                    statusDiv.style.background = 'rgba(239,68,68,0.15)';
+                    statusDiv.style.border = '1px solid #EF4444';
+                    statusDiv.style.color = '#F87171';
+                    statusDiv.innerHTML = `❌ Ошибка при создании дампа: ${err.message}`;
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '📦 Создать резервный снимок';
                 }
             }
         }
@@ -3004,7 +3147,9 @@
 
         if (typeof window !== 'undefined') {
             window.isSpeechRecognitionSupported = isSpeechRecognitionSupported;
+            window.loadAdminBackups = loadAdminBackups;
+            window.handleCreateBackup = handleCreateBackup;
         }
         if (typeof module !== 'undefined' && module.exports) {
-            module.exports = { isSpeechRecognitionSupported };
+            module.exports = { isSpeechRecognitionSupported, loadAdminBackups, handleCreateBackup };
         }

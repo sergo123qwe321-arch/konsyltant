@@ -799,10 +799,36 @@
 <div id="admin-tab-ops" style="display: none; overflow-y: auto; flex: 1; padding-right: 4px;">
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
 <h4 style="margin: 0; font-size: 1.05rem;">📊 Метрики системы и наблюдаемость</h4>
-<button class="btn btn-outline" onclick="loadAdminOperations()" style="padding: 4px 10px; font-size: 0.75rem;">🔄 Обновить данные</button>
+<button class="btn btn-outline" onclick="loadAdminOperations(); loadAdminBackups();" style="padding: 4px 10px; font-size: 0.75rem;">🔄 Обновить данные</button>
 </div>
 <div id="admin-ops-content" style="display: flex; flex-direction: column; gap: 16px;">
 <div style="text-align: center; color: var(--text-muted); padding: 30px;">Загрузка операционных метрик... ⏳</div>
+</div>
+
+<!-- Карточка: Резервное копирование БД (152-ФЗ) -->
+<div style="margin-top: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(56,189,248,0.3); border-radius: 12px; padding: 16px;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+<div>
+<h5 style="margin: 0; font-size: 1.05rem; color: var(--accent-turquoise);">📦 Резервное копирование БД (152-ФЗ)</h5>
+<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+Сжатые дампы PostgreSQL (.sql.gz) с гарантией сохранности медицинских карт и авторотацией
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+<span class="badge" style="background: rgba(56,189,248,0.15); color: #38BDF8; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">
+🛡️ Ротация: 7 дней / макс. 7 копий
+</span>
+<button id="btn-create-backup" class="btn btn-turquoise admin-btn primary" onclick="handleCreateBackup()" style="padding: 6px 14px; font-size: 0.82rem; font-weight: 600;">
+📦 Создать резервный снимок
+</button>
+</div>
+</div>
+
+<div id="admin-backup-action-status" style="display: none; margin-bottom: 12px; font-size: 0.85rem; padding: 8px 12px; border-radius: 8px;"></div>
+
+<div id="admin-backups-container">
+<div style="text-align: center; color: var(--text-muted); padding: 20px;">Загрузка списка резервных копий... ⏳</div>
+</div>
 </div>
 </div>
 <!-- Вкладка 4: Очередь модерации открытого чата -->

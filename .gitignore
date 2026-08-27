@@ -10,3 +10,9 @@ konsyltant.db
 log.txt
 history.txt
 *.log.txt
+
+# Database Backups (152-ФЗ Security)
+backups/*
+!backups/.gitkeep
+*.sql.gz
+*.dump

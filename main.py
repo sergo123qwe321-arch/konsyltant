@@ -417,6 +417,11 @@ class ShareGrantResponse(BaseModel):
     expires_at: str
     share_url: str
 
+class BackupTriggerRequest(BaseModel):
+    retention_days: Optional[int] = 7
+    max_backups: Optional[int] = 7
+    dry_run: Optional[bool] = False
+
 @app.post("/api/verify-token")
 async def verify_token_api(req: TokenVerifyRequest):
     if token_exists(req.token):
@@ -1718,6 +1723,55 @@ def public_chat_delete_api(
         "deleted_id": message_id,
         "message": "Сообщение успешно удалено"
     }
+
+# --- Резервное копирование и ротация дампов БД (152-ФЗ) ---
+
+@app.post("/api/v1/admin/backup")
+def admin_trigger_backup_api(
+    req: Optional[BackupTriggerRequest] = None,
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Инициирует создание сжатого дампа базы данных с автоматической ротацией (152-ФЗ).
+    """
+    from scripts.admin.backup_db import create_backup
+    retention_days = req.retention_days if req and req.retention_days is not None else 7
+    max_backups = req.max_backups if req and req.max_backups is not None else 7
+    dry_run = req.dry_run if req and req.dry_run is not None else False
+
+    try:
+        res = create_backup(
+            retention_days=retention_days,
+            max_backups=max_backups,
+            dry_run=dry_run
+        )
+        return {
+            "status": "ok",
+            "backup": res,
+            "message": "Резервная копия базы данных успешно создана."
+        }
+    except Exception as e:
+        logger.error(f"[ADMIN BACKUP ERROR] Сбой создания дампа: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка резервного копирования базы данных: {str(e)}")
+
+@app.get("/api/v1/admin/backups")
+def admin_get_backups_list_api(
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Возвращает список доступных резервных копий базы данных для панели администратора.
+    """
+    from scripts.admin.backup_db import list_backups
+    try:
+        backups = list_backups()
+        return {
+            "status": "ok",
+            "backups": backups,
+            "total": len(backups)
+        }
+    except Exception as e:
+        logger.error(f"[ADMIN BACKUPS LIST ERROR] Сбой получения списка бэкапов: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка чтения списка бэкапов: {str(e)}")
 
 @app.get("/app")
 @app.get("/app/")
