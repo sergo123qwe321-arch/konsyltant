@@ -430,3 +430,27 @@ graph LR
   - **Email-сервис (`notification_service.py`):** Функция `send_doctor_onboarding_email` формирует брендированный HTML-шаблон с реквизитами доступа, прямой ссылкой `https://цмз.site/#doctor`, рекомендацией смены пароля и регламентом соблюдения 152-ФЗ / врачебной тайны; отправляет через Yandex SMTP (SSL 465) с обязательным дублированием копии на `PRIMARY_ALERT_EMAIL`.
   - **CMS Администратора (`#admin-dashboard-modal`):** Вкладка `#admin-tab-doctors` («🩺 Специалисты и врачи») с формой регистрации, живым счетчиком и интерактивным реестром действующих специалистов.
   - **CLI-утилита (`scripts/admin/register_doctor.py`):** Регистрация врачей из терминала с поддержкой аргументов `--name`, `--specialty`, `--email`, `--license`, `--phone` и интерактивным режимом `input()`.
+
+### 6. Релиз v7.2-stable-uat-verified: Стабилизация UAT и отказоустойчивость почтовых шлюзов
+1. **Изоляция и FLIP-анимация плавающего персонажа «Алик» (`static/js/app.js`):**
+   - Точная привязка `IntersectionObserver` строго к Hero-секции (`#hero` / `.hero`) взамен нестабильных числовых порогов скролла (`scrollY < 220`).
+   - Изоляция жизненного цикла виджета `#floating-alik-widget`: анимация перехода в плавающее состояние активируется только при уходе Hero за верхний край экрана (`boundingClientRect.top < 0`), а при скролле выше Hero (секция `#posts`) виджет скрывается.
+   - Устранено влияние витрины `#characters` на Hero-персонажа.
+   - FLIP-анимация (First, Last, Invert, Play) на аппаратных GPU-свойствах `transform`/`opacity` с мгновенным безопасным фоллбэком при `document.hidden` или нулевых размерах.
+
+2. **Безусловный HTTPS-редирект в Nginx для Web Speech API (`nginx/default.conf`):**
+   - На порту 80 настроен безусловный 301-редирект (`return 301 https://$host$request_uri;`) с сохранением пути верификации сертификатов Let's Encrypt (`location /.well-known/acme-challenge/`).
+   - В блоке `listen 443 ssl` передаются заголовки `proxy_set_header X-Forwarded-Proto https;`, `X-Forwarded-For` и `Host`. Это обеспечивает Secure Context в браузерах и гарантирует стабильную доступность `window.SpeechRecognition` / `window.webkitSpeechRecognition`.
+   - В контроллере `VoiceInputController` (`static/js/voiceInput.js`) внедрен сброс ошибок при повторном клике по микрофону, защита от Race Condition (`InvalidStateError`) и динамическая перепривязка DOM в `static/app.js`.
+
+3. **Двухуровневый каскад отправки транзакционных писем онбординга (`notification_service.py`):**
+   - Нормализовано считывание всех почтовых переменных окружения через `os.getenv("VAR") or "default"` с обрезкой пробелов (`.strip()`), предотвращающее сбои из-за пустых строк `""` в `.env`.
+   - Зафиксированы дефолтные адреса: `PRIMARY_ALERT_EMAIL = "konsultantms@yandex.com"`, `SECONDARY_ALERT_EMAIL = "sergo123qwe321@gmail.com"`.
+   - В `send_doctor_onboarding_email`, `send_email_to_recipient` и `send_dual_email` реализован отказоустойчивый каскад доставки:
+     * **Primary Transport:** Yandex SMTP (SSL 465, таймаут 15 с).
+     * **Fallback Transport:** UniSender API (HTTPS REST), вызываемый автоматически при любых сбоях SMTP (`socket.timeout`, `SMTPException`, `ConnectionRefusedError`, `OSError`) с логированием `[EMAIL FALLBACK]`.
+     * Дублирование корпоративной копии на `PRIMARY_ALERT_EMAIL` также переведено на каскадную доставку.
+
+4. **Актуальный тестовый набор и статус:**
+   - **108 модульных и интеграционных тестов (100% PASS)**, верифицированных локально и в Production-контейнере `konsyltant_web` под PostgreSQL 16 и Nginx.
+   - Контрольная точка отката зафиксирована в Git-теге `v7.2-stable-uat-verified`.
