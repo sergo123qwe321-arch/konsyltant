@@ -547,18 +547,36 @@
     - Линтер `lint_no_txt_logs.py`: 0 запрещенных .txt логов.
   - Затронутые файлы: `notification_service.py`, `main.py`, `scripts/admin/register_doctor.py`, `test_guest_chat_and_doctor_onboarding.py`, `process.md`.
 
+- [2026-08-27] [Production Release] Развертывание хотфиксов UAT на боевом сервере VPS Beget (159.194.232.74) и сквозная валидация:
+  - Git Release: Изменения зафиксированы в коммите `05f4af2` и отправлены в ветку `origin/main`.
+  - Deployment:
+    - На сервере VPS Beget выполнен `git reset --hard origin/main` и пересборка контейнеров (`docker compose down && docker compose up -d --build`).
+    - Все контейнеры (`konsyltant_web`, `konsyltant_db`, `konsyltant_nginx`, `konsyltant_certbot`) успешно запущены и функционируют штатно.
+  - Тестирование в боевом контейнере:
+    - Запущен полный сьют `docker compose exec web python -m unittest discover -s . -p "test_*.py"`:
+    - **108/108 тестов успешно пройдены (100% PASS)** в среде PostgreSQL и Nginx (17.623 с).
+  - Сетевое смоук-тестирование (HTTPS цмз.site / xn--g1aj3a.site):
+    * HTTP 301 Redirect (порт 80): `http://xn--g1aj3a.site/` -> `301 Moved Permanently` (Location: `https://xn--g1aj3a.site/`).
+    * HTTPS SSR Главная: `https://xn--g1aj3a.site/` -> `HTTP 200 OK`.
+    * HTTPS SPA Чат: `https://xn--g1aj3a.site/app/` -> `HTTP 200 OK`.
+    * HTTPS Публичный API чата: `https://xn--g1aj3a.site/api/v1/public/chat?limit=3` -> `HTTP 200 OK`.
+    * Мониторинг и алерты: `GET /api/v1/admin/alerts/status` -> `HTTP 200 OK` (`is_active_alert: False` по всем 6 сервисам).
+  - Затронутые файлы: `process.md`.
+
 ## План
 - **Что сделано:**
   - Проведен комплексный технический аудит кодовой базы и окружения.
   - Успешно реализован Этап 1: Исправлена анимация, отслеживание видимости через IntersectionObserver и логика плавающего персонажа «Алик» (UAT Defect #1).
   - Успешно реализован Этап 2: Настроен принудительный 301-редирект HTTP->HTTPS в Nginx и стабилизирован голосовой ввод Web Speech API (UAT Defect #2).
   - Успешно реализован Этап 3: Внедрен каскадный почтовый шлюз онбординга врачей с резервным транспортом UniSender API и нормализацией переменных окружения (UAT Defect #3).
+  - Успешно выполнен Этап 4: Развернуты все хотфиксы UAT на боевом сервере VPS Beget, пройдены 108/108 тестов в контейнере и подтверждена полная работоспособность боевых эндпоинтов.
 - **Текущее состояние:**
-  - Все 3 дефекта UAT полностью устранены и покрыты автоматическими тестами.
-  - 108/108 тестов успешно пройдены (100% PASS).
-  - Архитектура и кодовая база находятся в состоянии полной готовности к боевому деплою (Production Ready).
+  - Все дефекты UAT устранены и задеплоены на Production (цмз.site).
+  - 108/108 тестов успешно пройдены локально и на сервере.
+  - Платформа полностью готова к промышленной эксплуатации и приему трафика.
 - **Что предстоит:**
-  - Выполнить финальный релизный деплой на боевой сервер Beget VPS по инструкции `PRODUCTION_LAUNCH.md`.
+  - Непрерывный мониторинг фоновых воркеров и алертов.
+
 
 
 
