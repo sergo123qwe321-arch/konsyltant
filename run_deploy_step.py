@@ -25,11 +25,11 @@ docker compose build web
 docker compose up -d
 sleep 4
 
-echo '=== 4. SEED UAT FIXTURES (DOCTOR, PATIENT, ADMIN, POSTS) ==='
-docker compose exec web python scripts/admin/seed_uat_fixtures.py
-
-echo '=== 5. RUN IN-CONTAINER DISCOVER TESTS (107 TESTS) ==='
+echo '=== 4. RUN IN-CONTAINER DISCOVER TESTS (131 TESTS) ==='
 docker compose exec web python -m unittest discover -s . -p "test_*.py" -v
+
+echo '=== 5. SEED UAT FIXTURES (DOCTOR, PATIENT, ADMIN, POSTS) ==='
+docker compose exec web python scripts/admin/seed_uat_fixtures.py
 
 echo '=== 6. LIVE PRODUCTION VERIFICATION ==='
 docker compose exec web python -c "
