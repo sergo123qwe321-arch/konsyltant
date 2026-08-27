@@ -16,3 +16,8 @@ backups/*
 !backups/.gitkeep
 *.sql.gz
 *.dump
+
+# Local uploads (Block B)
+static/uploads/*
+!static/uploads/.gitkeep
+

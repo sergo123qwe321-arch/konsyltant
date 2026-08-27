@@ -427,15 +427,20 @@
 
         .hero-container {
             width: 100%;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 40px;
+            display: flex;
+            flex-direction: column;
             align-items: center;
+            text-align: center;
             position: relative;
             z-index: 2;
+            max-width: 860px;
+            margin: 0 auto;
         }
 
         .hero-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             pointer-events: auto;
         }
 
@@ -451,24 +456,15 @@
         .hero p {
             font-size: 1.15rem;
             color: var(--text-gray);
-            margin-bottom: 40px;
-            max-width: 600px;
+            margin: 0 auto 40px auto;
+            max-width: 660px;
         }
 
         .hero-btns {
             display: flex;
             gap: 20px;
-            flex-wrap: wrap;
-        }
-
-        /* Стенд с персонажами Pixar */
-        .hero-visual {
-            display: flex;
             justify-content: center;
-            align-items: center;
-            pointer-events: auto;
-            position: relative;
-            width: 100%;
+            flex-wrap: wrap;
         }
 
         .character-showcase {
@@ -1405,9 +1401,8 @@
             }
 
             .hero-container {
-                grid-template-columns: 1fr;
                 text-align: center;
-                gap: 30px;
+                gap: 24px;
             }
 
             .hero h1 {
@@ -1422,10 +1417,6 @@
                 justify-content: center;
                 flex-wrap: wrap;
                 gap: 14px;
-            }
-
-            .hero-visual {
-                order: -1;
             }
 
             .character-showcase {
@@ -1539,38 +1530,10 @@
         }
 
         /* ==========================================================================
-           СЛОЙ ПЕРСОНАЖА В HERO-КАРТОЧКЕ & ПЛАВАЮЩИЙ АЛИК (FLIP WIDGET)
+           ПЛАВАЮЩИЙ АЛИК (КОМПАНЬОН) & ДОКИНГ-СЛОТ В ВИТРИНЕ ЗВУКОВ
            ========================================================================== */
 
-        /* 1. Hero Слой Алика */
-        .hero-alik-wrapper {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            z-index: 2;
-            will-change: transform, opacity;
-            transition: opacity 0.3s ease, transform 0.3s ease;
-        }
-
-        .hero-alik-img {
-            max-width: 82%;
-            max-height: 82%;
-            object-fit: contain;
-            filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.45));
-            user-select: none;
-            pointer-events: none;
-            will-change: transform, opacity;
-            transition: var(--transition-bounce);
-        }
-
-        .character-showcase:hover .hero-alik-img {
-            transform: scale(1.04) rotate(1.5deg);
-        }
-
-        /* 2. Плавающий Виджет Алика (Fixed Layer) */
+        /* 1. Плавающий Виджет Алика (Fixed Companion Widget) */
         .floating-alik-widget {
             position: fixed;
             bottom: 28px;
@@ -1579,9 +1542,9 @@
             display: flex;
             align-items: flex-end;
             gap: 14px;
-            pointer-events: none;
-            opacity: 0;
-            transform: scale(0.8);
+            pointer-events: auto;
+            opacity: 1;
+            transform: scale(1);
             will-change: transform, opacity;
             transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.15);
         }
@@ -1590,6 +1553,13 @@
             opacity: 1;
             pointer-events: auto;
             transform: scale(1);
+        }
+
+        .floating-alik-widget.docked-hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: scale(0.6) !important;
+            visibility: hidden;
         }
 
         .floating-alik-widget.minimized .alik-speech-bubble {
@@ -1606,7 +1576,7 @@
             opacity: 1;
         }
 
-        /* 3. Зеленое диалоговое облачко (Speech Bubble) */
+        /* 2. Зеленое диалоговое облачко (Speech Bubble) */
         .alik-speech-bubble {
             background: linear-gradient(135deg, #059669 0%, #10B981 100%);
             border: 2px solid #34D399;
@@ -1621,8 +1591,8 @@
             min-width: 200px;
             position: relative;
             pointer-events: auto;
-            opacity: 0;
-            transform: scale(0.85) translateY(12px);
+            opacity: 1;
+            transform: scale(1) translateY(0);
             transform-origin: bottom right;
             will-change: transform, opacity;
             transition: opacity 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1631,6 +1601,12 @@
         .alik-speech-bubble.visible {
             opacity: 1;
             transform: scale(1) translateY(0);
+        }
+
+        .alik-speech-bubble.bubble-hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.85) translateY(12px);
         }
 
         .alik-speech-bubble.updating {
@@ -1702,7 +1678,7 @@
             border-left: 12px solid #10B981;
         }
 
-        /* 4. Контейнер Аватара Алика */
+        /* 3. Контейнер Аватара Алика */
         .alik-avatar-container {
             position: relative;
             width: 130px;
@@ -1791,6 +1767,135 @@
             border-color: #FFFFFF;
         }
 
+        /* 4. Круговой слот-плейсхолдер в витрине звуков (Docking Slot) */
+        .alik-dock-slot {
+            position: relative;
+            width: 90px;
+            height: 90px;
+            margin: 0 auto 16px auto;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 3;
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            background: rgba(255, 255, 255, 0.03);
+            border: 2px dashed rgba(52, 211, 153, 0.4);
+            box-shadow: 0 0 15px rgba(52, 211, 153, 0.1);
+        }
+
+        .alik-dock-slot:hover {
+            transform: scale(1.08);
+            border-color: #34D399;
+            box-shadow: 0 0 20px rgba(52, 211, 153, 0.3);
+        }
+
+        .alik-dock-slot.docked {
+            border: 2.5px solid #10B981;
+            background: rgba(16, 185, 129, 0.14);
+            box-shadow: 0 0 25px rgba(16, 185, 129, 0.5), inset 0 0 12px rgba(16, 185, 129, 0.3);
+            transform: scale(1.05);
+        }
+
+        .alik-dock-inner {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            overflow: hidden;
+            position: relative;
+            z-index: 2;
+        }
+
+        .alik-dock-img {
+            width: 82%;
+            height: 82%;
+            object-fit: contain;
+            opacity: 0;
+            transform: scale(0.7);
+            transition: opacity 0.35s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.4));
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .alik-dock-slot.docked .alik-dock-img {
+            opacity: 1;
+            transform: scale(1);
+            animation: alikDockIdle 4s ease-in-out infinite;
+        }
+
+        @keyframes alikDockIdle {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-3px) rotate(1.5deg); }
+        }
+
+        .alik-dock-glow {
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.35) 0%, rgba(6, 182, 212, 0.1) 60%, transparent 80%);
+            filter: blur(10px);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .alik-dock-slot.docked .alik-dock-glow {
+            opacity: 1;
+        }
+
+        .alik-dock-ring {
+            position: absolute;
+            inset: -6px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            transition: all 0.4s ease;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        .alik-dock-slot.docked .alik-dock-ring {
+            border-color: rgba(52, 211, 153, 0.5);
+            animation: alikRingPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes alikRingPulse {
+            0%, 100% { transform: scale(1); opacity: 0.6; }
+            50% { transform: scale(1.12); opacity: 0.1; }
+        }
+
+        .alik-dock-tag {
+            position: absolute;
+            bottom: -16px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #6EE7B7;
+            background: rgba(15, 23, 42, 0.85);
+            padding: 2px 8px;
+            border-radius: 10px;
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            white-space: nowrap;
+            letter-spacing: 0.3px;
+            transition: var(--transition-smooth);
+            opacity: 0.85;
+            z-index: 4;
+        }
+
+        .alik-dock-slot.docked .alik-dock-tag {
+            opacity: 1;
+            background: rgba(5, 150, 105, 0.85);
+            color: #FFFFFF;
+            border-color: #34D399;
+            box-shadow: 0 2px 8px rgba(5, 150, 105, 0.4);
+        }
+
         /* 5. Мобильная адаптивность для Алика */
         @media (max-width: 768px) {
             .floating-alik-widget {
@@ -1817,6 +1922,12 @@
             .alik-bubble-tail {
                 display: none;
             }
+
+            .alik-dock-slot {
+                width: 75px;
+                height: 75px;
+                margin-bottom: 12px;
+            }
         }
 
         /* Интерактивная карточка «Показать еще» в библиотеке */
@@ -1838,5 +1949,4 @@
             background: rgba(45, 212, 191, 0.08) !important;
             transform: translateY(-6px) scale(1.02) !important;
             box-shadow: 0 12px 30px rgba(45, 212, 191, 0.2) !important;
-        }
         }

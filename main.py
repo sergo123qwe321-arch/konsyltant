@@ -695,6 +695,56 @@ def admin_delete_library_item_api(item_id: int, admin: dict = Depends(get_curren
     delete_public_library_item(item_id)
     return {"status": "ok", "message": "Материал библиотеки успешно удален"}
 
+# --- Эндпоинт локальной загрузки медиа-файлов (Block B) ---
+
+UPLOAD_DIR = os.path.join("static", "uploads")
+ALLOWED_UPLOAD_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".mp4", ".webm"}
+
+@app.post("/api/v1/admin/upload")
+async def admin_upload_media_api(
+    file: UploadFile = File(...),
+    admin: dict = Depends(get_current_admin)
+):
+    """
+    Локальное сохранение медиа-файлов (обложек, видео) в static/uploads/ на VPS.
+    Файлы раздаются напрямую через Nginx (/static/uploads/...) и FastAPI.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Имя файла не может быть пустым")
+    
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неподдерживаемый формат файла: '{ext}'. Разрешены: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}"
+        )
+    
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    
+    # Генерация безопасного уникального имени
+    base_name = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', os.path.splitext(file.filename)[0])[:30]
+    unique_suffix = uuid.uuid4().hex[:8]
+    safe_filename = f"{base_name}_{unique_suffix}{ext}"
+    dest_path = os.path.join(UPLOAD_DIR, safe_filename)
+    
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Загружаемый файл пуст")
+    if len(content) > 50 * 1024 * 1024:  # 50 MB limit
+        raise HTTPException(status_code=413, detail="Размер файла превышает лимит 50 МБ")
+    
+    with open(dest_path, "wb") as f:
+        f.write(content)
+    
+    file_url = f"/static/uploads/{safe_filename}"
+    return {
+        "status": "ok",
+        "url": file_url,
+        "filename": safe_filename,
+        "size_bytes": len(content),
+        "message": "Файл успешно загружен и сохранен локально"
+    }
+
 # --- Эндпоинт валидации внешних медиа URL (Block 1) ---
 
 @app.post("/api/v1/admin/media-url")
@@ -1524,6 +1574,7 @@ async def admin_alerts_status_api(admin: dict = Depends(get_current_admin)):
     Возвращает текущее состояние проверок системы мониторинга здоровья платформы (только ADMIN).
     """
     from alert_service import MONITORED_SERVICES, ALERT_STATES
+    from scripts.admin.backup_db import list_backups
     states = {}
     for s in MONITORED_SERVICES:
         k = s["key"]
@@ -1535,6 +1586,19 @@ async def admin_alerts_status_api(admin: dict = Depends(get_current_admin)):
             "last_value": st.get("last_value", ""),
             "description": st.get("description", "")
         }
+        if k == "backup_freshness":
+            backups = list_backups()
+            if backups:
+                now = time.time()
+                age_h = round(max(0.0, now - backups[0]["mtime"]) / 3600.0, 1)
+                states[k]["last_backup_file"] = backups[0]["filename"]
+                states[k]["last_backup_age_hours"] = age_h
+                states[k]["status"] = "critical" if age_h > 26.0 else "ok"
+            else:
+                states[k]["last_backup_file"] = None
+                states[k]["last_backup_age_hours"] = None
+                states[k]["status"] = "critical"
+
     return {
         "status": "ok",
         "services": states

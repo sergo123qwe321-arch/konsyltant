@@ -1026,16 +1026,29 @@
                         <div id="test-alert-result" style="display:none;margin-bottom:12px;"></div>
 
                         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:8px;">
-                            ${Object.keys(alertServices).length > 0 ? Object.entries(alertServices).map(([k, s]) => `
-                                <div style="background:rgba(0,0,0,0.25);padding:8px 10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;border-left:3px solid ${s.is_active_alert ? '#EF4444' : '#10B981'};">
-                                    <span style="color:#fff;font-weight:500;">${s.title}</span>
-                                    <span style="color:${s.is_active_alert ? '#F87171' : '#34D399'};font-weight:600;">
-                                        ${s.is_active_alert ? '🚨 Сбой' : '✅ Норма'}
-                                    </span>
-                                </div>
-                            `).join('') : `
+                            ${Object.keys(alertServices).length > 0 ? Object.entries(alertServices).map(([k, s]) => {
+                                const isErr = s.is_active_alert || (k === 'backup_freshness' && s.status === 'critical');
+                                let badgeText = isErr ? '🚨 Сбой' : '✅ Норма';
+                                if (k === 'backup_freshness') {
+                                    if (isErr) {
+                                        badgeText = '🚨 Дамп устарел';
+                                    } else if (s.last_backup_age_hours !== undefined && s.last_backup_age_hours !== null) {
+                                        badgeText = `🟢 Актуален (${s.last_backup_age_hours}ч)`;
+                                    } else {
+                                        badgeText = '🟢 Актуален';
+                                    }
+                                }
+                                return `
+                                    <div style="background:rgba(0,0,0,0.25);padding:8px 10px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;font-size:0.8rem;border-left:3px solid ${isErr ? '#EF4444' : '#10B981'};">
+                                        <span style="color:#fff;font-weight:500;">${s.title}</span>
+                                        <span style="color:${isErr ? '#F87171' : '#34D399'};font-weight:600;">
+                                            ${badgeText}
+                                        </span>
+                                    </div>
+                                `;
+                            }).join('') : `
                                 <div style="background:rgba(0,0,0,0.25);padding:8px 10px;border-radius:6px;font-size:0.8rem;color:var(--text-muted);">
-                                    Мониторинг 6 критических сервисов активен (интервал: 5 мин, дедупликация: 1 час).
+                                    Мониторинг 7 критических сервисов активен (интервал: 5 мин, дедупликация: 1 час).
                                 </div>
                             `}
                         </div>
@@ -1373,6 +1386,44 @@
                 alert(`❌ Ошибка проверки ссылки: ${err.message}`);
             }
         }
+
+        async function handleAdminUploadFile(fileInputId, targetInputId) {
+            const fileInput = document.getElementById(fileInputId);
+            const targetInput = document.getElementById(targetInputId);
+            const token = getAdminToken();
+            if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
+            if (!token) {
+                alert('Сессия администратора не активна. Войдите в CMS.');
+                return;
+            }
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/api/v1/admin/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Ошибка загрузки файла');
+                }
+                const data = await res.json();
+                if (targetInput && data.url) {
+                    targetInput.value = data.url;
+                    if (typeof updateCoverPreview === 'function') {
+                        updateCoverPreview();
+                    }
+                }
+                alert('✅ Файл успешно загружен и сохранен локально: ' + data.filename);
+            } catch(err) {
+                alert('❌ ' + err.message);
+            } finally {
+                fileInput.value = '';
+            }
+        }
+        window.handleAdminUploadFile = handleAdminUploadFile;
 
         function openPostEditor(post = null) {
             const editor = document.getElementById('admin-post-editor');
@@ -2508,12 +2559,12 @@
         });
 
         /* ==========================================================================
-           4. ЛОГИКА И АНИМАЦИЯ ПЛАВАЮЩЕГО ПЕРСОНАЖА «АЛИК» (FLIP & OBSERVER)
+           4. ЛОГИКА И АНИМАЦИЯ ПЛАВАЮЩЕГО ПЕРСОНАЖА «АЛИК» (FLIP & SOUND SHOWCASE DOCKING)
            ========================================================================== */
         function initFloatingAlik() {
-            const heroSection = document.getElementById('hero') || document.querySelector('.hero');
-            const heroAlikWrapper = document.getElementById('hero-alik-wrapper');
-            const heroAlikImg = document.getElementById('hero-alik-img');
+            const charactersSection = document.getElementById('characters') || document.querySelector('.characters-section');
+            const dockPlaceholder = document.getElementById('alik-dock-placeholder') || document.querySelector('.alik-dock-slot');
+            const dockImg = document.getElementById('alik-dock-img') || (dockPlaceholder ? dockPlaceholder.querySelector('img') : null);
             const floatingWidget = document.getElementById('floating-alik-widget');
             const floatingAlikInner = document.getElementById('alik-avatar-inner');
             const floatingAlikImg = document.getElementById('floating-alik-img');
@@ -2524,25 +2575,25 @@
             const widgetToggle = document.getElementById('alik-widget-toggle');
             const toggleIcon = document.getElementById('alik-toggle-icon');
 
-            // Защитное программирование: выход, если на странице нет виджета или Hero-блока
-            if (!floatingWidget || !floatingAlikImg || !heroAlikWrapper || !heroSection) return;
+            // Защитное программирование: выход, если на странице нет виджета
+            if (!floatingWidget || !floatingAlikImg) return;
 
-            let isFloating = false;
+            let isDocked = false;
             let isTransitioning = false;
             let isBubbleHiddenManually = false;
             let isMinimized = false;
-            let currentComment = "Привет! Я Алик — весёлый музыкант и твой проводник по Маленькой Стране! 🎸";
-            const defaultHeroComment = "Привет! Я Алик — весёлый музыкант и твой проводник по Маленькой Стране! 🎸";
+            const defaultHeroComment = "Привет! Я Алик — твой проводник по Маленькой Стране! 🎸";
+            let currentComment = defaultHeroComment;
 
             // Показ реплики в зеленом облачке
             function showBubble(text) {
-                if (!speechBubble || !bubbleText || isBubbleHiddenManually || isMinimized) return;
+                if (!speechBubble || !bubbleText || isBubbleHiddenManually || isMinimized || isDocked) return;
                 const cleanText = (text || currentComment || defaultHeroComment).trim();
-                if (bubbleText.textContent === cleanText && speechBubble.classList.contains('visible')) {
+                if (bubbleText.textContent === cleanText && speechBubble.classList.contains('visible') && !speechBubble.classList.contains('bubble-hidden')) {
                     return;
                 }
 
-                if (speechBubble.classList.contains('visible')) {
+                if (speechBubble.classList.contains('visible') && !speechBubble.classList.contains('bubble-hidden')) {
                     speechBubble.classList.add('updating');
                     setTimeout(() => {
                         bubbleText.textContent = cleanText;
@@ -2550,6 +2601,7 @@
                     }, 160);
                 } else {
                     bubbleText.textContent = cleanText;
+                    speechBubble.classList.remove('bubble-hidden');
                     speechBubble.classList.add('visible');
                 }
             }
@@ -2558,165 +2610,184 @@
             function hideBubble() {
                 if (speechBubble) {
                     speechBubble.classList.remove('visible');
+                    speechBubble.classList.add('bubble-hidden');
                 }
             }
 
-            // FLIP: Переход из Hero в фиксированный виджет
-            function transitionToFloating() {
-                if (isFloating || isTransitioning) return;
-                isTransitioning = true;
-
-                const isHiddenTab = document.hidden;
-                const heroRect = heroAlikImg ? heroAlikImg.getBoundingClientRect() : null;
-
-                // 1. Активируем контейнер виджета
-                floatingWidget.classList.add('floating-active');
-                floatingWidget.style.opacity = '1';
-                floatingWidget.style.pointerEvents = 'auto';
-
-                // 2. Проверяем возможность FLIP анимации
-                const canAnimate = !isHiddenTab && heroRect && heroRect.width > 0 && heroRect.height > 0;
-
-                if (canAnimate) {
-                    const floatRect = floatingAlikImg.getBoundingClientRect();
-                    if (floatRect && floatRect.width > 0) {
-                        const dx = (heroRect.left + heroRect.width / 2) - (floatRect.left + floatRect.width / 2);
-                        const dy = (heroRect.top + heroRect.height / 2) - (floatRect.top + floatRect.height / 2);
-                        const scale = heroRect.width / floatRect.width;
-
-                        // Invert
-                        if (floatingAlikInner) {
-                            floatingAlikInner.style.transition = 'none';
-                            floatingAlikInner.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
-                        }
-                        if (heroAlikWrapper) heroAlikWrapper.style.opacity = '0';
-
-                        // Play
-                        requestAnimationFrame(() => {
-                            requestAnimationFrame(() => {
-                                if (floatingAlikInner) {
-                                    floatingAlikInner.style.transition = 'transform 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.15), opacity 0.4s ease';
-                                    floatingAlikInner.style.transform = 'translate(0, 0) scale(1)';
-                                }
-                            });
-                        });
-                    } else {
-                        if (heroAlikWrapper) heroAlikWrapper.style.opacity = '0';
-                    }
-                } else {
-                    if (heroAlikWrapper) heroAlikWrapper.style.opacity = '0';
-                }
-
-                setTimeout(() => {
-                    isFloating = true;
-                    isTransitioning = false;
-                    if (floatingAlikInner) {
-                        floatingAlikInner.style.transition = '';
-                        floatingAlikInner.style.transform = '';
-                    }
-                    showBubble(currentComment);
-                }, canAnimate ? 680 : 50);
-            }
-
-            // FLIP: Возврат из фиксированного виджета в Hero
-            function transitionToHero() {
-                if (!isFloating || isTransitioning) return;
+            // FLIP: Переход из плавающего виджета в слот витрины звуков (Docking)
+            function dockToSoundShowcase() {
+                if (isDocked || isTransitioning) return;
                 isTransitioning = true;
                 hideBubble();
 
                 const isHiddenTab = document.hidden;
-                const heroRect = heroAlikImg ? heroAlikImg.getBoundingClientRect() : null;
+                const targetEl = dockImg || dockPlaceholder;
+                const dockRect = targetEl ? targetEl.getBoundingClientRect() : null;
                 const floatRect = floatingAlikImg ? floatingAlikImg.getBoundingClientRect() : null;
 
-                const canAnimate = !isHiddenTab && heroRect && heroRect.width > 0 && heroRect.height > 0 &&
-                                   floatRect && floatRect.width > 0 &&
-                                   heroRect.top < window.innerHeight && heroRect.bottom > 0;
+                const canAnimate = !isHiddenTab && dockRect && floatRect &&
+                                   dockRect.width > 0 && dockRect.height > 0 &&
+                                   floatRect.width > 0 && floatRect.height > 0 &&
+                                   dockRect.top < window.innerHeight && dockRect.bottom > 0;
 
                 if (canAnimate) {
-                    const dx = (heroRect.left + heroRect.width / 2) - (floatRect.left + floatRect.width / 2);
-                    const dy = (heroRect.top + heroRect.height / 2) - (floatRect.top + floatRect.height / 2);
-                    const scale = heroRect.width / floatRect.width;
+                    const dx = (dockRect.left + dockRect.width / 2) - (floatRect.left + floatRect.width / 2);
+                    const dy = (dockRect.top + dockRect.height / 2) - (floatRect.top + floatRect.height / 2);
+                    const scale = dockRect.width / floatRect.width;
 
                     if (floatingAlikInner) {
-                        floatingAlikInner.style.transition = 'transform 0.55s cubic-bezier(0.25, 1, 0.5, 1)';
+                        floatingAlikInner.style.transition = 'transform 0.55s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.45s ease';
                         floatingAlikInner.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
                     }
 
                     setTimeout(() => {
-                        floatingWidget.classList.remove('floating-active');
+                        floatingWidget.classList.add('docked-hidden');
                         floatingWidget.style.opacity = '0';
                         floatingWidget.style.pointerEvents = 'none';
                         if (floatingAlikInner) {
                             floatingAlikInner.style.transition = '';
                             floatingAlikInner.style.transform = '';
                         }
-                        if (heroAlikWrapper) heroAlikWrapper.style.opacity = '1';
-                        isFloating = false;
+                        if (dockPlaceholder) dockPlaceholder.classList.add('docked');
+                        isDocked = true;
                         isTransitioning = false;
                     }, 560);
                 } else {
-                    floatingWidget.classList.remove('floating-active');
+                    floatingWidget.classList.add('docked-hidden');
                     floatingWidget.style.opacity = '0';
                     floatingWidget.style.pointerEvents = 'none';
                     if (floatingAlikInner) {
                         floatingAlikInner.style.transition = '';
                         floatingAlikInner.style.transform = '';
                     }
-                    if (heroAlikWrapper) heroAlikWrapper.style.opacity = '1';
-                    isFloating = false;
+                    if (dockPlaceholder) dockPlaceholder.classList.add('docked');
+                    isDocked = true;
                     isTransitioning = false;
                 }
             }
 
-            // 1. Отслеживание положения Hero блока через IntersectionObserver
-            if ('IntersectionObserver' in window) {
-                const heroObserver = new IntersectionObserver((entries) => {
+            // FLIP: Возврат из слота витрины звуков в плавающий виджет (Undocking)
+            function undockToFloating() {
+                if (!isDocked || isTransitioning) return;
+                isTransitioning = true;
+
+                const isHiddenTab = document.hidden;
+                const targetEl = dockImg || dockPlaceholder;
+                const dockRect = targetEl ? targetEl.getBoundingClientRect() : null;
+
+                // 1. Активируем виджет в DOM без задержки
+                floatingWidget.classList.remove('docked-hidden');
+                floatingWidget.classList.add('floating-active');
+                floatingWidget.style.opacity = '1';
+                floatingWidget.style.pointerEvents = 'auto';
+
+                const floatRect = floatingAlikImg ? floatingAlikImg.getBoundingClientRect() : null;
+
+                const canAnimate = !isHiddenTab && dockRect && floatRect &&
+                                   dockRect.width > 0 && dockRect.height > 0 &&
+                                   floatRect.width > 0 && floatRect.height > 0;
+
+                if (canAnimate) {
+                    const dx = (dockRect.left + dockRect.width / 2) - (floatRect.left + floatRect.width / 2);
+                    const dy = (dockRect.top + dockRect.height / 2) - (floatRect.top + floatRect.height / 2);
+                    const scale = dockRect.width / floatRect.width;
+
+                    if (dockPlaceholder) dockPlaceholder.classList.remove('docked');
+
+                    // Invert: мгновенно переносим виджет в координаты слота
+                    if (floatingAlikInner) {
+                        floatingAlikInner.style.transition = 'none';
+                        floatingAlikInner.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+                    }
+
+                    // Play: анимируем в фиксированную позицию компаньона
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            if (floatingAlikInner) {
+                                floatingAlikInner.style.transition = 'transform 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.15), opacity 0.4s ease';
+                                floatingAlikInner.style.transform = 'translate(0, 0) scale(1)';
+                            }
+                        });
+                    });
+
+                    setTimeout(() => {
+                        if (floatingAlikInner) {
+                            floatingAlikInner.style.transition = '';
+                            floatingAlikInner.style.transform = '';
+                        }
+                        isDocked = false;
+                        isTransitioning = false;
+                        showBubble(currentComment);
+                    }, 680);
+                } else {
+                    if (dockPlaceholder) dockPlaceholder.classList.remove('docked');
+                    if (floatingAlikInner) {
+                        floatingAlikInner.style.transition = '';
+                        floatingAlikInner.style.transform = '';
+                    }
+                    isDocked = false;
+                    isTransitioning = false;
+                    showBubble(currentComment);
+                }
+            }
+
+            // Начальное состояние при загрузке страницы:
+            floatingWidget.classList.add('floating-active');
+            floatingWidget.classList.remove('docked-hidden');
+            floatingWidget.style.opacity = '1';
+            floatingWidget.style.pointerEvents = 'auto';
+
+            if (charactersSection) {
+                const charRect = charactersSection.getBoundingClientRect();
+                const isInitiallyInCharacters = charRect.top < window.innerHeight * 0.75 && charRect.bottom > window.innerHeight * 0.25;
+                if (isInitiallyInCharacters) {
+                    floatingWidget.classList.add('docked-hidden');
+                    floatingWidget.style.opacity = '0';
+                    floatingWidget.style.pointerEvents = 'none';
+                    if (dockPlaceholder) dockPlaceholder.classList.add('docked');
+                    isDocked = true;
+                } else {
+                    showBubble(currentComment);
+                }
+            } else {
+                showBubble(currentComment);
+            }
+
+            // 1. Отслеживание секции #characters через IntersectionObserver
+            if ('IntersectionObserver' in window && charactersSection) {
+                const charObserver = new IntersectionObserver((entries) => {
                     entries.forEach(entry => {
                         if (entry.isIntersecting) {
-                            // Hero в области видимости -> возврат персонажа в Hero
-                            if (isFloating && !isTransitioning) {
-                                transitionToHero();
+                            // Витрина звуков в области видимости -> докинг в слот
+                            if (!isDocked && !isTransitioning) {
+                                dockToSoundShowcase();
                             }
                         } else {
-                            // Hero покинул область видимости
-                            if (entry.boundingClientRect.top < 0) {
-                                // Скролл вниз ниже Hero -> активация плавающего виджета
-                                if (!isFloating && !isTransitioning) {
-                                    transitionToFloating();
-                                }
-                            } else {
-                                // Скролл вверх выше Hero (секция #posts) -> виджет скрыт
-                                if (isFloating && !isTransitioning) {
-                                    transitionToHero();
-                                }
+                            // Витрина звуков покинула экран -> высвобождение компаньона
+                            if (isDocked && !isTransitioning) {
+                                undockToFloating();
                             }
                         }
                     });
                 }, {
-                    threshold: [0, 0.1, 0.25, 0.5, 1]
+                    threshold: [0, 0.2, 0.5, 0.8, 1.0]
                 });
-                heroObserver.observe(heroSection);
+                charObserver.observe(charactersSection);
             }
 
-            // 2. Резервный динамический скролл-триггер (без хардкодных пикселей)
+            // 2. Резервный динамический скролл-триггер
             window.addEventListener('scroll', () => {
-                if (!heroSection) return;
-                const heroRect = heroSection.getBoundingClientRect();
-                const isHeroVisible = heroRect.top < window.innerHeight && heroRect.bottom > 0;
+                if (!charactersSection) return;
+                const charRect = charactersSection.getBoundingClientRect();
+                const isCharVisible = charRect.top < (window.innerHeight - 80) && charRect.bottom > 80;
 
-                if (isHeroVisible) {
-                    if (isFloating && !isTransitioning) {
-                        transitionToHero();
+                if (isCharVisible) {
+                    if (!isDocked && !isTransitioning) {
+                        dockToSoundShowcase();
                     }
-                } else if (heroRect.bottom <= 0) {
-                    // Скролл ниже Hero
-                    if (!isFloating && !isTransitioning) {
-                        transitionToFloating();
-                    }
-                } else if (heroRect.top >= window.innerHeight) {
-                    // Скролл выше Hero
-                    if (isFloating && !isTransitioning) {
-                        transitionToHero();
+                } else {
+                    if (isDocked && !isTransitioning) {
+                        undockToFloating();
                     }
                 }
             }, { passive: true });
@@ -2729,7 +2800,7 @@
                             const comment = entry.target.getAttribute('data-alik-comment');
                             if (comment) {
                                 currentComment = comment;
-                                if (isFloating && !isTransitioning) {
+                                if (!isDocked && !isTransitioning) {
                                     showBubble(comment);
                                 }
                             }
@@ -2758,7 +2829,7 @@
                         return;
                     }
 
-                    if (speechBubble && speechBubble.classList.contains('visible')) {
+                    if (speechBubble && speechBubble.classList.contains('visible') && !speechBubble.classList.contains('bubble-hidden')) {
                         isBubbleHiddenManually = true;
                         hideBubble();
                     } else {
@@ -2792,6 +2863,15 @@
                         isBubbleHiddenManually = false;
                         showBubble(currentComment);
                     }
+                });
+            }
+
+            // 7. Интерактивный клик по слоту в витрине звуков при докинге
+            if (dockPlaceholder) {
+                dockPlaceholder.addEventListener('click', () => {
+                    playCharSound('a');
+                    dockPlaceholder.classList.add('pulse-active');
+                    setTimeout(() => dockPlaceholder.classList.remove('pulse-active'), 400);
                 });
             }
         }

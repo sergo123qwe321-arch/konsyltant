@@ -247,6 +247,64 @@ def check_database_availability() -> tuple[bool, str, str]:
             logger.warning(f"[DB HEALTH WARNING] Сбой БД ({int(downtime)}s / 30s threshold): {e}")
             return True, f"Кратковременный сбой БД ({int(downtime)}s), порог 30с пока не превышен", f"Warning ({int(downtime)}s)"
 
+def check_backup_freshness(max_age_hours: float = 26.0, output_dir: str = None) -> tuple[bool, str, str]:
+    """
+    7. Проверка актуальности резервной копии базы данных (152-ФЗ).
+    Если дампы отсутствуют или последний бэкап создан > max_age_hours назад — критический сбой.
+    """
+    from scripts.admin.backup_db import list_backups
+    try:
+        backups = list_backups(output_dir=output_dir)
+        if not backups:
+            return False, "Резервные копии базы данных отсутствуют в хранилище backups/ (152-ФЗ)", "Дампы отсутствуют (0 файлов)"
+        
+        now = time.time()
+        last_backup = backups[0]
+        mtime = last_backup["mtime"]
+        age_seconds = max(0.0, now - mtime)
+        age_hours = age_seconds / 3600.0
+        filename = last_backup["filename"]
+        size_human = last_backup.get("size_human", "")
+        
+        if age_hours > max_age_hours:
+            return False, f"Последний дамп '{filename}' ({size_human}) устарел: создан {age_hours:.1f} ч назад (порог: {max_age_hours} ч)", f"{age_hours:.1f} ч (> {max_age_hours}ч)"
+        
+        return True, f"Резервный дамп '{filename}' ({size_human}) актуален (создан {age_hours:.1f} ч назад)", f"{age_hours:.1f} ч (норма <= {max_age_hours}ч)"
+    except Exception as e:
+        logger.error(f"[BACKUP HEALTH CHECK ERROR] Ошибка проверки бэкапов: {e}")
+        return False, f"Ошибка при проверке резервных копий: {str(e)}", f"Error: {type(e).__name__}"
+
+def trigger_daily_backup_if_needed(interval_hours: float = 24.0, output_dir: str = None) -> dict | None:
+    """
+    Автоматический триггер ежедневного фонового бэкапа:
+    Если с момента последнего дампа прошло >= interval_hours (или если дампов нет),
+    автоматически создает новый снимок базы данных с ротацией (retention_days=7, max_backups=7).
+    """
+    from scripts.admin.backup_db import list_backups, create_backup
+    try:
+        backups = list_backups(output_dir=output_dir)
+        should_create = False
+        
+        if not backups:
+            logger.info("[AUTO-BACKUP] Резервные копии отсутствуют. Запуск первого автоматического бэкапа...")
+            should_create = True
+        else:
+            now = time.time()
+            mtime = backups[0]["mtime"]
+            age_hours = max(0.0, now - mtime) / 3600.0
+            if age_hours >= interval_hours:
+                logger.info(f"[AUTO-BACKUP] Прошло {age_hours:.1f} ч с момента последнего бэкапа (интервал: {interval_hours} ч). Автоматическое создание снимка...")
+                should_create = True
+                
+        if should_create:
+            result = create_backup(output_dir=output_dir, retention_days=7, max_backups=7, dry_run=False)
+            logger.info(f"[AUTO-BACKUP SUCCESS] Создан автоматический бэкап: {result.get('filename')} ({result.get('size_human')})")
+            return result
+    except Exception as e:
+        logger.error(f"[AUTO-BACKUP ERROR] Ошибка при автоматическом создании резервной копии: {e}")
+        
+    return None
+
 # ==============================================================================
 # РЕЕСТР ПРОВЕРОК
 # ==============================================================================
@@ -293,6 +351,13 @@ MONITORED_SERVICES = [
         "title": "База данных PostgreSQL (> 30 с)",
         "func": check_database_availability,
         "recommendation": "Проверьте статус контейнера konsyltant_db (PostgreSQL) и сетевые параметры DATABASE_URL."
+    },
+    {
+        "key": "backup_freshness",
+        "func_name": "check_backup_freshness",
+        "title": "Свежесть резервной копии БД (152-ФЗ, > 26ч)",
+        "func": check_backup_freshness,
+        "recommendation": "Проверьте права на запись в каталог backups/, свободное место на диске и статус фонового планировщика."
     }
 ]
 
@@ -302,9 +367,16 @@ MONITORED_SERVICES = [
 
 def run_health_checks_and_alert() -> dict:
     """
-    Выполняет полный цикл проверки всех 6 сервисов.
+    Выполняет полный цикл проверки всех 7 сервисов.
     Реализует дедупликацию (не чаще 1 раза в час) и отправку уведомлений о выздоровлении.
+    Перед проверками инициирует ежедневный автобэкап (если прошло >= 24ч).
     """
+    # 1. Автоматический запуск ежедневного резервного копирования при необходимости
+    try:
+        trigger_daily_backup_if_needed()
+    except Exception as e:
+        logger.error(f"[AUTO-BACKUP TRIGGER ERROR] {e}")
+
     now = time.time()
     results = {}
     

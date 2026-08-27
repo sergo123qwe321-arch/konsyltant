@@ -99,14 +99,6 @@
                     </a>
 </div>
 </div>
-<div class="hero-visual">
-<div class="hero-alik-wrapper" id="hero-alik-wrapper">
-    <picture id="hero-alik-picture">
-        <source srcset="/static/assets/img/alik/Alik.webp" type="image/webp">
-        <img src="/static/assets/img/alik/Alik.png" alt="Гитарист Алик" id="hero-alik-img" class="hero-alik-img"/>
-    </picture>
-</div>
-</div>
 </div>
 </section>
 
@@ -138,6 +130,18 @@
 <div style="max-width: 900px; margin: 0 auto;">
 <div class="character-showcase">
 <div class="mascot-glow" id="showcase-glow"></div>
+<!-- Круговой плейсхолдер для докинга компаньона Алика -->
+<div class="alik-dock-slot" id="alik-dock-placeholder" aria-label="Слот маскота Алика в витрине" title="Компаньон Алик в гостях у звуков">
+    <div class="alik-dock-inner" id="alik-dock-inner">
+        <picture>
+            <source srcset="/static/assets/img/alik/Alik.webp" type="image/webp">
+            <img src="/static/assets/img/alik/Alik.png" alt="Маскот Алик в витрине" class="alik-dock-img" id="alik-dock-img"/>
+        </picture>
+    </div>
+    <div class="alik-dock-glow"></div>
+    <div class="alik-dock-ring"></div>
+    <div class="alik-dock-tag">Маскот Алик 🎸</div>
+</div>
 <div class="showcase-main" id="showcase-main">
 <img alt="Басист Алик" id="showcase-img" class="showcase-img" onerror="this.src='/static/images/char_a.jpg'; this.onerror=function(){ this.style.display='none'; document.getElementById('showcase-ph').style.display='flex'; }" src="/static/images/char_a.jpg"/>
 <div class="showcase-placeholder" id="showcase-ph" style="display: none;">🧸</div>
@@ -757,9 +761,13 @@
 <input class="form-input" id="edit-post-tags" placeholder="Развитие речи, Игры"/>
 </div>
 <div class="form-group">
-<label class="form-label">Обложка статьи (Внешний URL изображения)</label>
-<div style="display: flex; gap: 8px; margin-bottom: 6px;">
-<input class="form-input" id="edit-post-cover" placeholder="Вставьте ссылку на видео (Rutube/VK/YouTube/Dzen) или изображение" style="flex: 1;" oninput="updateCoverPreview()"/>
+<label class="form-label">Обложка статьи (Внешний URL или локальный файл)</label>
+<div style="display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+<input class="form-input" id="edit-post-cover" placeholder="Вставьте ссылку (Rutube/VK/YouTube/Dzen) или загрузите файл" style="flex: 1; min-width: 200px;" oninput="updateCoverPreview()"/>
+<input type="file" id="edit-post-cover-file" accept="image/*,video/*" style="display: none;" onchange="handleAdminUploadFile('edit-post-cover-file', 'edit-post-cover')"/>
+<button class="btn btn-turquoise" style="padding: 8px 12px; font-size: 0.85rem; white-space: nowrap;" type="button" onclick="document.getElementById('edit-post-cover-file').click()">
+    📁 Загрузить файл
+</button>
 <button class="btn btn-outline" style="padding: 8px 12px; font-size: 0.85rem; white-space: nowrap;" type="button" onclick="checkAdminMediaUrl('edit-post-cover', 'image')">
     Проверить ссылку 🔍
 </button>
@@ -769,9 +777,13 @@
 </div>
 </div>
 <div class="form-group">
-<label class="form-label" for="edit-post-video">Видеоматериал (Внешний URL)</label>
-<div style="display: flex; gap: 8px;">
-<input class="form-input" id="edit-post-video" placeholder="Ссылка на видео (Rutube, YouTube, VK Video, Dzen)" style="flex: 1;"/>
+<label class="form-label" for="edit-post-video">Видеоматериал (Внешний URL или локальное видео)</label>
+<div style="display: flex; gap: 8px; flex-wrap: wrap;">
+<input class="form-input" id="edit-post-video" placeholder="Ссылка на видео (Rutube, YouTube, VK Video, Dzen) или локальный файл" style="flex: 1; min-width: 200px;"/>
+<input type="file" id="edit-post-video-file" accept="video/*" style="display: none;" onchange="handleAdminUploadFile('edit-post-video-file', 'edit-post-video')"/>
+<button class="btn btn-turquoise" style="padding: 8px 12px; font-size: 0.85rem; white-space: nowrap;" type="button" onclick="document.getElementById('edit-post-video-file').click()">
+    📁 Загрузить видео
+</button>
 <button class="btn btn-outline" style="padding: 8px 12px; font-size: 0.85rem; white-space: nowrap;" type="button" onclick="checkAdminMediaUrl('edit-post-video', 'video')">
     Проверить ссылку 🔍
 </button>

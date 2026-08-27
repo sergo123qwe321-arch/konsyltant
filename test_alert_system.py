@@ -34,6 +34,8 @@ from alert_service import (
     check_gigachat_token_balance,
     check_etl_performance,
     check_database_availability,
+    check_backup_freshness,
+    trigger_daily_backup_if_needed,
     run_health_checks_and_alert,
     send_test_alert,
     get_alert_recipients,
@@ -136,7 +138,8 @@ class TestAlertSystem(unittest.TestCase):
                     with patch("alert_service.check_gigachat_token_balance", return_value=(True, "OK", "100%")):
                         with patch("alert_service.check_etl_performance", return_value=(True, "OK", "3.5s")):
                             with patch("alert_service.check_database_availability", return_value=(True, "OK", "connected")):
-                                results1 = run_health_checks_and_alert()
+                                with patch("alert_service.check_backup_freshness", return_value=(True, "OK", "1.0 ч")):
+                                    results1 = run_health_checks_and_alert()
 
         # Первое письмо должно быть отправлено
         self.assertEqual(mock_dual_send.call_count, 1)
@@ -149,7 +152,8 @@ class TestAlertSystem(unittest.TestCase):
                     with patch("alert_service.check_gigachat_token_balance", return_value=(True, "OK", "100%")):
                         with patch("alert_service.check_etl_performance", return_value=(True, "OK", "3.5s")):
                             with patch("alert_service.check_database_availability", return_value=(True, "OK", "connected")):
-                                results2 = run_health_checks_and_alert()
+                                with patch("alert_service.check_backup_freshness", return_value=(True, "OK", "1.0 ч")):
+                                    results2 = run_health_checks_and_alert()
 
         # Второе письмо НЕ должно отправляться (дедупликация 3600с)
         self.assertEqual(mock_dual_send.call_count, 1)
@@ -175,7 +179,8 @@ class TestAlertSystem(unittest.TestCase):
                     with patch("alert_service.check_gigachat_token_balance", return_value=(True, "OK", "100%")):
                         with patch("alert_service.check_etl_performance", return_value=(True, "OK", "3.5s")):
                             with patch("alert_service.check_database_availability", return_value=(True, "База данных PostgreSQL доступна и отвечает на запросы", "Connected")):
-                                results = run_health_checks_and_alert()
+                                with patch("alert_service.check_backup_freshness", return_value=(True, "OK", "1.0 ч")):
+                                    results = run_health_checks_and_alert()
 
         # Должно быть отправлено 1 письмо о выздоровлении
         self.assertEqual(mock_dual_send.call_count, 1)
@@ -214,7 +219,7 @@ class TestAlertSystem(unittest.TestCase):
         self.assertEqual(mock_dual_send.call_count, 1)
 
     def test_admin_alerts_status_endpoint(self):
-        """Тест эндпоинта GET /api/v1/admin/alerts/status."""
+        """Тест эндпоинта GET /api/v1/admin/alerts/status со всеми 7 метриками."""
         admin_token = create_access_token(
             {"sub": "admin_test", "role": "ADMIN", "user_id": 999}
         )
@@ -233,6 +238,86 @@ class TestAlertSystem(unittest.TestCase):
         self.assertIn("gigachat_tokens", data["services"])
         self.assertIn("etl_performance", data["services"])
         self.assertIn("database", data["services"])
+        self.assertIn("backup_freshness", data["services"])
+        
+        backup_stat = data["services"]["backup_freshness"]
+        self.assertIn("status", backup_stat)
+        self.assertIn("is_active_alert", backup_stat)
+
+    def test_check_backup_freshness_healthy(self):
+        """Проверка check_backup_freshness при наличии свежего дампа (< 24ч)."""
+        now = 1700000000.0
+        mock_backups = [
+            {
+                "filename": "backup_konsyltant_20260827_010000.sql.gz",
+                "filepath": "/app/backups/backup_konsyltant_20260827_010000.sql.gz",
+                "size_bytes": 25000,
+                "size_human": "24.4 KB",
+                "mtime": now - 7200.0 # 2 часа назад
+            }
+        ]
+        with patch("scripts.admin.backup_db.list_backups", return_value=mock_backups):
+            with patch("time.time", return_value=now):
+                is_healthy, desc, val = check_backup_freshness(max_age_hours=26.0)
+                self.assertTrue(is_healthy)
+                self.assertIn("актуален", desc)
+                self.assertIn("2.0 ч", val)
+
+    def test_check_backup_freshness_stale_and_empty(self):
+        """Проверка check_backup_freshness при отсутствии файлов или устаревшем дампе (> 26ч)."""
+        now = 1700000000.0
+        
+        # 1. Пустой каталог бэкапов
+        with patch("scripts.admin.backup_db.list_backups", return_value=[]):
+            is_healthy, desc, val = check_backup_freshness(max_age_hours=26.0)
+            self.assertFalse(is_healthy)
+            self.assertIn("отсутствуют", desc)
+
+        # 2. Устаревший бэкап (возраст 30 часов > порога 26ч)
+        stale_backups = [
+            {
+                "filename": "backup_konsyltant_20260825_010000.sql.gz",
+                "filepath": "/app/backups/backup_konsyltant_20260825_010000.sql.gz",
+                "size_bytes": 25000,
+                "size_human": "24.4 KB",
+                "mtime": now - (30 * 3600.0) # 30 часов назад
+            }
+        ]
+        with patch("scripts.admin.backup_db.list_backups", return_value=stale_backups):
+            with patch("time.time", return_value=now):
+                is_healthy, desc, val = check_backup_freshness(max_age_hours=26.0)
+                self.assertFalse(is_healthy)
+                self.assertIn("устарел", desc)
+                self.assertIn("30.0 ч", val)
+
+    def test_trigger_daily_backup_if_needed(self):
+        """Проверка автоматического создания бэкапа по истечении 24 часов или при их отсутствии."""
+        now = 1700000000.0
+        
+        # 1. Дампов нет -> должен вызвать create_backup
+        with patch("scripts.admin.backup_db.list_backups", return_value=[]):
+            with patch("scripts.admin.backup_db.create_backup", return_value={"filename": "auto_backup.sql.gz", "size_human": "25 KB"}) as mock_create:
+                res = trigger_daily_backup_if_needed(interval_hours=24.0)
+                self.assertIsNotNone(res)
+                self.assertEqual(mock_create.call_count, 1)
+
+        # 2. Свежий дамп (2 часа назад) -> НЕ должен вызывать create_backup
+        fresh_backups = [{"filename": "fresh.sql.gz", "mtime": now - 7200.0}]
+        with patch("scripts.admin.backup_db.list_backups", return_value=fresh_backups):
+            with patch("time.time", return_value=now):
+                with patch("scripts.admin.backup_db.create_backup") as mock_create:
+                    res = trigger_daily_backup_if_needed(interval_hours=24.0)
+                    self.assertIsNone(res)
+                    self.assertEqual(mock_create.call_count, 0)
+
+        # 3. Дамп старше 24 часов (25 часов назад) -> должен вызвать create_backup
+        old_backups = [{"filename": "old.sql.gz", "mtime": now - (25 * 3600.0)}]
+        with patch("scripts.admin.backup_db.list_backups", return_value=old_backups):
+            with patch("time.time", return_value=now):
+                with patch("scripts.admin.backup_db.create_backup", return_value={"filename": "new_auto.sql.gz", "size_human": "26 KB"}) as mock_create:
+                    res = trigger_daily_backup_if_needed(interval_hours=24.0)
+                    self.assertIsNotNone(res)
+                    self.assertEqual(mock_create.call_count, 1)
 
 
 if __name__ == "__main__":
