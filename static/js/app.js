@@ -2574,6 +2574,7 @@
             const bubbleClose = document.getElementById('alik-bubble-close');
             const widgetToggle = document.getElementById('alik-widget-toggle');
             const toggleIcon = document.getElementById('alik-toggle-icon');
+            const widgetClose = document.getElementById('alik-widget-close');
 
             // Защитное программирование: выход, если на странице нет виджета
             if (!floatingWidget || !floatingAlikImg) return;
@@ -2588,6 +2589,8 @@
             // Показ реплики в зеленом облачке
             function showBubble(text) {
                 if (!speechBubble || !bubbleText || isBubbleHiddenManually || isMinimized || isDocked) return;
+                if (sessionStorage.getItem('alik_closed') === '1') return;
+
                 const cleanText = (text || currentComment || defaultHeroComment).trim();
                 if (bubbleText.textContent === cleanText && speechBubble.classList.contains('visible') && !speechBubble.classList.contains('bubble-hidden')) {
                     return;
@@ -2614,172 +2617,111 @@
                 }
             }
 
-            // FLIP: Переход из плавающего виджета в слот витрины звуков (Docking)
+            // Переход в слот витрины звуков (Docking)
             function dockToSoundShowcase() {
-                if (isDocked || isTransitioning) return;
+                if (isDocked && floatingWidget.classList.contains('docked-hidden')) return;
                 isTransitioning = true;
                 hideBubble();
 
-                const isHiddenTab = document.hidden;
-                const targetEl = dockImg || dockPlaceholder;
-                const dockRect = targetEl ? targetEl.getBoundingClientRect() : null;
-                const floatRect = floatingAlikImg ? floatingAlikImg.getBoundingClientRect() : null;
+                // Скрываем плавающий виджет и убираем кликабельность
+                floatingWidget.classList.remove('floating-active');
+                floatingWidget.classList.add('docked-hidden');
+                floatingWidget.style.opacity = '0';
+                floatingWidget.style.pointerEvents = 'none';
 
-                const canAnimate = !isHiddenTab && dockRect && floatRect &&
-                                   dockRect.width > 0 && dockRect.height > 0 &&
-                                   floatRect.width > 0 && floatRect.height > 0 &&
-                                   dockRect.top < window.innerHeight && dockRect.bottom > 0;
-
-                if (canAnimate) {
-                    const dx = (dockRect.left + dockRect.width / 2) - (floatRect.left + floatRect.width / 2);
-                    const dy = (dockRect.top + dockRect.height / 2) - (floatRect.top + floatRect.height / 2);
-                    const scale = dockRect.width / floatRect.width;
-
-                    if (floatingAlikInner) {
-                        floatingAlikInner.style.transition = 'transform 0.55s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.45s ease';
-                        floatingAlikInner.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
-                    }
-
-                    setTimeout(() => {
-                        floatingWidget.classList.add('docked-hidden');
-                        floatingWidget.style.opacity = '0';
-                        floatingWidget.style.pointerEvents = 'none';
-                        if (floatingAlikInner) {
-                            floatingAlikInner.style.transition = '';
-                            floatingAlikInner.style.transform = '';
-                        }
-                        if (dockPlaceholder) dockPlaceholder.classList.add('docked');
-                        isDocked = true;
-                        isTransitioning = false;
-                    }, 560);
-                } else {
-                    floatingWidget.classList.add('docked-hidden');
-                    floatingWidget.style.opacity = '0';
-                    floatingWidget.style.pointerEvents = 'none';
-                    if (floatingAlikInner) {
-                        floatingAlikInner.style.transition = '';
-                        floatingAlikInner.style.transform = '';
-                    }
-                    if (dockPlaceholder) dockPlaceholder.classList.add('docked');
-                    isDocked = true;
-                    isTransitioning = false;
+                if (floatingAlikInner) {
+                    floatingAlikInner.style.transition = '';
+                    floatingAlikInner.style.transform = '';
                 }
+
+                // Активируем маскота внутри витрины звуков
+                if (dockPlaceholder) {
+                    dockPlaceholder.classList.add('docked');
+                }
+
+                isDocked = true;
+                isTransitioning = false;
             }
 
-            // FLIP: Возврат из слота витрины звуков в плавающий виджет (Undocking)
+            // Возврат из витрины звуков в плавающий виджет-компаньон (Undocking)
             function undockToFloating() {
-                if (!isDocked || isTransitioning) return;
+                if (sessionStorage.getItem('alik_closed') === '1') {
+                    if (dockPlaceholder) dockPlaceholder.classList.add('docked');
+                    return;
+                }
+
+                if (!isDocked && floatingWidget.classList.contains('floating-active') && !floatingWidget.classList.contains('docked-hidden')) return;
                 isTransitioning = true;
 
-                const isHiddenTab = document.hidden;
-                const targetEl = dockImg || dockPlaceholder;
-                const dockRect = targetEl ? targetEl.getBoundingClientRect() : null;
+                // Освобождаем слот в витрине
+                if (dockPlaceholder) {
+                    dockPlaceholder.classList.remove('docked');
+                }
 
-                // 1. Активируем виджет в DOM без задержки
+                if (floatingAlikInner) {
+                    floatingAlikInner.style.transition = '';
+                    floatingAlikInner.style.transform = '';
+                }
+
+                // Активируем плавающий виджет в правом нижнем углу
                 floatingWidget.classList.remove('docked-hidden');
                 floatingWidget.classList.add('floating-active');
                 floatingWidget.style.opacity = '1';
                 floatingWidget.style.pointerEvents = 'auto';
 
-                const floatRect = floatingAlikImg ? floatingAlikImg.getBoundingClientRect() : null;
+                isDocked = false;
+                isTransitioning = false;
 
-                const canAnimate = !isHiddenTab && dockRect && floatRect &&
-                                   dockRect.width > 0 && dockRect.height > 0 &&
-                                   floatRect.width > 0 && floatRect.height > 0;
-
-                if (canAnimate) {
-                    const dx = (dockRect.left + dockRect.width / 2) - (floatRect.left + floatRect.width / 2);
-                    const dy = (dockRect.top + dockRect.height / 2) - (floatRect.top + floatRect.height / 2);
-                    const scale = dockRect.width / floatRect.width;
-
-                    if (dockPlaceholder) dockPlaceholder.classList.remove('docked');
-
-                    // Invert: мгновенно переносим виджет в координаты слота
-                    if (floatingAlikInner) {
-                        floatingAlikInner.style.transition = 'none';
-                        floatingAlikInner.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
-                    }
-
-                    // Play: анимируем в фиксированную позицию компаньона
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            if (floatingAlikInner) {
-                                floatingAlikInner.style.transition = 'transform 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.15), opacity 0.4s ease';
-                                floatingAlikInner.style.transform = 'translate(0, 0) scale(1)';
-                            }
-                        });
-                    });
-
-                    setTimeout(() => {
-                        if (floatingAlikInner) {
-                            floatingAlikInner.style.transition = '';
-                            floatingAlikInner.style.transform = '';
-                        }
-                        isDocked = false;
-                        isTransitioning = false;
-                        showBubble(currentComment);
-                    }, 680);
-                } else {
-                    if (dockPlaceholder) dockPlaceholder.classList.remove('docked');
-                    if (floatingAlikInner) {
-                        floatingAlikInner.style.transition = '';
-                        floatingAlikInner.style.transform = '';
-                    }
-                    isDocked = false;
-                    isTransitioning = false;
-                    showBubble(currentComment);
-                }
-            }
-
-            // Начальное состояние при загрузке страницы:
-            floatingWidget.classList.add('floating-active');
-            floatingWidget.classList.remove('docked-hidden');
-            floatingWidget.style.opacity = '1';
-            floatingWidget.style.pointerEvents = 'auto';
-
-            if (charactersSection) {
-                const charRect = charactersSection.getBoundingClientRect();
-                const isInitiallyInCharacters = charRect.top < window.innerHeight * 0.75 && charRect.bottom > window.innerHeight * 0.25;
-                if (isInitiallyInCharacters) {
-                    floatingWidget.classList.add('docked-hidden');
-                    floatingWidget.style.opacity = '0';
-                    floatingWidget.style.pointerEvents = 'none';
-                    if (dockPlaceholder) dockPlaceholder.classList.add('docked');
-                    isDocked = true;
-                } else {
-                    showBubble(currentComment);
-                }
-            } else {
+                // Отображаем актуальный комментарий текущего блока
                 showBubble(currentComment);
             }
 
-            // 1. Отслеживание секции #characters через IntersectionObserver
+            // Проверка закрытия виджета пользователем в текущей сессии
+            if (sessionStorage.getItem('alik_closed') === '1') {
+                floatingWidget.classList.add('docked-hidden');
+                floatingWidget.style.display = 'none';
+                floatingWidget.style.opacity = '0';
+                floatingWidget.style.pointerEvents = 'none';
+                if (dockPlaceholder) dockPlaceholder.classList.add('docked');
+                isDocked = true;
+            } else {
+                // Определение начального состояния при загрузке страницы
+                let initiallyInCharacters = false;
+                if (charactersSection) {
+                    const charRect = charactersSection.getBoundingClientRect();
+                    initiallyInCharacters = charRect.top < window.innerHeight && charRect.bottom > 0;
+                }
+
+                if (initiallyInCharacters) {
+                    dockToSoundShowcase();
+                } else {
+                    undockToFloating();
+                }
+            }
+
+            // 1. Отслеживание контейнера витрины #characters через IntersectionObserver
             if ('IntersectionObserver' in window && charactersSection) {
                 const charObserver = new IntersectionObserver((entries) => {
                     entries.forEach(entry => {
                         if (entry.isIntersecting) {
-                            // Витрина звуков в области видимости -> докинг в слот
-                            if (!isDocked && !isTransitioning) {
-                                dockToSoundShowcase();
-                            }
+                            dockToSoundShowcase();
                         } else {
-                            // Витрина звуков покинула экран -> высвобождение компаньона
-                            if (isDocked && !isTransitioning) {
-                                undockToFloating();
-                            }
+                            undockToFloating();
                         }
                     });
                 }, {
-                    threshold: [0, 0.2, 0.5, 0.8, 1.0]
+                    threshold: [0, 0.15, 0.5]
                 });
                 charObserver.observe(charactersSection);
             }
 
-            // 2. Резервный динамический скролл-триггер
+            // 2. Резервный динамический скролл-триггер для абсолютной надежности
             window.addEventListener('scroll', () => {
                 if (!charactersSection) return;
+                if (sessionStorage.getItem('alik_closed') === '1') return;
+
                 const charRect = charactersSection.getBoundingClientRect();
-                const isCharVisible = charRect.top < (window.innerHeight - 80) && charRect.bottom > 80;
+                const isCharVisible = charRect.top < window.innerHeight && charRect.bottom > 0;
 
                 if (isCharVisible) {
                     if (!isDocked && !isTransitioning) {
@@ -2807,8 +2749,8 @@
                         }
                     });
                 }, {
-                    rootMargin: '-20% 0px -35% 0px',
-                    threshold: 0.15
+                    rootMargin: '-15% 0px -30% 0px',
+                    threshold: 0.1
                 });
 
                 document.querySelectorAll('[data-alik-comment]').forEach(sec => {
@@ -2819,7 +2761,7 @@
             // 4. Клик по аватару Алика — переключение диалогового облачка
             if (avatarContainer) {
                 avatarContainer.addEventListener('click', (e) => {
-                    if (e.target.closest('#alik-widget-toggle')) return;
+                    if (e.target.closest('#alik-widget-toggle') || e.target.closest('#alik-widget-close')) return;
 
                     if (isMinimized) {
                         isMinimized = false;
@@ -2866,7 +2808,25 @@
                 });
             }
 
-            // 7. Интерактивный клик по слоту в витрине звуков при докинге
+            // 7. Полное закрытие плавающего виджета на всю сессию (sessionStorage)
+            if (widgetClose) {
+                widgetClose.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    sessionStorage.setItem('alik_closed', '1');
+                    hideBubble();
+                    floatingWidget.classList.remove('floating-active');
+                    floatingWidget.classList.add('docked-hidden');
+                    floatingWidget.style.display = 'none';
+                    floatingWidget.style.opacity = '0';
+                    floatingWidget.style.pointerEvents = 'none';
+                    if (dockPlaceholder) {
+                        dockPlaceholder.classList.add('docked');
+                    }
+                    isDocked = true;
+                });
+            }
+
+            // 8. Интерактивный клик по слоту в витрине звуков при докинге
             if (dockPlaceholder) {
                 dockPlaceholder.addEventListener('click', () => {
                     playCharSound('a');

@@ -112,9 +112,20 @@ class TestAlikAnimationAndLifecycle(unittest.TestCase):
         for char in sound_chars:
             self.assertIn(char, self.html, f"Переключатель звука {char} присутствует в HTML")
 
-        self.assertIn("playCharSound", self.js)
-        self.assertIn("sound_${charId}.mp3", self.js)
+    def test_08_alik_widget_close_and_session_storage(self):
+        """8. Проверка кнопки закрытия виджета и логики sessionStorage ('alik_closed')"""
+        self.assertIn('id="alik-widget-close"', self.html)
+        self.assertIn(".alik-widget-close", self.css)
+        self.assertIn("alik_closed", self.js)
+        self.assertIn("alik-widget-close", self.js)
+
+    def test_09_showcase_compact_styles(self):
+        """9. Проверка компактных стилей блока персонажей (.characters-section и .character-showcase)"""
+        self.assertIn(".characters-section", self.css)
+        self.assertIn("max-height: 520px", self.css)
+        self.assertIn(".character-showcase", self.css)
 
 
 if __name__ == "__main__":
     unittest.main()
+
