@@ -1,8 +1,10 @@
 import os
 import re
+import math
 import uuid
 import json
 import logging
+from collections import Counter
 from datetime import datetime
 import requests
 import urllib3
@@ -124,29 +126,245 @@ def fetch_yandex_cache_json(folder_id: str) -> tuple[dict | None, bool]:
 
     return None, False
 
-def build_patient_context(folder_id: str) -> tuple[str, bool]:
+# ==============================================================================
+# BM25 RETRIEVER & RUSSIAN NLP TOKENIZER (PURE PYTHON, ZERO-DEPENDENCY)
+# ==============================================================================
+
+MAX_DEFAULT_CHARS = 12000
+
+RUSSIAN_STOP_WORDS = {
+    "и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как", "а", "то", "все", "она",
+    "так", "его", "но", "да", "ты", "к", "ко", "у", "же", "вы", "за", "бы", "по", "только",
+    "ее", "мне", "было", "вот", "от", "меня", "еще", "нет", "о", "об", "обо", "из", "ему",
+    "теперь", "когда", "даже", "ну", "вдруг", "ли", "если", "уже", "или", "ни", "быть",
+    "был", "него", "до", "вас", "нибудь", "опять", "уж", "вам", "ведь", "там", "потом",
+    "себя", "ничего", "ей", "может", "они", "тут", "где", "есть", "надо", "ней", "для",
+    "мы", "тебя", "их", "чем", "была", "сам", "чтоб", "без", "будто", "чего", "раз", "тоже",
+    "себе", "под", "будет", "ж", "тогда", "кто", "этот", "того", "потому", "этого", "какой",
+    "совсем", "ним", "здесь", "этом", "один", "почти", "мой", "тем", "чтобы", "нее", "сейчас",
+    "были", "куда", "зачем", "всех", "никогда", "можно", "при", "наконец", "два", "эти", "этой",
+    "перед", "про", "лишь"
+}
+
+MEDICAL_SYNONYMS: dict[str, list[str]] = {
+    "мрт": ["томография"],
+    "томография": ["мрт"],
+    "кт": ["томография"],
+    "узи": ["сонография", "эхография"],
+    "сонография": ["узи"],
+    "эхография": ["узи"],
+    "аллергия": ["непереносимость"],
+    "непереносимость": ["аллергия"],
+    "жар": ["температура", "лихорадка"],
+    "температура": ["жар", "лихорадка"],
+    "лихорадка": ["температура", "жар"],
+    "анализ": ["исследование"],
+    "исследование": ["анализ"]
+}
+
+PERFECTIVEGROUND = re.compile(r'((ив|ивши|ившись|ыв|ывши|ывшись)|((?<=[ая])(в|вши|вшись)))$')
+REFLEXIVE = re.compile(r'(с[яь])$')
+ADJECTIVE = re.compile(r'(ее|ие|ые|ое|ими|ыми|ей|ий|ый|ой|ем|им|ым|ом|его|ого|ему|ому|их|ых|ую|юю|ая|яя|ою|ею)$')
+PARTICIPLE = re.compile(r'((ивш|ывш|ующ)|((?<=[ая])(ем|нн|вш|ющ|щ)))$')
+VERB = re.compile(r'((ила|ыла|ена|ейте|уйте|ите|или|ыли|ей|уй|ил|ыл|им|ым|ен|ило|ыло|ено|ят|ует|уют|ит|ыт|ены|ить|ыть|ишь|ую|ю)|((?<=[ая])(ла|на|ете|йте|ли|й|л|ем|н|ло|но|ет|ют|ны|ть|ешь|нно)))$')
+NOUN = re.compile(r'(а|ев|ов|ие|ье|е|иями|ями|ами|еи|ии|и|ией|ей|ой|ий|й|иям|ям|ием|ем|ам|ом|о|у|ах|иях|ях|ы|ь|ию|ью|ю|ия|ья|я)$')
+
+def stem_russian(word: str) -> str:
     """
-    Формирует контекст исключительно из готового JSON-кэша.
-    Возвращает (context_text, cache_exists).
+    Легковесный стеммер для русского языка (алгоритм Портера).
+    Приводит слова к базовой основе для учета падежей, чисел и склонений.
+    Слова длиной до 3 символов (включая аббревиатуры МРТ, УЗИ, ЭКГ) сохраняются без изменений.
     """
-    cache_data, cache_exists = fetch_yandex_cache_json(folder_id)
-    if not cache_exists:
-        return "", False
+    word = word.lower().replace('ё', 'е')
+    if len(word) <= 3:
+        return word
+    vowel_match = re.search(r'[аеиоуыэюя]', word)
+    if not vowel_match:
+        return word
+    rv_pos = vowel_match.end()
+    head, rv = word[:rv_pos], word[rv_pos:]
+    if not rv:
+        return word
+    m = PERFECTIVEGROUND.search(rv)
+    if m:
+        rv = rv[:m.start()]
+    else:
+        m = REFLEXIVE.search(rv)
+        if m:
+            rv = rv[:m.start()]
+        m = ADJECTIVE.search(rv)
+        if m:
+            rv = rv[:m.start()]
+            m2 = PARTICIPLE.search(rv)
+            if m2:
+                rv = rv[:m2.start()]
+        else:
+            m = VERB.search(rv)
+            if m:
+                rv = rv[:m.start()]
+            else:
+                m = NOUN.search(rv)
+                if m:
+                    rv = rv[:m.start()]
+    if rv.endswith('и'):
+        rv = rv[:-1]
+    if rv.endswith('ь'):
+        rv = rv[:-1]
+    return head + rv
+
+def tokenize(text: str, expand_synonyms: bool = False) -> list[str]:
+    """
+    Русскоязычная токенизация:
+    1. Приведение к нижнему регистру и нормализация 'ё' -> 'е'.
+    2. Очистка от пунктуации через re.findall(r'\b[а-яa-z0-9]+\b').
+    3. Фильтрация базовых стоп-слов.
+    4. Стемминг слов для унификации грамматических форм.
+    5. При expand_synonyms=True — добавление стеммированных синонимов.
+    """
+    if not text:
+        return []
+    cleaned = text.lower().replace('ё', 'е')
+    raw_tokens = re.findall(r'\b[а-яa-z0-9]+\b', cleaned)
+    tokens: list[str] = []
+    for raw in raw_tokens:
+        if raw in RUSSIAN_STOP_WORDS:
+            continue
+        stemmed = stem_russian(raw)
+        tokens.append(stemmed)
+        if expand_synonyms:
+            synonyms = MEDICAL_SYNONYMS.get(raw, []) or MEDICAL_SYNONYMS.get(stemmed, [])
+            for syn in synonyms:
+                tokens.append(stem_russian(syn))
+    return tokens
+
+class OkapiBM25:
+    """
+    Легковесный автономный класс Okapi BM25 на чистом Python без внешних зависимостей.
+    Реализует стандартный алгоритм ранжирования BM25 (k1=1.5, b=0.75) с формулой Lucene для IDF.
+    """
+    def __init__(self, corpus: list[list[str]], k1: float = 1.5, b: float = 0.75):
+        self.k1 = k1
+        self.b = b
+        self.corpus_size = len(corpus)
+        self.doc_lengths = [len(doc) for doc in corpus]
+        self.avgdl = sum(self.doc_lengths) / self.corpus_size if self.corpus_size > 0 else 0.0
+        self.doc_freqs = [Counter(doc) for doc in corpus]
+        self.idf: dict[str, float] = {}
+
+        df = Counter()
+        for freqs in self.doc_freqs:
+            for term in freqs.keys():
+                df[term] += 1
+
+        for term, freq in df.items():
+            self.idf[term] = math.log(1.0 + (self.corpus_size - freq + 0.5) / (freq + 0.5))
+
+    def get_scores(self, query_tokens: list[str]) -> list[float]:
+        scores = [0.0] * self.corpus_size
+        if self.corpus_size == 0 or self.avgdl == 0.0 or not query_tokens:
+            return scores
+
+        for idx, doc_freq in enumerate(self.doc_freqs):
+            doc_len = self.doc_lengths[idx]
+            score = 0.0
+            for token in query_tokens:
+                if token not in doc_freq:
+                    continue
+                tf = doc_freq[token]
+                idf = self.idf.get(token, 0.0)
+                num = tf * (self.k1 + 1.0)
+                denom = tf + self.k1 * (1.0 - self.b + self.b * (doc_len / self.avgdl))
+                score += idf * (num / denom)
+            scores[idx] = score
+
+        return scores
+
+class PatientContext(str):
+    """
+    Контекст пациента для передачи в LLM. Наследуется от str для прямой строковой конкатенации/интерполяции
+    и поддерживает распаковку в кортеж (context_text, cache_exists) для обратной совместимости.
+    """
+    def __new__(cls, text: str, cache_exists: bool = True):
+        obj = super().__new__(cls, text)
+        obj.cache_exists = cache_exists
+        return obj
+
+    def __iter__(self):
+        return iter((str(self), self.cache_exists))
+
+def build_patient_context(patient_folder: str = None, query: str = None, top_k: int = 7, folder_id: str = None) -> PatientContext:
+    """
+    Формирует контекст пациента из JSON-кэша Яндекс.Диска с использованием BM25-ретривера.
+    - patient_folder (или folder_id): путь к папке пациента на Яндекс.Диске.
+    - query: текст вопроса пользователя (при передаче выполняется BM25-ранжирование чанков).
+    - top_k: максимальное количество наиболее релевантных чанков для включения в контекст.
+    - Сохраняет мета-заголовки файлов (--- Файл: {path} ---) в отобранных чанках.
+    - При отсутствии query, нулевых скорах или общей выписке отбирает дефолтный срез (до MAX_DEFAULT_CHARS),
+      чтобы гарантированно не превысить лимит 8K токенов базовой модели GigaChat.
+    """
+    target_folder = patient_folder or folder_id
+    if not target_folder:
+        return PatientContext("", False)
+
+    cache_data, cache_exists = fetch_yandex_cache_json(target_folder)
+    if not cache_exists or not cache_data:
+        return PatientContext("", False)
 
     chunks = cache_data.get("chunks", [])
     if not chunks:
-        clean_name = folder_id.replace("disk:/", "").strip()
-        return f"--- Карта Пациента: {clean_name} ---\nВ обработанном кэше пока нет содержательного текста.", True
+        clean_name = target_folder.replace("disk:/", "").strip()
+        return PatientContext(f"--- Карта Пациента: {clean_name} ---\nВ обработанном кэше пока нет содержательного текста.", True)
 
-    return "\n\n".join(chunks), True
+    selected_chunks: list[str] = []
+
+    # 1. Если query передан и список чанков не пуст: рассчитываем BM25 скоры
+    if query and query.strip():
+        query_tokens = tokenize(query, expand_synonyms=True)
+        if query_tokens:
+            corpus = [tokenize(chunk) for chunk in chunks]
+            bm25 = OkapiBM25(corpus)
+            scores = bm25.get_scores(query_tokens)
+
+            # Отбираем только чанки с положительным скором релевантности
+            scored_chunks = [(score, idx, chunk) for idx, (score, chunk) in enumerate(zip(scores, chunks)) if score > 0.0]
+
+            if scored_chunks:
+                # Сортируем по убыванию BM25 скора
+                scored_chunks.sort(key=lambda x: x[0], reverse=True)
+                top_candidates = scored_chunks[:top_k]
+
+                total_chars = 0
+                for score, idx, chunk in top_candidates:
+                    if selected_chunks and total_chars + len(chunk) > MAX_DEFAULT_CHARS:
+                        break
+                    selected_chunks.append(chunk)
+                    total_chars += len(chunk)
+
+                logger.info(f"[RAG BM25] Запрос: '{query[:60]}' -> найдено {len(scored_chunks)} совпадений, отобрано Top-{len(selected_chunks)} ({total_chars} симв.)")
+
+    # 2. Если query отсутствует, совпадений нет (все скоры 0) или сформирован пустой список:
+    if not selected_chunks:
+        total_chars = 0
+        for chunk in chunks:
+            if selected_chunks and total_chars + len(chunk) > MAX_DEFAULT_CHARS:
+                break
+            selected_chunks.append(chunk)
+            total_chars += len(chunk)
+            if total_chars >= MAX_DEFAULT_CHARS:
+                break
+        logger.info(f"[RAG DEFAULT SLICE] Сформирован дефолтный срез: {len(selected_chunks)} из {len(chunks)} чанков ({total_chars} симв.)")
+
+    context_text = "\n\n".join(selected_chunks)
+    return PatientContext(context_text, True)
 
 def ask_consultant(user_message: str, folder_id: str) -> str:
     """
-    Формирует контекст из массива "chunks" файла _cache.json конкретной папки folder_id и запрашивает ответ у GigaChat.
+    Формирует контекст с помощью BM25-ретривера из массива "chunks" файла _cache.json папки folder_id
+    и запрашивает ответ у GigaChat.
     Если файл кэша еще не создан, возвращает технический ответ.
     В случае сетевой ошибки, таймаута или исчерпания квоты (401/403) возвращает пользовательское сообщение о сбое.
     """
-    context_text, cache_exists = build_patient_context(folder_id)
+    context_text, cache_exists = build_patient_context(patient_folder=folder_id, query=user_message, top_k=7)
     
     if not cache_exists:
         return "Документы пациента еще обрабатываются. Пожалуйста, подождите пару минут и повторите вопрос."
@@ -234,7 +452,7 @@ def generate_medical_summary(folder_id: str) -> tuple[dict | None, str | None, b
     - Если кэш документов не найден: (None, None, False)
     - Если резюме успешно сгенерировано: (parsed_json_dict, raw_response, True)
     """
-    context_text, cache_exists = build_patient_context(folder_id)
+    context_text, cache_exists = build_patient_context(patient_folder=folder_id, query=None, top_k=10)
     if not cache_exists:
         return None, None, False
 
