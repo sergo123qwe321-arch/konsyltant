@@ -8,7 +8,7 @@ load_dotenv()
 
 import logging
 import uuid
-from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response, UploadFile, File
+from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response, UploadFile, File, BackgroundTasks, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
@@ -48,7 +48,7 @@ from database import (
 from rag import ask_consultant, generate_medical_summary, get_gigachat_balance, extract_patient_analyses
 from pdf_generator import generate_summary_pdf
 from analyses_generator import generate_analyses_docx
-from folder_watcher import scan_folders, get_last_etl_logs, FOLDER_SCAN_INTERVAL_SECONDS, FOLDER_SCAN_INTERVAL_HOURS
+from folder_watcher import scan_folders, get_last_etl_logs, FOLDER_SCAN_INTERVAL_SECONDS, FOLDER_SCAN_INTERVAL_HOURS, sync_patient_folder
 from security_utils import (
     create_access_token, verify_token, mask_ip, mask_credential,
     InMemoryAuthRateLimiter, validate_media_url, process_chat_message_moderation
@@ -316,6 +316,35 @@ async def get_current_community_user(
         raise HTTPException(status_code=401, detail="Для выполнения этого действия необходимо авторизоваться")
     return user
 
+async def get_current_sync_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    authorization: Optional[str] = Header(None)
+) -> dict:
+    """
+    Проверяет права на запуск синхронизации:
+    - Разрешено администраторам (роль 'ADMIN').
+    - Разрешено врачам (роль 'DOCTOR').
+    - Разрешено родителям (роль 'PATIENT') для своей закрепленной папки.
+    """
+    token = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Отсутствует токен авторизации")
+
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Сессия недействительна или истекла")
+
+    role = payload.get("role", "PATIENT")
+    if role not in ("ADMIN", "PATIENT", "DOCTOR"):
+        raise HTTPException(status_code=403, detail="Доступ запрещен: недостаточный уровень привилегий")
+
+    return payload
+
 class TokenVerifyRequest(BaseModel):
     token: str
 
@@ -422,6 +451,10 @@ class BackupTriggerRequest(BaseModel):
     retention_days: Optional[int] = 7
     max_backups: Optional[int] = 7
     dry_run: Optional[bool] = False
+
+class SyncPatientRequest(BaseModel):
+    patient_folder: str
+    batch_limit: Optional[int] = 50
 
 @app.post("/api/verify-token")
 async def verify_token_api(req: TokenVerifyRequest):
@@ -1837,6 +1870,164 @@ def admin_get_backups_list_api(
     except Exception as e:
         logger.error(f"[ADMIN BACKUPS LIST ERROR] Сбой получения списка бэкапов: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка чтения списка бэкапов: {str(e)}")
+
+# --- Фоновая асинхронная синхронизация папок пациентов (BackgroundTasks) ---
+ACTIVE_PATIENT_SYNCS: dict[str, dict] = {}
+SYNC_LOCK = threading.Lock()
+
+def run_background_patient_sync(
+    patient_name: str,
+    batch_limit: int = 50,
+    pause_seconds: float = 1.5,
+    max_iterations: int = 100
+):
+    """
+    Фоновый воркер непрерывной инкрементальной синхронизации папки пациента:
+    - Выполняет порционную обработку (batch_limit файлов за шаг).
+    - Выдерживает микропаузы (pause_seconds) для предотвращения спама и перегрузки API Яндекс.Диска.
+    - В блоке finally гарантированно снимает блокировку, предотвращая взаимные блокировки.
+    """
+    clean_name = patient_name.strip().replace("disk:/", "").strip("/")
+    logger.info(f"[ASYNC SYNC STARTED] Фоновая синхронизация запущена для '{clean_name}' (батч={batch_limit}, пауза={pause_seconds}с)")
+    
+    iteration = 1
+    total_batches = 0
+    try:
+        while iteration <= max_iterations:
+            logger.info(f"[ASYNC SYNC] Итерация #{iteration} для '{clean_name}'...")
+            remaining = sync_patient_folder(patient_folder=clean_name, batch_limit=batch_limit)
+            total_batches += 1
+            
+            with SYNC_LOCK:
+                if clean_name in ACTIVE_PATIENT_SYNCS:
+                    ACTIVE_PATIENT_SYNCS[clean_name]["last_iteration"] = iteration
+                    ACTIVE_PATIENT_SYNCS[clean_name]["remaining_files"] = remaining
+                    ACTIVE_PATIENT_SYNCS[clean_name]["batches_processed"] = total_batches
+
+            if remaining <= 0:
+                logger.info(f"[ASYNC SYNC FINISHED] Синхронизация папки '{clean_name}' завершена (остаток: {remaining}).")
+                break
+
+            iteration += 1
+            time.sleep(pause_seconds)
+    except Exception as e:
+        logger.error(f"[ASYNC SYNC ERROR] Ошибка при фоновой синхронизации '{clean_name}': {e}", exc_info=True)
+    finally:
+        with SYNC_LOCK:
+            ACTIVE_PATIENT_SYNCS.pop(clean_name, None)
+        logger.info(f"[ASYNC SYNC LOCK RELEASED] Блокировка синхронизации для '{clean_name}' снята.")
+
+@app.post("/api/v1/sync/patient")
+@app.post("/api/v1/admin/sync/patient")
+async def start_patient_sync_api(
+    req: SyncPatientRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_sync_user)
+):
+    """
+    Асинхронный запуск фоновой синхронизации и индексации папки пациента на Яндекс.Диске:
+    - Защищенный эндпоинт (Stateless JWT токен роли ADMIN, DOCTOR или PATIENT).
+    - Предотвращение гонки (Lock / State tracking): возвращает HTTP 409 Conflict со статусом
+      "already_in_progress", если процесс для данной папки уже запущен.
+    - Фоновое выполнение через FastAPI BackgroundTasks с порционной обработкой и микропаузами.
+    """
+    clean_name = req.patient_folder.strip().replace("disk:/", "").strip("/")
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Имя папки пациента не может быть пустым")
+
+    # Проверка изоляции данных (152-ФЗ) для родителей
+    user_role = current_user.get("role", "PATIENT")
+    if user_role == "PATIENT":
+        allowed_folder = current_user.get("allowed_folder", "").strip().replace("disk:/", "").strip("/")
+        if allowed_folder != clean_name:
+            raise HTTPException(
+                status_code=403,
+                detail="Доступ запрещен: пациент имеет доступ только к собственной папке документов"
+            )
+
+    # Механизм предотвращения гонки (Lock / State tracking)
+    with SYNC_LOCK:
+        if clean_name in ACTIVE_PATIENT_SYNCS:
+            logger.warning(f"[SYNC CONFLICT] Синхронизация для папки '{clean_name}' уже выполняется")
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={
+                    "status": "already_in_progress",
+                    "detail": f"Синхронизация папки '{clean_name}' уже выполняется в фоновом режиме",
+                    "patient_folder": clean_name,
+                    "started_at": ACTIVE_PATIENT_SYNCS[clean_name].get("started_at")
+                }
+            )
+
+        batch_size = req.batch_limit if (req.batch_limit and 1 <= req.batch_limit <= 100) else 50
+        ACTIVE_PATIENT_SYNCS[clean_name] = {
+            "status": "in_progress",
+            "started_at": datetime.now().isoformat(),
+            "patient_folder": clean_name,
+            "batch_limit": batch_size,
+            "batches_processed": 0,
+            "initiated_by": current_user.get("sub") or current_user.get("role", "user")
+        }
+
+    # Постановка задачи в фоновый пул FastAPI BackgroundTasks
+    background_tasks.add_task(
+        run_background_patient_sync,
+        patient_name=clean_name,
+        batch_limit=batch_size,
+        pause_seconds=1.5
+    )
+
+    return {
+        "status": "started",
+        "message": f"Фоновая синхронизация папки '{clean_name}' успешно запущена",
+        "patient_folder": clean_name,
+        "batch_limit": batch_size
+    }
+
+@app.get("/api/v1/sync/patient/{patient_folder:path}")
+def get_patient_sync_status_api(
+    patient_folder: str,
+    current_user: dict = Depends(get_current_sync_user)
+):
+    """
+    Проверка статуса фоновой синхронизации для указанной папки пациента.
+    """
+    clean_name = patient_folder.strip().replace("disk:/", "").strip("/")
+    user_role = current_user.get("role", "PATIENT")
+    if user_role == "PATIENT":
+        allowed_folder = current_user.get("allowed_folder", "").strip().replace("disk:/", "").strip("/")
+        if allowed_folder != clean_name:
+            raise HTTPException(status_code=403, detail="Доступ запрещен: нет прав для просмотра чужой папки")
+
+    with SYNC_LOCK:
+        active_info = ACTIVE_PATIENT_SYNCS.get(clean_name)
+
+    if active_info:
+        return {
+            "status": "in_progress",
+            "is_syncing": True,
+            "patient_folder": clean_name,
+            **active_info
+        }
+    else:
+        return {
+            "status": "idle",
+            "is_syncing": False,
+            "patient_folder": clean_name
+        }
+
+@app.get("/api/v1/sync/active")
+def get_all_active_syncs_api(admin: dict = Depends(get_current_admin)):
+    """
+    Получение списка всех активных процессов фоновой синхронизации (только ADMIN).
+    """
+    with SYNC_LOCK:
+        syncs = list(ACTIVE_PATIENT_SYNCS.values())
+    return {
+        "status": "ok",
+        "active_syncs": syncs,
+        "count": len(syncs)
+    }
 
 @app.get("/app")
 @app.get("/app/")
