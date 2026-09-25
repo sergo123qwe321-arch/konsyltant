@@ -26,6 +26,9 @@ BASE_URL = os.getenv("BASE_URL", "https://xn--g1aj3a.site")
 # Конфигурация исключений папок
 EXCLUDED_FOLDERS = [f.strip() for f in os.getenv('EXCLUDED_FOLDERS', 'Загрузки,Trash,Archive,Корзина').split(',') if f.strip()]
 
+# Максимальное количество файлов для обработки за один цикл синхронизации (защита от перегрузки CPU/OCR)
+MAX_SYNC_BATCH = int(os.getenv("ETL_MAX_SYNC_BATCH", "25"))
+
 # Хранилище последних логов ETL для диагностического эндпоинта администратора
 LAST_ETL_LOGS: dict[str, list[str]] = {}
 
@@ -133,15 +136,96 @@ def upload_json_to_yandex_disk(disk_path: str, payload: dict) -> bool:
         logger.error(f"[YANDEX DISK UPLOAD EXCEPTION] Исключение при загрузке '{disk_path}': {e}")
         return False
 
-def build_and_upload_folder_cache(folder_path: str, folder_name: str) -> str:
+def get_all_yandex_disk_files(folder_path: str) -> tuple[list[dict], int]:
     """
-    Выполняет ETL-процесс для папки пациента:
-    - Замеряет производительность (время старта/финиша, длительность, средняя скорость)
-    - Парсит документы (игнорируя файлы на '_')
-    - Разбивает текст на чанки
-    - Формирует и загружает _{clean_folder_name}_cache.json на Яндекс.Диск
-    - Сохраняет технические метрики в таблицу etl_metrics
-    - Публикует кэш-файл и возвращает его public_url
+    Рекурсивно обходит директорию folder_path на Яндекс.Диске без ограничения глубины,
+    собирая полный список файлов (type == 'file') с сохранением относительных путей.
+    Возвращает (список файлов с метаданными, количество обойденных поддиректорий).
+    """
+    if not YANDEX_DISK_TOKEN:
+        logger.error("[FOLDER WATCHER ERROR] YANDEX_DISK_TOKEN не задан в .env.")
+        return [], 0
+
+    headers = {
+        "Authorization": f"OAuth {YANDEX_DISK_TOKEN}",
+        "Accept": "application/json"
+    }
+    url = "https://cloud-api.yandex.net/v1/disk/resources"
+
+    norm_root = folder_path.rstrip("/") + "/"
+    all_files = []
+    subfolder_count = 0
+    dirs_to_visit = [folder_path]
+    visited_dirs = set()
+
+    while dirs_to_visit:
+        current_dir = dirs_to_visit.pop(0)
+        norm_current = current_dir.rstrip("/")
+        if norm_current in visited_dirs:
+            continue
+        visited_dirs.add(norm_current)
+
+        if norm_current != folder_path.rstrip("/"):
+            subfolder_count += 1
+
+        offset = 0
+        limit = 100
+        while True:
+            params = {"path": current_dir, "limit": limit, "offset": offset}
+            try:
+                res = requests.get(url, headers=headers, params=params, timeout=15)
+                if res.status_code != 200:
+                    logger.error(f"[FOLDER WATCHER ERROR] Ошибка получения ресурсов '{current_dir}': {res.status_code}")
+                    break
+                data = res.json()
+                embedded = data.get("_embedded", {})
+                items = embedded.get("items", [])
+                if not items:
+                    break
+
+                for item in items:
+                    name = item.get("name", "")
+                    if name.startswith("_"):
+                        continue
+                    item_type = item.get("type")
+                    item_path = item.get("path", "")
+
+                    if item_type == "file":
+                        # Относительный путь от корня папки пациента
+                        if item_path.startswith(norm_root):
+                            rel_path = item_path[len(norm_root):]
+                        else:
+                            rel_path = name
+                        rel_path = rel_path.replace("\\", "/").lstrip("/")
+                        item_dict = dict(item)
+                        item_dict["relative_path"] = rel_path
+                        all_files.append(item_dict)
+
+                    elif item_type == "dir":
+                        dir_name = item.get("name", "")
+                        if should_process_folder(dir_name):
+                            dirs_to_visit.append(item_path)
+
+                total = embedded.get("total", 0)
+                offset += len(items)
+                if offset >= total or len(items) < limit:
+                    break
+            except Exception as e:
+                logger.error(f"[FOLDER WATCHER ERROR] Исключение при обходе '{current_dir}': {e}")
+                break
+
+    return all_files, subfolder_count
+
+def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_to_process: int = None) -> str:
+    """
+    Выполняет инкрементальный ETL-процесс для папки пациента с рекурсивным обходом:
+    - Рекурсивно сканирует все подпапки Яндекс.Диска.
+    - Сравнивает с существующим _cache.json (новая схема с files).
+    - Удаляет чанки удаленных файлов.
+    - Обрабатывает только новые или измененные файлы (по mtime/etag/size).
+    - Пропускает неизмененные файлы без повторного OCR.
+    - Собирает плоскую проекцию chunks для обратной совместимости с rag.py.
+    - Загружает обновленный кэш и возвращает public_url.
     """
     start_ts = time.time()
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -152,71 +236,153 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str) -> str:
     cache_disk_path = f"{norm_folder_path}/{cache_filename}"
 
     record_etl_log(folder_name, f"ETL запуск для '{folder_name}' ({folder_path}) в {started_at}")
-    logger.info(f"🔍 Найдена новая папка: {folder_name}")
+    logger.info(f"🔍 Рекурсивный ETL/синхронизация для папки: {folder_name}")
 
-    # Получаем содержимое папки
-    items = get_yandex_disk_folders(folder_path)
-    file_items = [it for it in items if it.get("type") == "file" and not it.get("name", "").startswith("_")]
-    file_count = len(file_items)
-    
-    record_etl_log(folder_name, f"Скачивание файлов: {file_count} файлов обнаружено")
-    logger.info(f"📥 Скачивание файлов: {file_count} файлов")
+    # 1. Рекурсивное получение всех файлов во всех поддиректориях
+    all_files, subfolder_count = get_all_yandex_disk_files(folder_path)
+    file_count = len(all_files)
 
-    all_chunks = []
+    # 2. Загрузка существующего кэша (если есть)
+    existing_cache = None
+    cache_bytes = download_yandex_file_bytes(cache_disk_path)
+    if cache_bytes:
+        try:
+            existing_cache = json.loads(cache_bytes.decode('utf-8'))
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать существующий кэш '{cache_disk_path}': {e}")
+            existing_cache = None
+
+    files_cache = {}
+    if existing_cache and isinstance(existing_cache, dict):
+        if "files" in existing_cache and isinstance(existing_cache["files"], dict):
+            files_cache = dict(existing_cache["files"])
+        elif "chunks" in existing_cache:
+            logger.info(f"Обнаружен устаревший формат кэша для '{folder_name}'. Выполняется миграция...")
+            record_etl_log(folder_name, "Обнаружен кэш старого формата, выполняется структурирование")
+            files_cache = {}
+
+    # 3. Дифференциальный анализ: удаленные, новые, измененные, неизмененные
+    disk_files_map = {f["relative_path"]: f for f in all_files}
+    deleted_files = [rel for rel in files_cache if rel not in disk_files_map]
+
+    unchanged_files = []
+    to_process = []
+
+    for rel_path, f_item in disk_files_map.items():
+        disk_mod = str(f_item.get("modified") or f_item.get("md5") or f_item.get("sha256") or "")
+        disk_size = f_item.get("size")
+
+        if rel_path in files_cache:
+            c_entry = files_cache[rel_path]
+            c_mod = str(c_entry.get("modified") or "")
+            c_size = c_entry.get("size")
+            if c_mod == disk_mod and c_size == disk_size and "chunks" in c_entry:
+                unchanged_files.append(rel_path)
+                continue
+
+        to_process.append(f_item)
+
+    record_etl_log(
+        folder_name,
+        f"Дифференциальный анализ: обойдено {subfolder_count} подпапок. Всего на Диске: {file_count}, "
+        f"без изменений: {len(unchanged_files)}, к обработке: {len(to_process)}, удалено: {len(deleted_files)}"
+    )
+    logger.info(
+        f"⚡ [ETL DIFF] '{folder_name}': {subfolder_count} подпапок, {len(unchanged_files)} без изм., "
+        f"{len(to_process)} к обработке, {len(deleted_files)} удалено"
+    )
+
+    # Если изменений нет и кэш валиден
+    if not to_process and not deleted_files and existing_cache and "files" in existing_cache:
+        record_etl_log(folder_name, "Все файлы актуальны, изменений нет. Обновление кэша пропущено.")
+        logger.info(f"⏭️ Папка '{folder_name}' полностью актуальна, пропуск повторного OCR.")
+        return publish_yandex_disk_resource(cache_disk_path)
+
+    # 4. Удаление удаленных файлов из кэша
+    for rel_path in deleted_files:
+        del files_cache[rel_path]
+        record_etl_log(folder_name, f"Удален файл из кэша: '{rel_path}'")
+
+    # 5. Применение ограничения батча (если задано)
+    if max_files_to_process and max_files_to_process > 0 and len(to_process) > max_files_to_process:
+        logger.info(f"Ограничение пакета обработки для '{folder_name}': {max_files_to_process} из {len(to_process)} файлов")
+        record_etl_log(folder_name, f"Пакетная обработка: {max_files_to_process} из {len(to_process)} файлов в текущем цикле")
+        batch_to_process = to_process[:max_files_to_process]
+    else:
+        batch_to_process = to_process
+
+    # 6. Обработка новых и измененных файлов
     pages_processed = 0
-    pages_total = 0
+    pages_total = len(batch_to_process)
     errors_count = 0
 
-    for item in file_items:
+    for item in batch_to_process:
+        rel_path = item.get("relative_path", item.get("name", ""))
+        fname = item.get("name", "")
+        fpath = item.get("path")
+        mime_type = item.get("mime_type", "")
+        disk_mod = str(item.get("modified") or item.get("md5") or item.get("sha256") or "")
+        disk_size = item.get("size")
+
+        logger.info(f"📄 Обработка файла: '{rel_path}'")
         try:
-            fname = item.get("name", "")
-            fpath = item.get("path")
-            mime_type = item.get("mime_type", "")
-            pages_total += 1
-            
-            logger.info(f"📄 Обработка файла: '{fname}'")
             file_bytes = download_yandex_file_bytes(fpath, item.get("file"))
-            if file_bytes:
-                text = parse_document_bytes(file_bytes, fname, mime_type)
-                if text and text.strip() and not text.startswith("[Неподдерживаемый") and not text.startswith("[Ошибка") and not text.startswith("[Отказ"):
-                    pages_processed += 1
-                    chunks = chunk_text(text, chunk_size=1000, overlap=100)
-                    for chunk in chunks:
-                        all_chunks.append(f"--- Файл: {fname} ---\n{chunk}")
-                    record_etl_log(folder_name, f"Успешно обработан '{fname}' -> {len(chunks)} чанков")
-                else:
-                    errors_count += 1
-                    record_etl_log(folder_name, f"Файл '{fname}' не содержит извлекаемого текста или ошибка парсера")
+            if not file_bytes:
+                errors_count += 1
+                record_etl_log(folder_name, f"Не удалось скачать байты для '{rel_path}'")
+                continue
+
+            text = parse_document_bytes(file_bytes, fname, mime_type)
+            if text and text.strip() and not text.startswith("[Неподдерживаемый") and not text.startswith("[Ошибка") and not text.startswith("[Отказ"):
+                pages_processed += 1
+                raw_chunks = chunk_text(text, chunk_size=1000, overlap=100)
+                file_chunks = [f"--- Файл: {rel_path} ---\n{chunk}" for chunk in raw_chunks]
+                files_cache[rel_path] = {
+                    "modified": disk_mod,
+                    "size": disk_size if disk_size is not None else len(file_bytes),
+                    "chunks": file_chunks
+                }
+                record_etl_log(folder_name, f"Успешно обработан '{rel_path}' -> {len(file_chunks)} чанков")
             else:
                 errors_count += 1
-                record_etl_log(folder_name, f"Не удалось скачать байты для '{fname}'")
+                files_cache[rel_path] = {
+                    "modified": disk_mod,
+                    "size": disk_size if disk_size is not None else len(file_bytes),
+                    "chunks": []
+                }
+                record_etl_log(folder_name, f"Файл '{rel_path}' не содержит извлекаемого текста или ошибка формата")
         except Exception as file_err:
             errors_count += 1
-            err_msg = f"Сбой обработки файла '{item.get('name', 'N/A')}': {file_err}"
+            err_msg = f"Сбой обработки файла '{rel_path}': {file_err}"
             logger.error(f"[ETL PARSE ERROR] {err_msg}")
             record_etl_log(folder_name, err_msg)
 
-    chunk_count = len(all_chunks)
-    logger.info(f"🔤 OCR-обработка: {pages_processed}/{pages_total} страниц")
-    logger.info(f"📝 Создано чанков: {chunk_count}")
-    record_etl_log(folder_name, f"OCR-обработка: {pages_processed}/{pages_total} страниц, создано чанков: {chunk_count}")
+    # 7. Сборка плоской проекции чанков
+    all_chunks = []
+    for rel_path in sorted(files_cache.keys()):
+        all_chunks.extend(files_cache[rel_path].get("chunks", []))
 
+    chunk_count = len(all_chunks)
+    logger.info(f"🔤 OCR/Парсер завершен: {pages_processed}/{pages_total} файлов обработано, итоговых чанков: {chunk_count}")
+    record_etl_log(folder_name, f"OCR/Парсер: {pages_processed}/{pages_total} файлов обработано, создано чанков в кэше: {chunk_count}")
+
+    # 8. Формирование новой схемы кэша
     payload = {
         "patient_folder": folder_name,
         "last_updated": datetime.now(timezone.utc).isoformat(),
+        "files": files_cache,
         "chunks": all_chunks
     }
 
     logger.info(f"💾 Сохранение кэша: {cache_filename}")
     record_etl_log(folder_name, f"Сохранение кэша на Яндекс.Диск: {cache_disk_path}")
     uploaded = upload_json_to_yandex_disk(cache_disk_path, payload)
-    
-    # Расчет времени выполнения и средних показателей
+
+    # 9. Расчет метрик и сохранение в БД
     finished_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     duration_seconds = round(time.time() - start_ts, 2)
-    avg_time_per_file = round(duration_seconds / file_count, 2) if file_count > 0 else 0.0
+    avg_time_per_file = round(duration_seconds / len(batch_to_process), 2) if batch_to_process else 0.0
 
-    # Сохранение метрик в БД
     try:
         save_etl_metric(
             folder_name=folder_name,
@@ -229,8 +395,7 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str) -> str:
             errors_count=errors_count,
             avg_time_per_file_seconds=avg_time_per_file
         )
-        logger.info(f"⚡ [ETL METRICS] Папка '{folder_name}': {file_count} файлов за {duration_seconds}с (среднее: {avg_time_per_file}с/файл, чанков: {chunk_count}, ошибок: {errors_count})")
-        record_etl_log(folder_name, f"Метрики сохранены: {file_count} файлов за {duration_seconds}с (среднее: {avg_time_per_file}с/файл)")
+        logger.info(f"⚡ [ETL METRICS] Папка '{folder_name}': {file_count} файлов ({subfolder_count} подпапок), {duration_seconds}с (среднее: {avg_time_per_file}с/файл)")
     except Exception as metric_err:
         logger.error(f"[ETL METRICS ERROR] Ошибка сохранения метрик в БД: {metric_err}")
 
@@ -389,19 +554,12 @@ def scan_folders():
                     
                 new_count += 1
             else:
-                # Если папка уже зарегистрирована, проверяем наличие файла кэша (если его еще не было)
-                clean_fname = item_name.replace(" ", "_")
-                cache_check_path = f"{item_path.rstrip('/')}/_{clean_fname}_cache.json"
+                # Если папка уже зарегистрирована, выполняем дифференциальную синхронизацию кэша
                 try:
-                    info_url = "https://cloud-api.yandex.net/v1/disk/resources"
-                    headers = {"Authorization": f"OAuth {YANDEX_DISK_TOKEN}", "Accept": "application/json"}
-                    check_res = requests.get(info_url, headers=headers, params={"path": cache_check_path}, timeout=15)
-                    if check_res.status_code == 404:
-                        logger.info(f"🔍 Найдена существующая папка без кэша: {item_name}. Запуск фонового ETL...")
-                        record_etl_log(item_name, "Папка зарегистрирована, но кэш отсутствует. Запуск ETL...")
-                        build_and_upload_folder_cache(item_path, item_name)
+                    logger.info(f"🔄 Проверка дифференциальной синхронизации для '{item_name}'...")
+                    build_and_upload_folder_cache(item_path, item_name, max_files_to_process=MAX_SYNC_BATCH)
                 except Exception as ex:
-                    pass
+                    logger.error(f"[ETL SYNC ERROR] Ошибка синхронизации папки '{item_name}': {ex}")
         except Exception as e:
             err_log = f"[ETL ERROR] Сбой обработки папки '{item.get('name', 'N/A')}': {e}"
             logger.error(err_log)
