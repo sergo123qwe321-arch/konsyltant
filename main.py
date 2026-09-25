@@ -48,7 +48,7 @@ from database import (
 from rag import ask_consultant, generate_medical_summary, get_gigachat_balance, extract_patient_analyses
 from pdf_generator import generate_summary_pdf
 from analyses_generator import generate_analyses_docx
-from folder_watcher import scan_folders, get_last_etl_logs
+from folder_watcher import scan_folders, get_last_etl_logs, FOLDER_SCAN_INTERVAL_SECONDS, FOLDER_SCAN_INTERVAL_HOURS
 from security_utils import (
     create_access_token, verify_token, mask_ip, mask_credential,
     InMemoryAuthRateLimiter, validate_media_url, process_chat_message_moderation
@@ -74,12 +74,13 @@ def keep_awake_loop():
             print(f"[KEEP-AWAKE ERROR] Ошибка пинга: {e}")
 
 def watcher_loop():
+    logger.info(f"⏰ [FOLDER WATCHER SCHEDULER] Фоновый поток запущен (интервал: {FOLDER_SCAN_INTERVAL_HOURS} ч / {FOLDER_SCAN_INTERVAL_SECONDS} с)")
     while True:
         try:
             scan_folders()
         except Exception as e:
             print(f"Ошибка в фоновом потоке folder_watcher: {e}")
-        time.sleep(60) # Проверяем новые папки раз в минуту
+        time.sleep(FOLDER_SCAN_INTERVAL_SECONDS)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

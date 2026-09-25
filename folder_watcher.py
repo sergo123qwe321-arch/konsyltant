@@ -1,5 +1,12 @@
 import os
 import sys
+
+# Настройка безопасной кодировки консоли для Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 import secrets
 import string
 import requests
@@ -28,6 +35,10 @@ EXCLUDED_FOLDERS = [f.strip() for f in os.getenv('EXCLUDED_FOLDERS', 'Загру
 
 # Максимальное количество файлов для обработки за один цикл синхронизации (защита от перегрузки CPU/OCR)
 MAX_SYNC_BATCH = int(os.getenv("ETL_MAX_SYNC_BATCH", "25"))
+
+# Конфигурация суточного интервала фонового сканирования (Scheduler)
+FOLDER_SCAN_INTERVAL_HOURS = float(os.getenv("FOLDER_SCAN_INTERVAL_HOURS", "24"))
+FOLDER_SCAN_INTERVAL_SECONDS = int(os.getenv("FOLDER_SCAN_INTERVAL_SECONDS", str(int(FOLDER_SCAN_INTERVAL_HOURS * 3600))))
 
 # Хранилище последних логов ETL для диагностического эндпоинта администратора
 LAST_ETL_LOGS: dict[str, list[str]] = {}
@@ -70,11 +81,25 @@ def generate_random_password(length=12):
     characters = string.ascii_letters + string.digits + "!@#$%^&*"
     return ''.join(secrets.choice(characters) for _ in range(length))
 
+def safe_yandex_request(method, url, max_retries=3, **kwargs):
+    """
+    Выполняет HTTP-запрос к Яндекс.Диску с автоматическими повторами при сетевых сбоях и SSL EOF.
+    """
+    timeout = kwargs.pop("timeout", 25)
+    for attempt in range(max_retries):
+        try:
+            return method(url, timeout=timeout, **kwargs)
+        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if attempt == max_retries - 1:
+                logger.error(f"[YANDEX RETRY EXHAUSTED] Ошибка запроса к {url} после {max_retries} попыток: {e}")
+                raise
+            time.sleep(1.0 * (attempt + 1))
+
 def download_yandex_file_bytes(fpath: str, direct_download_url: str = None) -> bytes:
     """Скачивает содержимое файла с Яндекс.Диска."""
     if direct_download_url:
         try:
-            res = requests.get(direct_download_url, timeout=15)
+            res = safe_yandex_request(requests.get, direct_download_url, timeout=25)
             if res.status_code == 200:
                 return res.content
         except Exception as e:
@@ -83,11 +108,11 @@ def download_yandex_file_bytes(fpath: str, direct_download_url: str = None) -> b
     headers = {"Authorization": f"OAuth {YANDEX_DISK_TOKEN}", "Accept": "application/json"}
     url = "https://cloud-api.yandex.net/v1/disk/resources"
     try:
-        res = requests.get(url, headers=headers, params={"path": fpath}, timeout=15)
+        res = safe_yandex_request(requests.get, url, headers=headers, params={"path": fpath}, timeout=25)
         if res.status_code == 200:
             down_url = res.json().get("file")
             if down_url:
-                file_res = requests.get(down_url, timeout=15)
+                file_res = safe_yandex_request(requests.get, down_url, timeout=25)
                 if file_res.status_code == 200:
                     return file_res.content
     except Exception as e:
@@ -112,7 +137,7 @@ def upload_json_to_yandex_disk(disk_path: str, payload: dict) -> bool:
     params = {"path": disk_path, "overwrite": "true"}
 
     try:
-        res = requests.get(upload_api_url, headers=headers, params=params, timeout=15)
+        res = safe_yandex_request(requests.get, upload_api_url, headers=headers, params=params, timeout=25)
         if res.status_code != 200:
             logger.error(f"[YANDEX DISK UPLOAD ERROR] Не удалось получить href ({res.status_code}): {res.text}")
             return False
@@ -125,7 +150,7 @@ def upload_json_to_yandex_disk(disk_path: str, payload: dict) -> bool:
         json_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8')
         put_headers = {"Content-Type": "application/json; charset=utf-8"}
         
-        put_res = requests.put(upload_href, data=json_bytes, headers=put_headers, timeout=15)
+        put_res = safe_yandex_request(requests.put, upload_href, data=json_bytes, headers=put_headers, timeout=25)
         if put_res.status_code in (200, 201):
             logger.info(f"[YANDEX DISK UPLOAD] Файл кэша '{disk_path}' загружен (Размер: {len(json_bytes)} байт)")
             return True
@@ -173,7 +198,7 @@ def get_all_yandex_disk_files(folder_path: str) -> tuple[list[dict], int]:
         while True:
             params = {"path": current_dir, "limit": limit, "offset": offset}
             try:
-                res = requests.get(url, headers=headers, params=params, timeout=15)
+                res = safe_yandex_request(requests.get, url, headers=headers, params=params, timeout=25)
                 if res.status_code != 200:
                     logger.error(f"[FOLDER WATCHER ERROR] Ошибка получения ресурсов '{current_dir}': {res.status_code}")
                     break
@@ -333,7 +358,7 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
                 continue
 
             text = parse_document_bytes(file_bytes, fname, mime_type)
-            if text and text.strip() and not text.startswith("[Неподдерживаемый") and not text.startswith("[Ошибка") and not text.startswith("[Отказ"):
+            if text and text.strip() and not text.startswith("[Неподдерживаемый") and not text.startswith("[Ошибка") and not text.startswith("[Отказ") and not text.startswith("[Не удалось"):
                 pages_processed += 1
                 raw_chunks = chunk_text(text, chunk_size=1000, overlap=100)
                 file_chunks = [f"--- Файл: {rel_path} ---\n{chunk}" for chunk in raw_chunks]
@@ -425,13 +450,13 @@ def publish_yandex_disk_resource(path: str) -> str:
     
     try:
         # 1. Запрос на публикацию ресурса
-        res = requests.put(publish_url, headers=headers, params={"path": path}, timeout=15)
+        res = safe_yandex_request(requests.put, publish_url, headers=headers, params={"path": path}, timeout=25)
         if res.status_code not in (200, 409):
-            res = requests.post(publish_url, headers=headers, params={"path": path}, timeout=15)
+            res = safe_yandex_request(requests.post, publish_url, headers=headers, params={"path": path}, timeout=25)
 
         # 2. GET запрос к метаданным ресурса для извлечения public_url
         info_url = "https://cloud-api.yandex.net/v1/disk/resources"
-        info_res = requests.get(info_url, headers=headers, params={"path": path}, timeout=15)
+        info_res = safe_yandex_request(requests.get, info_url, headers=headers, params={"path": path}, timeout=25)
         if info_res.status_code == 200:
             public_url = info_res.json().get("public_url", "")
             if public_url:
@@ -461,7 +486,7 @@ def get_yandex_disk_folders(path="/"):
     params = {"path": path, "limit": 100}
 
     try:
-        res = requests.get(url, headers=headers, params=params, timeout=15)
+        res = safe_yandex_request(requests.get, url, headers=headers, params=params, timeout=25)
         if res.status_code == 200:
             data = res.json()
             items = data.get("_embedded", {}).get("items", [])
@@ -571,5 +596,59 @@ def scan_folders():
     else:
         print(f"[FOLDER WATCHER] Обработано новых элементов: {new_count}")
 
+def sync_patient_folder(patient_name: str, max_files: int = None) -> bool:
+    """
+    Точечная синхронизация папки конкретного пациента на Яндекс.Диске через CLI.
+    """
+    clean_name = patient_name.strip().replace("disk:/", "").strip("/")
+    folder_path = f"disk:/{clean_name}"
+
+    print(f"\n============================================================")
+    print(f"[CLI TARGET SYNC] Пациент: '{clean_name}'")
+    print(f"[CLI TARGET SYNC] Путь на Яндекс.Диске: {folder_path}")
+    print(f"============================================================")
+    logger.info(f"[CLI TARGET SYNC] Запуск синхронизации для '{clean_name}' ({folder_path})")
+
+    try:
+        batch_limit = max_files if max_files is not None else 35
+        if max_files == 0:
+            batch_limit = None
+        cache_url = build_and_upload_folder_cache(folder_path, clean_name, max_files_to_process=batch_limit)
+        if cache_url:
+            print(f"[OK] Синхронизация папки '{clean_name}' успешно завершена.")
+            print(f"[OK] Ссылка на кэш: {cache_url}")
+            return True
+        else:
+            print(f"[INFO] Синхронизация завершена: кэш не обновлен или изменений не обнаружено.")
+            return False
+    except Exception as e:
+        print(f"[ERROR] Ошибка точечной синхронизации для '{clean_name}': {e}")
+        logger.error(f"[CLI TARGET SYNC ERROR] {e}")
+        return False
+
+def watcher_loop():
+    """
+    Фоновый бесконечный цикл периодического сканирования с настраиваемым суточным интервалом.
+    """
+    logger.info(f"⏰ [FOLDER WATCHER SCHEDULER] Запущен фоновый воркер (интервал: {FOLDER_SCAN_INTERVAL_HOURS} ч / {FOLDER_SCAN_INTERVAL_SECONDS} с)")
+    while True:
+        try:
+            scan_folders()
+        except Exception as e:
+            logger.error(f"[FOLDER WATCHER SCHEDULER ERROR] Ошибка в цикле сканирования: {e}")
+        time.sleep(FOLDER_SCAN_INTERVAL_SECONDS)
+
 if __name__ == "__main__":
-    scan_folders()
+    import argparse
+    parser = argparse.ArgumentParser(description="ETL-сервис мониторинга и синхронизации папок Яндекс.Диска")
+    parser.add_argument("--patient", type=str, default=None, help="Имя или путь папки конкретного пациента для точечной синхронизации")
+    parser.add_argument("--limit", type=int, default=None, help="Максимальное количество файлов для обработки (по умолчанию все или ETL_MAX_SYNC_BATCH)")
+    parser.add_argument("--daemon", action="store_true", help="Запуск в режиме постоянного фонового демона")
+    args = parser.parse_args()
+
+    if args.patient:
+        sync_patient_folder(args.patient, max_files=args.limit)
+    elif args.daemon:
+        watcher_loop()
+    else:
+        scan_folders()
