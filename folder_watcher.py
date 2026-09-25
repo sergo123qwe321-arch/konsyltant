@@ -241,7 +241,18 @@ def get_all_yandex_disk_files(folder_path: str) -> tuple[list[dict], int]:
 
     return all_files, subfolder_count
 
-def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_to_process: int = None) -> str:
+class CacheUploadResult(str):
+    """
+    Результат сборки кэша. Наследуется от str для полной обратной совместимости,
+    содержит дополнительное поле remaining_files (число оставшихся необработанных файлов).
+    """
+    def __new__(cls, public_url: str = "", remaining_files: int = 0):
+        obj = super().__new__(cls, public_url or "")
+        obj.remaining_files = remaining_files
+        obj.public_url = public_url or ""
+        return obj
+
+def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_to_process: int = None) -> CacheUploadResult:
     """
     Выполняет инкрементальный ETL-процесс для папки пациента с рекурсивным обходом:
     - Рекурсивно сканирует все подпапки Яндекс.Диска.
@@ -321,7 +332,8 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
     if not to_process and not deleted_files and existing_cache and "files" in existing_cache:
         record_etl_log(folder_name, "Все файлы актуальны, изменений нет. Обновление кэша пропущено.")
         logger.info(f"⏭️ Папка '{folder_name}' полностью актуальна, пропуск повторного OCR.")
-        return publish_yandex_disk_resource(cache_disk_path)
+        pub_url = publish_yandex_disk_resource(cache_disk_path)
+        return CacheUploadResult(pub_url or "", remaining_files=0)
 
     # 4. Удаление удаленных файлов из кэша
     for rel_path in deleted_files:
@@ -333,8 +345,10 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
         logger.info(f"Ограничение пакета обработки для '{folder_name}': {max_files_to_process} из {len(to_process)} файлов")
         record_etl_log(folder_name, f"Пакетная обработка: {max_files_to_process} из {len(to_process)} файлов в текущем цикле")
         batch_to_process = to_process[:max_files_to_process]
+        remaining_files = len(to_process) - len(batch_to_process)
     else:
         batch_to_process = to_process
+        remaining_files = 0
 
     # 6. Обработка новых и измененных файлов
     pages_processed = 0
@@ -426,11 +440,11 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
 
     if not uploaded:
         record_etl_log(folder_name, "Ошибка загрузки JSON-кэша на Яндекс.Диск")
-        return ""
+        return CacheUploadResult("", remaining_files=remaining_files)
 
     cache_public_url = publish_yandex_disk_resource(cache_disk_path)
     record_etl_log(folder_name, f"Кэш опубликован: {mask_url(cache_public_url) if cache_public_url else 'N/A'}")
-    return cache_public_url
+    return CacheUploadResult(cache_public_url or "", remaining_files=remaining_files)
 
 def publish_yandex_disk_resource(path: str) -> str:
     """
@@ -596,35 +610,38 @@ def scan_folders():
     else:
         print(f"[FOLDER WATCHER] Обработано новых элементов: {new_count}")
 
-def sync_patient_folder(patient_name: str, max_files: int = None) -> bool:
+def sync_patient_folder(patient_name: str = None, max_files: int = None, patient_folder: str = None, batch_limit: int = None) -> int:
     """
     Точечная синхронизация папки конкретного пациента на Яндекс.Диске через CLI.
+    Возвращает количество оставшихся необработанных файлов (0 если синхронизация полностью завершена).
     """
-    clean_name = patient_name.strip().replace("disk:/", "").strip("/")
+    raw_name = patient_folder or patient_name or ""
+    clean_name = raw_name.strip().replace("disk:/", "").strip("/")
     folder_path = f"disk:/{clean_name}"
 
+    limit = batch_limit if batch_limit is not None else max_files
+    if limit is None:
+        limit = 50
+    elif limit == 0:
+        limit = None
+
     print(f"\n============================================================")
-    print(f"[CLI TARGET SYNC] Пациент: '{clean_name}'")
+    print(f"[CLI TARGET SYNC] Пациент: '{clean_name}' (Лимит батча: {limit})")
     print(f"[CLI TARGET SYNC] Путь на Яндекс.Диске: {folder_path}")
     print(f"============================================================")
     logger.info(f"[CLI TARGET SYNC] Запуск синхронизации для '{clean_name}' ({folder_path})")
 
     try:
-        batch_limit = max_files if max_files is not None else 35
-        if max_files == 0:
-            batch_limit = None
-        cache_url = build_and_upload_folder_cache(folder_path, clean_name, max_files_to_process=batch_limit)
-        if cache_url:
-            print(f"[OK] Синхронизация папки '{clean_name}' успешно завершена.")
-            print(f"[OK] Ссылка на кэш: {cache_url}")
-            return True
-        else:
-            print(f"[INFO] Синхронизация завершена: кэш не обновлен или изменений не обнаружено.")
-            return False
+        cache_res = build_and_upload_folder_cache(folder_path, clean_name, max_files_to_process=limit)
+        remaining = getattr(cache_res, "remaining_files", 0)
+        print(f"[OK] Пакет папки '{clean_name}' обработан. Осталось файлов: {remaining}")
+        if cache_res:
+            print(f"[OK] Ссылка на кэш: {cache_res}")
+        return remaining
     except Exception as e:
         print(f"[ERROR] Ошибка точечной синхронизации для '{clean_name}': {e}")
         logger.error(f"[CLI TARGET SYNC ERROR] {e}")
-        return False
+        return -1
 
 def watcher_loop():
     """
