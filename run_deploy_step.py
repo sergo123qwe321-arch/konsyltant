@@ -12,8 +12,9 @@ ssh.connect('159.194.232.74', port=22, username='root', password=os.getenv('BEGE
 
 script = """
 cd /root/konsyltant
-echo '=== 1. RUN TESTS IN WEB CONTAINER ==='
-docker compose exec web python -m unittest discover -s . -p "test_*.py"
+git reset --hard origin/main
+git rev-parse --short HEAD
+
 
 """
 
