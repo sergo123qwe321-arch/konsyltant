@@ -734,10 +734,52 @@ def scan_folders():
 
     print(f"[FOLDER WATCHER] Сканирование всех пациентов завершено. Новых: {new_count}, синхронизировано: {synced_count}, пропущено без изменений: {skipped_count}")
 
-def sync_patient_folder(patient_name: str = None, max_files: int = None, patient_folder: str = None, batch_limit: int = None) -> int:
+class SyncResult(dict):
+    """
+    Результат синхронизации. Наследуется от dict для поддержки res.get('remaining', 0),
+    но поддерживает сравнение с int (__eq__, __le__, __ge__, __lt__, __gt__) для обратной совместимости.
+    """
+    def __init__(self, remaining: int = 0, **kwargs):
+        super().__init__(remaining=remaining, **kwargs)
+        self.remaining = remaining
+
+    def __int__(self):
+        return self.remaining
+
+    def __eq__(self, other):
+        if isinstance(other, int):
+            return self.remaining == other
+        return super().__eq__(other)
+
+    def __ne__(self, other):
+        if isinstance(other, int):
+            return self.remaining != other
+        return super().__ne__(other)
+
+    def __le__(self, other):
+        if isinstance(other, int):
+            return self.remaining <= other
+        return False
+
+    def __ge__(self, other):
+        if isinstance(other, int):
+            return self.remaining >= other
+        return False
+
+    def __lt__(self, other):
+        if isinstance(other, int):
+            return self.remaining < other
+        return False
+
+    def __gt__(self, other):
+        if isinstance(other, int):
+            return self.remaining > other
+        return False
+
+def sync_patient_folder(patient_name: str = None, max_files: int = None, patient_folder: str = None, batch_limit: int = None) -> SyncResult:
     """
     Точечная синхронизация папки конкретного пациента на Яндекс.Диске через CLI.
-    Возвращает количество оставшихся необработанных файлов (0 если синхронизация полностью завершена).
+    Возвращает объект SyncResult (словарь с ключом 'remaining', сравнимый с целым числом int).
     """
     raw_name = patient_folder or patient_name or ""
     clean_name = raw_name.strip().replace("disk:/", "").strip("/")
@@ -772,11 +814,11 @@ def sync_patient_folder(patient_name: str = None, max_files: int = None, patient
         if cache_res:
             print(f"[OK] Ссылка на кэш: {cache_res}")
         print(f"============================================================\n")
-        return remaining
+        return SyncResult(remaining=remaining, public_url=str(cache_res), total_chunks=tot_chnk)
     except Exception as e:
         print(f"[ERROR] Ошибка точечной синхронизации для '{clean_name}': {e}")
         logger.error(f"[CLI TARGET SYNC ERROR] {e}")
-        return -1
+        return SyncResult(remaining=-1, error=str(e))
 
 def watcher_loop():
     """
