@@ -47,6 +47,7 @@ def main():
     data = json.loads(cache_bytes.decode('utf-8'))
     files = data.get("files", {})
     chunks = data.get("chunks", [])
+    print(f"Итоговый размер кэша: {len(cache_bytes)} байт ({len(cache_bytes) / 1024:.2f} KB)")
     print(f"Общее количество файлов в кэше: {len(files)} (ожидается 594)")
     print(f"Общее количество чанков в кэше: {len(chunks)}")
 
@@ -63,7 +64,16 @@ def main():
         for rel_path, chunk in matches:
             print(f"Файл: '{rel_path}'\nФрагмент:\n{chunk[:300]}...\n")
     else:
-        print("Совпадений со словом «бибуп» не найдено ни в одном из файлов кэша.")
+        print("Совпадений со словом «бибуп» не найдено ни в одном из файлов кэша (0 совпадений).")
+
+    # Проверка ответа RAG-консультанта через ask_consultant
+    print(f"\n=== Проверка ответа RAG-консультанта на вопрос «Что такое бибуп?» ===")
+    try:
+        from rag import ask_consultant
+        reply = ask_consultant("Что такое бибуп?", patient)
+        print(f"Ответ RAG-консультанта:\n{reply}\n")
+    except Exception as ask_err:
+        print(f"Ошибка вызова ask_consultant: {ask_err}")
 
 if __name__ == "__main__":
     main()
