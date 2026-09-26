@@ -246,10 +246,14 @@ class CacheUploadResult(str):
     Результат сборки кэша. Наследуется от str для полной обратной совместимости,
     содержит дополнительное поле remaining_files (число оставшихся необработанных файлов).
     """
-    def __new__(cls, public_url: str = "", remaining_files: int = 0):
+    def __new__(cls, public_url: str = "", remaining_files: int = 0, ocr_processed: int = 0, ocr_chunks: int = 0, total_chunks: int = 0, bibup_count: int = 0):
         obj = super().__new__(cls, public_url or "")
         obj.remaining_files = remaining_files
         obj.public_url = public_url or ""
+        obj.ocr_processed = ocr_processed
+        obj.ocr_chunks = ocr_chunks
+        obj.total_chunks = total_chunks
+        obj.bibup_count = bibup_count
         return obj
 
 def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_to_process: int = None) -> CacheUploadResult:
@@ -312,11 +316,20 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
             c_entry = files_cache[rel_path]
             c_mod = str(c_entry.get("modified") or "")
             c_size = c_entry.get("size")
+            c_chunks = c_entry.get("chunks", [])
+            is_ocr_candidate = rel_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp')) or "допфайлы" in rel_path.lower()
             if c_mod == disk_mod and c_size == disk_size and "chunks" in c_entry:
-                unchanged_files.append(rel_path)
-                continue
+                # Если у кандидата на OCR в кэше 0 чанков и он еще не был обработан в среде с Tesseract (ocr_processed is not True),
+                # отправляем на повторную обработку через установленный в контейнере Tesseract
+                if not c_chunks and is_ocr_candidate and not c_entry.get("ocr_processed"):
+                    pass
+                else:
+                    unchanged_files.append(rel_path)
+                    continue
 
         to_process.append(f_item)
+
+    to_process.sort(key=lambda x: x.get("relative_path", ""))
 
     record_etl_log(
         folder_name,
@@ -333,7 +346,16 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
         record_etl_log(folder_name, "Все файлы актуальны, изменений нет. Обновление кэша пропущено.")
         logger.info(f"⏭️ Папка '{folder_name}' полностью актуальна, пропуск повторного OCR.")
         pub_url = publish_yandex_disk_resource(cache_disk_path)
-        return CacheUploadResult(pub_url or "", remaining_files=0)
+        existing_chunks = existing_cache.get("chunks", [])
+        bibup_count = sum(1 for c in existing_chunks if "бибуп" in c.lower())
+        return CacheUploadResult(
+            pub_url or "",
+            remaining_files=0,
+            ocr_processed=0,
+            ocr_chunks=0,
+            total_chunks=len(existing_chunks),
+            bibup_count=bibup_count
+        )
 
     # 4. Удаление удаленных файлов из кэша
     for rel_path in deleted_files:
@@ -354,6 +376,8 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
     pages_processed = 0
     pages_total = len(batch_to_process)
     errors_count = 0
+    ocr_processed_batch = 0
+    ocr_chunks_batch = 0
 
     for item in batch_to_process:
         rel_path = item.get("relative_path", item.get("name", ""))
@@ -362,6 +386,9 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
         mime_type = item.get("mime_type", "")
         disk_mod = str(item.get("modified") or item.get("md5") or item.get("sha256") or "")
         disk_size = item.get("size")
+        is_ocr = fname.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif', '.webp')) or 'image' in mime_type or 'допфайлы' in rel_path.lower()
+        if is_ocr:
+            ocr_processed_batch += 1
 
         logger.info(f"📄 Обработка файла: '{rel_path}'")
         try:
@@ -376,19 +403,27 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
                 pages_processed += 1
                 raw_chunks = chunk_text(text, chunk_size=1000, overlap=100)
                 file_chunks = [f"--- Файл: {rel_path} ---\n{chunk}" for chunk in raw_chunks]
-                files_cache[rel_path] = {
+                if is_ocr:
+                    ocr_chunks_batch += len(file_chunks)
+                entry_data = {
                     "modified": disk_mod,
                     "size": disk_size if disk_size is not None else len(file_bytes),
                     "chunks": file_chunks
                 }
+                if is_ocr:
+                    entry_data["ocr_processed"] = True
+                files_cache[rel_path] = entry_data
                 record_etl_log(folder_name, f"Успешно обработан '{rel_path}' -> {len(file_chunks)} чанков")
             else:
                 errors_count += 1
-                files_cache[rel_path] = {
+                entry_data = {
                     "modified": disk_mod,
                     "size": disk_size if disk_size is not None else len(file_bytes),
                     "chunks": []
                 }
+                if is_ocr:
+                    entry_data["ocr_processed"] = True
+                files_cache[rel_path] = entry_data
                 record_etl_log(folder_name, f"Файл '{rel_path}' не содержит извлекаемого текста или ошибка формата")
         except Exception as file_err:
             errors_count += 1
@@ -402,6 +437,7 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
         all_chunks.extend(files_cache[rel_path].get("chunks", []))
 
     chunk_count = len(all_chunks)
+    bibup_count = sum(1 for c in all_chunks if "бибуп" in c.lower())
     logger.info(f"🔤 OCR/Парсер завершен: {pages_processed}/{pages_total} файлов обработано, итоговых чанков: {chunk_count}")
     record_etl_log(folder_name, f"OCR/Парсер: {pages_processed}/{pages_total} файлов обработано, создано чанков в кэше: {chunk_count}")
 
@@ -440,11 +476,25 @@ def build_and_upload_folder_cache(folder_path: str, folder_name: str, max_files_
 
     if not uploaded:
         record_etl_log(folder_name, "Ошибка загрузки JSON-кэша на Яндекс.Диск")
-        return CacheUploadResult("", remaining_files=remaining_files)
+        return CacheUploadResult(
+            "",
+            remaining_files=remaining_files,
+            ocr_processed=ocr_processed_batch,
+            ocr_chunks=ocr_chunks_batch,
+            total_chunks=chunk_count,
+            bibup_count=bibup_count
+        )
 
     cache_public_url = publish_yandex_disk_resource(cache_disk_path)
     record_etl_log(folder_name, f"Кэш опубликован: {mask_url(cache_public_url) if cache_public_url else 'N/A'}")
-    return CacheUploadResult(cache_public_url or "", remaining_files=remaining_files)
+    return CacheUploadResult(
+        cache_public_url or "",
+        remaining_files=remaining_files,
+        ocr_processed=ocr_processed_batch,
+        ocr_chunks=ocr_chunks_batch,
+        total_chunks=chunk_count,
+        bibup_count=bibup_count
+    )
 
 def publish_yandex_disk_resource(path: str) -> str:
     """
@@ -708,9 +758,20 @@ def sync_patient_folder(patient_name: str = None, max_files: int = None, patient
     try:
         cache_res = build_and_upload_folder_cache(folder_path, clean_name, max_files_to_process=limit)
         remaining = getattr(cache_res, "remaining_files", 0)
+        ocr_proc = getattr(cache_res, "ocr_processed", 0)
+        ocr_chnk = getattr(cache_res, "ocr_chunks", 0)
+        tot_chnk = getattr(cache_res, "total_chunks", 0)
+        bibup_cnt = getattr(cache_res, "bibup_count", 0)
+
+        print(f"\n============================================================")
         print(f"[OK] Пакет папки '{clean_name}' обработан. Осталось файлов: {remaining}")
+        print(f"[OCR STATS] Распознано графических сканов в батче: {ocr_proc}")
+        print(f"[OCR STATS] Получено текстовых чанков из сканов: {ocr_chnk}")
+        print(f"[OCR STATS] Всего чанков в кэше: {tot_chnk}")
+        print(f"[OCR STATS] Контрольный поиск слова «бибуп» по распознанным текстам: {bibup_cnt} совпадений")
         if cache_res:
             print(f"[OK] Ссылка на кэш: {cache_res}")
+        print(f"============================================================\n")
         return remaining
     except Exception as e:
         print(f"[ERROR] Ошибка точечной синхронизации для '{clean_name}': {e}")
@@ -730,6 +791,7 @@ def watcher_loop():
         time.sleep(FOLDER_SCAN_INTERVAL_SECONDS)
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] %(message)s")
     import argparse
     parser = argparse.ArgumentParser(description="ETL-сервис мониторинга и синхронизации папок Яндекс.Диска")
     parser.add_argument("--patient", type=str, default=None, help="Имя или путь папки конкретного пациента для точечной синхронизации")

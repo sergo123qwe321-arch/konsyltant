@@ -5,9 +5,12 @@ import PyPDF2
 import docx
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf as fitz
 except ImportError:
-    fitz = None
+    try:
+        import fitz
+    except ImportError:
+        fitz = None
 
 try:
     import pdf2image
@@ -95,6 +98,7 @@ def parse_document_bytes(file_bytes: bytes, file_name: str, mime_type: str = "")
             except Exception:
                 ocr_text = pytesseract.image_to_string(image, lang='rus', timeout=60)
 
+            print(f"[SECURE PARSER LOG] Извлечено {len(ocr_text)} символов через Image OCR из '{file_name}'")
             logger.info(f"[SECURE PARSER LOG] Извлечено {len(ocr_text)} символов через Image OCR из '{file_name}'")
             return ocr_text
         except Exception as e:
