@@ -12,7 +12,17 @@ ssh.connect('159.194.232.74', port=22, username='root', password=os.getenv('BEGE
 
 script = """
 cd /root/konsyltant
-docker compose exec web python -c "import os, requests; from dotenv import load_dotenv; load_dotenv(); token=os.getenv('YANDEX_DISK_TOKEN'); h={'Authorization': f'OAuth {token}'}; res=requests.get('https://cloud-api.yandex.net/v1/disk/resources/download?path=disk:/Малышкин Даня/допфайлы/001-2.jpg', headers=h).json(); fbytes=requests.get(res['href']).content; from document_parser import parse_document_bytes; txt=parse_document_bytes(fbytes, '001-2.jpg', 'image/jpeg'); print('extracted len:', len(txt)); print('preview:', repr(txt[:300]))"
+echo '=== 1. SYNC REPO ==='
+git fetch origin main
+git reset --hard origin/main
+
+echo '=== 2. BUILD WEB CONTAINER ==='
+docker compose build web
+docker compose up -d
+sleep 3
+
+echo '=== 3. RUN OCR SYNC FOR МАЛЫШКИН ДАНЯ ==='
+docker compose exec web python folder_watcher.py --patient "Малышкин Даня"
 
 
 
