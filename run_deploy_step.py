@@ -8,23 +8,22 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('159.194.232.74', port=22, username='root', password=os.getenv('BEGET_SSH_PASSWORD'), timeout=10)
+ssh.connect('159.194.232.74', port=22, username='root', password=os.getenv('BEGET_SSH_PASSWORD'), timeout=15)
 
 script = """
 cd /root/konsyltant
-echo '=== 1. FETCH & RESET ==='
-git fetch origin main
-git reset --hard origin/main
+echo '=== 1. DOCKER BUILD WEB ==='
+docker compose build web
 
-echo '=== 2. CHECK COMMIT HASH ==='
-git rev-parse --short HEAD
-git log -n 1 --oneline
+echo '=== 2. DOCKER UP -D ==='
+docker compose up -d
+sleep 4
 
-echo '=== 3. LINT NO TXT LOGS ==='
-python3 scripts/lint_no_txt_logs.py
+echo '=== 3. DOCKER COMPOSE PS ==='
+docker compose ps
 
-echo '=== 4. CURRENT GIT STATUS ==='
-git status
+echo '=== 4. DOCKER LOGS WEB (TAIL 40) ==='
+docker compose logs --tail=40 web
 """
 
 stdin, stdout, stderr = ssh.exec_command(script, get_pty=True)
