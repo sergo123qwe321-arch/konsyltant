@@ -486,8 +486,12 @@ def publish_yandex_disk_resource(path: str) -> str:
     return ""
 
 
-def get_yandex_disk_folders(path="/"):
-    """Сканирует ресурсы Яндекс.Диска по указанному пути, игнорируя системные файлы/папки с '_'"""
+def get_yandex_disk_folders(path="/") -> list[dict]:
+    """
+    Динамически опрашивает корневой каталог Яндекс.Диска (или заданный путь),
+    собирая список всех папок пациентов с поддержкой пагинации (offset)
+    и исключением системных директорий (начинающихся с '_' или '.').
+    """
     if not YANDEX_DISK_TOKEN:
         logger.error("[FOLDER WATCHER ERROR] YANDEX_DISK_TOKEN не задан в .env.")
         return []
@@ -497,31 +501,48 @@ def get_yandex_disk_folders(path="/"):
         "Authorization": f"OAuth {YANDEX_DISK_TOKEN}",
         "Accept": "application/json"
     }
-    params = {"path": path, "limit": 100}
 
-    try:
-        res = safe_yandex_request(requests.get, url, headers=headers, params=params, timeout=25)
-        if res.status_code == 200:
-            data = res.json()
-            items = data.get("_embedded", {}).get("items", [])
-            valid_items = []
-            for item in items:
-                name = item.get("name", "")
-                if name.startswith("_"):
-                    continue
-                if item.get("type") in ("dir", "file"):
-                    valid_items.append(item)
-            return valid_items
-        else:
-            logger.error(f"[FOLDER WATCHER ERROR] Яндекс Диск API вернул статус: {res.status_code}")
-            return []
-    except Exception as e:
-        logger.error(f"[FOLDER WATCHER ERROR] Исключение Яндекс Диск API: {e}")
-        return []
+    valid_folders = []
+    limit = 100
+    offset = 0
+
+    while True:
+        params = {"path": path, "limit": limit, "offset": offset}
+        try:
+            res = safe_yandex_request(requests.get, url, headers=headers, params=params, timeout=25)
+            if res.status_code == 200:
+                data = res.json()
+                embedded = data.get("_embedded", {})
+                items = embedded.get("items", [])
+                if not items:
+                    break
+
+                for item in items:
+                    name = item.get("name", "")
+                    # Исключаем системные и скрытые объекты (начинающиеся с '_' или '.')
+                    if name.startswith("_") or name.startswith("."):
+                        continue
+                    # Пациенты представлены директориями (type == "dir")
+                    if item.get("type") == "dir":
+                        valid_folders.append(item)
+
+                total = embedded.get("total", 0)
+                offset += len(items)
+                if len(items) < limit or (total and offset >= total):
+                    break
+            else:
+                logger.error(f"[FOLDER WATCHER ERROR] Яндекс Диск API вернул статус: {res.status_code} для path='{path}'")
+                break
+        except Exception as e:
+            logger.error(f"[FOLDER WATCHER ERROR] Исключение Яндекс Диск API: {e}")
+            break
+
+    return valid_folders
 
 def scan_folders():
     """
-    Фоновое сканирование новых папок на Яндекс.Диске с высокой отказоустойчивостью и защитой от CWE-532.
+    Фоновое последовательное сканирование всех папок пациентов на Яндекс.Диске с полной доиндексацией
+    (исчерпанием очереди батчами по MAX_SYNC_BATCH с микропаузами) и мгновенным пропуском неизмененных папок.
     """
     update_etl_heartbeat()
     logger.info(f"📋 Исключенные из сканирования папки: {EXCLUDED_FOLDERS}")
@@ -533,27 +554,54 @@ def scan_folders():
         return
 
     new_count = 0
-    for item in items:
+    synced_count = 0
+    skipped_count = 0
+    total_folders = len(items)
+    print(f"[FOLDER WATCHER] Обнаружено {total_folders} папок пациентов на Яндекс.Диске для последовательной обработки.")
+
+    for idx, item in enumerate(items, 1):
         try:
             item_path = item.get("path")
             item_name = item.get("name", "")
             
-            # Дополнительная проверка на фильтрацию объектов с префиксом '_'
-            if item_name.startswith("_"):
+            # Дополнительная проверка на системные папки (начинающиеся с '_' или '.')
+            if item_name.startswith("_") or item_name.startswith("."):
                 print(f"[FOLDER WATCHER IGNORE] Пропуск системного объекта: '{item_name}'")
                 continue
 
-            # Пропуск исключенных папок
+            # Пропуск исключенных системных каталогов (Trash, Корзина, Загрузки и т.д.)
             if not should_process_folder(item_name):
                 continue
-            
+
+            logger.info(f"📁 [{idx}/{total_folders}] Последовательная обработка папки: '{item_name}'")
+
             # Проверяем наличие в базе данных
-            if not folder_exists(item_path):
+            is_new = not folder_exists(item_path)
+
+            if is_new:
                 logger.info(f"🔍 Найдена новая папка: {item_name}")
                 record_etl_log(item_name, f"Обнаружена новая папка: {item_name} ({item_path})")
                 
-                # 1. Выполнение ETL-процесса: сканирование, OCR/парсер, чанкинг, запись в _{folder_name}_cache.json на Яндекс.Диск
-                cache_public_url = build_and_upload_folder_cache(item_path, item_name)
+                # Полная доиндексация новой папки батчами по MAX_SYNC_BATCH (исчерпание очереди)
+                cache_public_url = ""
+                batch_num = 1
+                prev_remaining = None
+                while True:
+                    cache_res = build_and_upload_folder_cache(item_path, item_name, max_files_to_process=MAX_SYNC_BATCH)
+                    if cache_res:
+                        cache_public_url = str(cache_res)
+                    remaining = getattr(cache_res, "remaining_files", 0)
+
+                    if remaining <= 0:
+                        break
+                    if prev_remaining is not None and remaining >= prev_remaining:
+                        logger.warning(f"[{item_name}] Прогресс обработки остановлен (остаток: {remaining}). Завершение регистрации.")
+                        break
+                    prev_remaining = remaining
+
+                    logger.info(f"[{item_name}] Батч #{batch_num} завершен. Осталось файлов: {remaining}. Пауза 1.5с...")
+                    batch_num += 1
+                    time.sleep(1.5)
 
                 # 2. Публикация самой папки на Яндекс.Диске для получения public_url
                 public_url = publish_yandex_disk_resource(item_path)
@@ -594,21 +642,47 @@ def scan_folders():
                 new_count += 1
             else:
                 # Если папка уже зарегистрирована, выполняем дифференциальную синхронизацию кэша
+                # Полная доиндексация батчами до remaining == 0 (исчерпание очереди)
                 try:
                     logger.info(f"🔄 Проверка дифференциальной синхронизации для '{item_name}'...")
-                    build_and_upload_folder_cache(item_path, item_name, max_files_to_process=MAX_SYNC_BATCH)
+                    batch_num = 1
+                    prev_remaining = None
+                    is_first_batch = True
+                    while True:
+                        cache_res = build_and_upload_folder_cache(item_path, item_name, max_files_to_process=MAX_SYNC_BATCH)
+                        remaining = getattr(cache_res, "remaining_files", 0)
+
+                        if is_first_batch:
+                            is_first_batch = False
+                            # Если на первом же шаге remaining == 0, папка полностью актуальна (пропуск за 1 сетевой шаг)
+                            if remaining <= 0:
+                                skipped_count += 1
+                                break
+
+                        if remaining <= 0:
+                            synced_count += 1
+                            break
+
+                        if prev_remaining is not None and remaining >= prev_remaining:
+                            logger.warning(f"[{item_name}] Прогресс обработки остановлен (остаток: {remaining}). Переход к следующему пациенту.")
+                            synced_count += 1
+                            break
+                        prev_remaining = remaining
+
+                        logger.info(f"[{item_name}] Батч #{batch_num} синхронизирован. Осталось файлов: {remaining}. Пауза 1.5с...")
+                        batch_num += 1
+                        time.sleep(1.5)
+
                 except Exception as ex:
                     logger.error(f"[ETL SYNC ERROR] Ошибка синхронизации папки '{item_name}': {ex}")
+
         except Exception as e:
             err_log = f"[ETL ERROR] Сбой обработки папки '{item.get('name', 'N/A')}': {e}"
             logger.error(err_log)
             print(err_log)
             continue
 
-    if new_count == 0:
-        print("[FOLDER WATCHER] Новых необработанных папок нет.")
-    else:
-        print(f"[FOLDER WATCHER] Обработано новых элементов: {new_count}")
+    print(f"[FOLDER WATCHER] Сканирование всех пациентов завершено. Новых: {new_count}, синхронизировано: {synced_count}, пропущено без изменений: {skipped_count}")
 
 def sync_patient_folder(patient_name: str = None, max_files: int = None, patient_folder: str = None, batch_limit: int = None) -> int:
     """
