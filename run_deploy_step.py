@@ -12,18 +12,9 @@ ssh.connect('159.194.232.74', port=22, username='root', password=os.getenv('BEGE
 
 script = """
 cd /root/konsyltant
-echo '=== 1. DOCKER BUILD WEB ==='
-docker compose build web
+echo '=== 1. RUN TESTS IN WEB CONTAINER ==='
+docker compose exec web python -m unittest discover -s . -p "test_*.py"
 
-echo '=== 2. DOCKER UP -D ==='
-docker compose up -d
-sleep 4
-
-echo '=== 3. DOCKER COMPOSE PS ==='
-docker compose ps
-
-echo '=== 4. DOCKER LOGS WEB (TAIL 40) ==='
-docker compose logs --tail=40 web
 """
 
 stdin, stdout, stderr = ssh.exec_command(script, get_pty=True)
