@@ -1,14 +1,234 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Кабинет специалиста</title>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Кабинет специалиста | Центр ментального здоровья «Маленькая Страна»</title>
+    <meta name="description" content="Защищенная рабочая среда врача: просмотр медицинских карт, RAG-консилиум, выписка анализов и клинические заметки."/>
+    <!-- Шрифты -->
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..900;1,300..900&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+    <!-- Стили кабинета врача -->
+    <link rel="stylesheet" href="/static/css/doctor.css"/>
 </head>
 <body>
-    <div id="doctor-root">
-        <h1>Кабинет специалиста</h1>
-        <p>Инициализация автономного модуля...</p>
+    <!-- ВЕРХНЯЯ ПАНЕЛЬ (HEADER) -->
+    <header class="doctor-header">
+        <div class="doctor-header-container">
+            <a href="/" class="doctor-logo" title="На главную страницу центра">
+                <div class="doctor-logo-icon">
+                    <svg height="24" viewBox="0 0 24 24" width="24">
+                        <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4M12,18C8.69,18 6,15.31 6,12C6,10.96 6.26,10 6.74,9.13L11.5,13.88C11.6,14.5 12,15 12.6,15.2C13.2,15.4 13.9,15.2 14.3,14.7L18.1,10.9C18.1,11.26 18.1,11.63 18.1,12C18.1,15.31 15.31,18 12,18Z" fill="#fff"></path>
+                    </svg>
+                </div>
+                <div class="doctor-logo-text">Маленькая<span>Страна</span></div>
+                <span class="doctor-badge">🩺 Doctor Portal</span>
+            </a>
+
+            <div class="doctor-user-bar" id="doctor-user-bar" style="display: none;">
+                <div class="doctor-profile-info">
+                    <div class="doctor-profile-name" id="doc-profile-name">Доктор Центра</div>
+                    <div class="doctor-profile-specialty" id="doc-profile-specialty">Специалист</div>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="logoutDoctor()">Выйти</button>
+            </div>
+            <div class="doctor-guest-bar" id="doctor-guest-bar">
+                <a href="/" class="btn btn-outline btn-sm">← На главную</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ОСНОВНОЙ КОНТЕНТ -->
+    <main class="doctor-main">
+        <!-- ЭКРАН 1: АВТОРИЗАЦИЯ ВРАЧА -->
+        <div id="doctor-auth-view" class="doctor-view active">
+            <div class="doctor-card doctor-login-card">
+                <div class="login-badge-icon">🩺</div>
+                <h2>Вход для специалистов</h2>
+                <p class="login-subtext">Личный кабинет врача и просмотр медицинских карт пациентов центра ментального здоровья.</p>
+
+                <form id="doctor-login-form" onsubmit="handleDoctorLogin(event)">
+                    <div class="form-group">
+                        <label class="form-label" for="doc-login">Логин врача / Email / Лицензия</label>
+                        <input class="form-input" id="doc-login" placeholder="doc_anna или doctor@cmz.site" required autocomplete="username" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="doc-pass">Пароль доступа</label>
+                        <input class="form-input" id="doc-pass" placeholder="••••••••" required type="password" autocomplete="current-password" />
+                    </div>
+                    <div id="doctor-login-error" class="doctor-alert-danger" style="display: none;"></div>
+                    <button class="btn btn-purple btn-block" id="doctor-login-btn" type="submit">
+                        🩺 Войти в кабинет врача
+                    </button>
+                </form>
+
+                <div class="login-security-notice">
+                    <span>🛡️ Доступ защищен требованиями 152-ФЗ и врачебной тайны</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ЭКРАН 2: РАБОЧИЙ ДАШБОРД ВРАЧА -->
+        <div id="doctor-dashboard-view" class="doctor-view" style="display: none;">
+            <div class="doctor-dashboard-container">
+                <!-- ПАНЕЛЬ ПОИСКА / ВВОДА ТОКЕНА ШЕРИНГА -->
+                <div class="doctor-card search-card">
+                    <div class="search-header">
+                        <h4>🔑 Доступ к медицинской карте по ссылке пациента</h4>
+                        <span class="security-pill">152-ФЗ Encrypted</span>
+                    </div>
+                    <div class="search-input-group">
+                        <input class="form-input" id="doc-share-token-input" placeholder="Введите токен шеринга или вставьте ссылку от родителя..." />
+                        <button class="btn btn-purple" id="doc-search-btn" onclick="handleDoctorSearchRecord()">
+                            🔍 Открыть карту
+                        </button>
+                    </div>
+                    <div id="doc-search-error" class="doctor-alert-danger" style="display: none;"></div>
+                </div>
+
+                <!-- ЗАГЛУШКА: КАРТА НЕ ВЫБРАНА -->
+                <div id="doc-record-empty" class="doctor-card empty-card">
+                    <div class="empty-icon">📋</div>
+                    <h3>Медицинская карта не выбрана</h3>
+                    <p>Введите токен шеринга или перейдите по защищенной ссылке, полученной от родителей пациента, для просмотра диагностических файлов и истории.</p>
+                </div>
+
+                <!-- КОНТЕЙНЕР МЕДИЦИНСКОЙ КАРТЫ -->
+                <div id="doc-record-view" style="display: none;">
+                    <!-- ИНФОРМАЦИОННАЯ ПАНЕЛЬ ПАЦИЕНТА -->
+                    <div class="patient-info-bar">
+                        <div class="patient-id-wrap">
+                            <span class="patient-label">Папка пациента:</span>
+                            <strong id="doc-view-patient-id" class="patient-id">-</strong>
+                        </div>
+                        <div class="patient-status-wrap">
+                            <span id="doc-view-expiry" class="status-active">⏱️ Доступ активен</span>
+                        </div>
+                    </div>
+
+                    <!-- СЕТКА ДИАГНОСТИЧЕСКИХ ДОКУМЕНТОВ -->
+                    <div class="doctor-card section-card">
+                        <div class="section-header">
+                            <h4>📁 Документы и результаты диагностики</h4>
+                            <span class="badge-count" id="doc-files-count">Файлы</span>
+                        </div>
+                        <div id="doc-files-grid" class="files-grid">
+                            <!-- Карточки документов генерируются динамически -->
+                        </div>
+                    </div>
+
+                    <!-- СЕКЦИЯ: ЗАМЕТКИ ВРАЧА (DOCTOR NOTES) -->
+                    <div class="doctor-card section-card">
+                        <div class="section-header">
+                            <h4>📝 Клинические заметки врача</h4>
+                            <span id="doc-notes-status" class="notes-status" style="display: none;">✓ Сохранено</span>
+                        </div>
+                        <textarea class="form-input notes-textarea" id="doc-notes-input" placeholder="Введите клинические заметки, план обследования, динамику развития или рекомендации..." rows="4"></textarea>
+                        <div class="section-actions-right">
+                            <button class="btn btn-purple" id="doc-save-notes-btn" onclick="handleSaveDoctorNotes()">
+                                Сохранить заметку 💾
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- СЕКЦИЯ: КЛИНИЧЕСКИЙ КОНСИЛИУМ И СУММАРИЗАЦИЯ (RAG) -->
+                    <div class="doctor-card section-card rag-card">
+                        <div class="section-header-wrap">
+                            <div>
+                                <h4>🩺 Клинический консилиум (RAG-резюме)</h4>
+                                <p class="section-subtext">Автоматический доказательный анализ документов и формирование заключения на базе GigaChat</p>
+                            </div>
+                            <div class="header-buttons">
+                                <button class="btn btn-turquoise" id="doc-generate-summary-btn" onclick="handleDoctorGenerateSummary()">
+                                    Сгенерировать резюме 🩺
+                                </button>
+                                <button class="btn btn-purple" id="doc-download-pdf-btn" onclick="handleDoctorDownloadSummaryPdf()" style="display: none;">
+                                    Скачать PDF 📄
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="doc-summary-loading" class="loading-state" style="display: none;">
+                            <div class="spinner">⏳</div>
+                            <div class="loading-text">Консилиум анализирует документы...</div>
+                        </div>
+
+                        <div id="doc-summary-container" class="summary-cards-container" style="display: none;">
+                            <!-- Структурированные карточки заключения -->
+                        </div>
+                    </div>
+
+                    <!-- СЕКЦИЯ: ХРОНОЛОГИЯ АНАЛИЗОВ И ИССЛЕДОВАНИЙ -->
+                    <div class="doctor-card section-card">
+                        <div class="section-header-wrap">
+                            <div>
+                                <h4>📊 Хронология анализов и лабораторных показателей</h4>
+                                <p class="section-subtext">Автоматическое извлечение динамики показателей, нормы и отклонений с экспортом в DOCX</p>
+                            </div>
+                            <div class="header-buttons">
+                                <button class="btn btn-purple" id="doc-generate-analyses-btn" onclick="handleDoctorGenerateAnalyses()">
+                                    Сформировать анализы 📊
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="doc-analyses-loading" class="loading-state" style="display: none;">
+                            <div class="spinner">⏳</div>
+                            <div class="loading-text">Извлекаем лабораторные показатели из сканов...</div>
+                        </div>
+
+                        <div id="doc-analyses-result" class="analyses-result-box" style="display: none;">
+                            <div class="result-actions">
+                                <button class="btn btn-turquoise btn-sm" id="doc-analyses-preview-btn" onclick="openAnalysesPreviewModal()">
+                                    Посмотреть в браузере 👁️
+                                </button>
+                                <button class="btn btn-outline btn-sm" id="doc-analyses-download-btn" onclick="handleDoctorDownloadLatestAnalysesDocx()">
+                                    Скачать DOCX 📄
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="doc-analyses-history" class="analyses-history-wrap">
+                            <h5 class="history-title">Ранее сгенерированные выписки:</h5>
+                            <div id="doc-analyses-list" class="analyses-history-list">
+                                <!-- Список сохраненных выписок -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ЮРИДИЧЕСКИЙ БЛОК БЕЗОПАСНОСТИ -->
+                    <div class="doctor-card security-box">
+                        <h5 class="security-title">💡 Регламент врачебной тайны и 152-ФЗ:</h5>
+                        <p class="security-text">
+                            Все медицинские документы защищены сквозным шифрованием. Доступ предоставлен исключительно для клинического анализа авторизованными специалистами центра «Маленькая Страна». Передача третьим лицам запрещена законом.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- МОДАЛЬНОЕ ОКНО ПРЕДПРОСМОТРА ТАБЛИЦЫ АНАЛИЗОВ -->
+    <div class="doctor-modal" id="analyses-preview-modal" style="display: none;">
+        <div class="doctor-modal-backdrop" onclick="closeAnalysesPreviewModal()"></div>
+        <div class="doctor-modal-content">
+            <button class="modal-close-btn" onclick="closeAnalysesPreviewModal()">×</button>
+            <div class="modal-header">
+                <h3>📊 Хронология анализов пациента</h3>
+                <p>Структурированная таблица медицинских показателей, норм и динамики</p>
+            </div>
+            <div id="analyses-preview-table-container" class="preview-table-wrap"></div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeAnalysesPreviewModal()">Закрыть</button>
+                <button class="btn btn-purple" id="analyses-modal-download-btn" onclick="handleDoctorDownloadLatestAnalysesDocx()">
+                    Скачать DOCX 📄
+                </button>
+            </div>
+        </div>
     </div>
+
+    <!-- Клиентский скрипт кабинета врача -->
+    <script src="/static/js/doctor.js" defer></script>
 </body>
 </html>
