@@ -1074,10 +1074,25 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 13.206s).
   - Локальный коммит (без деплоя): `feat(admin): integrate full layout and standalone css for /admin`.
+- [2026-10-09] [Stage 2 - Step 2.3: Standalone static/js/admin.js Logic]:
+  - Создан автономный файл `static/js/admin.js` (58 352 байта, ~1050 строк, LF) переносом логики из `static/js/app.js` (блок «5. ПАНЕЛЬ АДМИНИСТРАТОРА (CMS)», строки 604–1673) с адаптацией под изолированную страницу:
+    - Локальная копия `escapeHtml` (без зависимостей от лендингового `app.js`); все шаблоны вывода экранируют пользовательские данные (ФИО врачей, заявки, посты, метрики, имена модерации).
+    - Экраны вместо модалок: `showAdminView('login'|'dashboard')` переключает класс `active` у `#admin-login-view`/`#admin-dashboard-view` и панели шапки `#admin-user-bar`/`#admin-guest-bar`; `openModal`/`closeModal` не используются.
+    - `handleAdminLogin` читает поля `#admin-username`/`#admin-password` (вместо `#admin-user`/`#admin-pass`), сохраняет `admin_token` в sessionStorage/localStorage, сбрасывает форму и загружает `loadAdminLeads()` + `loadAdminDoctors()`; `logoutAdmin` чистит токены и возвращает на экран входа.
+    - `switchAdminTab` переключает классы `active` у `.admin-tab-pane`/`#tab-btn-*` (согласно `admin.css`: `.admin-tab-pane{display:none}` / `.active{display:flex}`), очищая inline-стили, и подгружает данные вкладки: заявки, специалисты, блог, операции+бэкапы, модерация.
+    - Перенесены все 5 групп функций вкладок: заявки (`loadAdminLeads`), врачи (`loadAdminDoctors`, `handleRegisterDoctor`), блог (`loadAdminPosts`, `openPostEditor`, `closePostEditor`, `editPost`, `handleSavePost`, `deletePost`, `updateCoverPreview`, `checkAdminMediaUrl`, `handleAdminUploadFile`), операции (`loadAdminOperations` — карточки Yandex Disk/ETL/GigaChat/алерты, `handleTestAlert`, `loadAdminBackups`, `handleCreateBackup`), модерация (`loadAdminModerationQueue`, `approveModerationMessage`, `deleteModerationMessage`, `banUserFromModeration`).
+    - Убраны перекрестные ссылки на лендинг: после сохранения/удаления статьи вызывается только `loadAdminPosts()` (без `renderLatestPosts`/`renderBlog`), после модерации — без `loadCommunityChatMessages()`; при истекшей сессии — `showAdminView('login')` вместо `openModal('admin-login-modal')`.
+    - Экспорт всех функций в `window.*` для inline `onclick`/`onsubmit` из `admin.html`; инициализация на `DOMContentLoaded`: по наличию токена — экран дашборда + `loadAdminLeads()`/`loadAdminDoctors()`, иначе — экран входа.
+  - Директива запрета соблюдена: `templates/index.html` и `static/js/app.js` не изменялись; API-эндпоинты не переносились.
+  - Синтаксис: `node --check static/js/admin.js` — OK (0 ошибок).
+  - Smoke-проверка (TestClient): `GET /static/js/admin.js` → 200 OK (58 352 байта), `GET /admin` → 200 OK (подключен `admin.js`, присутствуют `admin-login-view` и `admin-tab-ops`), `GET /admin/` → 200 OK.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 16.553s).
+  - Локальный коммит (без деплоя): `feat(admin): create standalone static/js/admin.js logic`.
 - **Текущее состояние:**
-  - Роут `/admin` отдает полноценный изолированный интерфейс CMS (HTML + автономный CSS, все 5 вкладок, 166/166 PASS); JS-логика панели еще не подключена (шаг 2.3); лендинг нетронут.
+  - Роут `/admin` отдает полностью автономный интерфейс CMS: HTML + изолированный CSS + изолированная JS-логика (`admin.js`, все 5 вкладок, синтаксис OK, 166/166 PASS); лендинг нетронут (демонтаж модалки — следующий шаг).
 - **Что предстоит:**
-  - Шаг 2.3: перенос JavaScript-логики админки в `static/js/admin.js`; затем демонтаж модалки с лендинга и адаптация `test_landing_and_admin_ops.py`.
+  - Шаг 2.4: демонтаж админ-модалки с лендинга (`templates/index.html` + `static/js/app.js`) и адаптация `test_landing_and_admin_ops.py` (хардкод `id="admin-tab-ops"` в HTML лендинга).
   - Деплой пакета изоляции (Этапы 1–2) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 
