@@ -1060,10 +1060,24 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 13.230s).
   - Локальный коммит (без деплоя): `feat(admin): add standalone /admin route and template scaffold`.
+- [2026-10-09] [Stage 2 - Step 2.2: Full Layout & Standalone CSS for /admin]:
+  - Шаблон `templates/admin.html` наполнен полной автономной разметкой панели администратора (скелет с `#admin-root` заменен): шапка портала, экран авторизации (`#admin-login-view`: форма `#admin-login-form` с полями `#admin-username`, `#admin-password`, выводом ошибок `#admin-login-error` и кнопкой `#admin-login-btn`) и рабочий дашборд (`#admin-dashboard-view`) с переключением 5 вкладок через `switchAdminTab`:
+    - Вкладка «Заявки»: `#admin-tab-leads`, `#admin-leads-list`, счётчик `#leads-counter`;
+    - Вкладка «Специалисты»: `#admin-tab-doctors`, форма регистрации `#admin-doctor-reg-form` (поля `doc-reg-fullname/specialty/email/phone/license`, `#doc-reg-submit-btn`, `#doc-reg-result-box`), список `#admin-doctors-list`, счётчик `#doctors-counter`;
+    - Вкладка «Блог»: `#admin-tab-posts`, редактор `#admin-post-editor` с формой `#post-editor-form` (поля `edit-post-*`, загрузка файлов, проверка URL медиа), список `#admin-posts-list`;
+    - Вкладка «Операции»: `#admin-tab-ops`, `#admin-ops-content` (метрики ETL/LLM/Yandex Disk) и карточка резервного копирования (`#btn-create-backup`, `#admin-backup-action-status`, `#admin-backups-container`);
+    - Вкладка «Модерация»: `#admin-tab-moderation`, `#admin-moderation-list`, счётчик `#moderation-counter`.
+  - В `<head>` подключены автономные стили `<link rel="stylesheet" href="/static/css/admin.css">`; в конце `<body>` — `<script src="/static/js/admin.js" defer>` на будущий шаг 2.3 (JS-логика на данном шаге сознательно не создается).
+  - Создан файл стилей `static/css/admin.css` (~620 строк): изолированная тема (CSS-переменные `--bg-deep`, `--accent-purple`, `--accent-turquoise` и др., без зависимостей от `style.css` лендинга) — шапка, авторизация, карточки, формы и грид регистрации, кнопки, вкладки, плейсхолдеры списков, операционная панель и бэкапы, алерты/бейджи (`admin-alert-*`, `badge-ok/pending/danger`), адаптив для мобильных.
+  - Директива запрета соблюдена: `templates/index.html` и `static/js/app.js` не изменялись; API-эндпоинты и логика не переносились.
+  - Smoke-проверка (TestClient): `GET /admin` → 200 OK (развернутый HTML 17.2 КБ, все 5 вкладок и ключевые ID присутствуют — 21/21 маркеров OK), `GET /admin/` → 200 OK, `GET /static/css/admin.css` → 200 OK (11.0 КБ).
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 13.206s).
+  - Локальный коммит (без деплоя): `feat(admin): integrate full layout and standalone css for /admin`.
 - **Текущее состояние:**
-  - Этап 2 стартовал: роут `/admin` отдает автономный скелет `admin.html` (HTTP 200), лендинг и существующие тесты нетронуты (166/166 PASS); кабинет `/doctor` остается полностью рабочим.
+  - Роут `/admin` отдает полноценный изолированный интерфейс CMS (HTML + автономный CSS, все 5 вкладок, 166/166 PASS); JS-логика панели еще не подключена (шаг 2.3); лендинг нетронут.
 - **Что предстоит:**
-  - Шаг 2.2: наполнение `admin.html` полной разметкой CMS + автономный `admin.css`; шаг 2.3: перенос JS-логики в `admin.js`; затем демонтаж модалки с лендинга и адаптация `test_landing_and_admin_ops.py`.
+  - Шаг 2.3: перенос JavaScript-логики админки в `static/js/admin.js`; затем демонтаж модалки с лендинга и адаптация `test_landing_and_admin_ops.py`.
   - Деплой пакета изоляции (Этапы 1–2) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 

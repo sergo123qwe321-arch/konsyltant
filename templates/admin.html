@@ -3,12 +3,250 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Панель управления (CMS)</title>
+    <title>Панель управления (CMS) | Центр ментального здоровья «Маленькая Страна»</title>
+    <meta name="description" content="Защищенная административная панель: заявки, специалисты, блог, операционные метрики и модерация сообщества."/>
+    <!-- Автономные стили панели администратора -->
+    <link rel="stylesheet" href="/static/css/admin.css">
 </head>
 <body>
-    <div id="admin-root">
-        <h1>Панель управления (CMS)</h1>
-        <p>Инициализация автономного модуля...</p>
-    </div>
+    <!-- ВЕРХНЯЯ ПАНЕЛЬ (HEADER) -->
+    <header class="admin-header">
+        <div class="admin-header-container">
+            <a href="/" class="admin-logo" title="На главную страницу центра">
+                <div class="admin-logo-icon">
+                    <svg height="24" viewBox="0 0 24 24" width="24">
+                        <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4M12,18C8.69,18 6,15.31 6,12C6,10.96 6.26,10 6.74,9.13L11.5,13.88C11.6,14.5 12,15 12.6,15.2C13.2,15.4 13.9,15.2 14.3,14.7L18.1,10.9C18.1,11.26 18.1,11.63 18.1,12C18.1,15.31 15.31,18 12,18Z" fill="#fff"></path>
+                    </svg>
+                </div>
+                <div class="admin-logo-text">Маленькая<span>Страна</span></div>
+                <span class="admin-badge">🎛️ Admin Portal</span>
+            </a>
+
+            <div class="admin-user-bar" id="admin-user-bar" style="display: none;">
+                <span class="admin-user-label">Администратор</span>
+                <button class="btn btn-outline btn-sm" onclick="logoutAdmin()">Выйти</button>
+            </div>
+            <div class="admin-guest-bar" id="admin-guest-bar">
+                <a href="/" class="btn btn-outline btn-sm">← На главную</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ОСНОВНОЙ КОНТЕНТ -->
+    <main class="admin-main" id="admin-root">
+        <!-- ЭКРАН 1: АВТОРИЗАЦИЯ АДМИНИСТРАТОРА -->
+        <div id="admin-login-view" class="admin-view active">
+            <div class="admin-card admin-login-card">
+                <div class="login-badge-icon">🎛️</div>
+                <h2>Панель Управления (CMS)</h2>
+                <p class="login-subtext">Управление заявками, публикациями, специалистами и операционной аналитикой центра.</p>
+
+                <form id="admin-login-form" onsubmit="handleAdminLogin(event)">
+                    <div class="form-group">
+                        <label class="form-label" for="admin-username">Логин администратора</label>
+                        <input class="form-input" id="admin-username" placeholder="admin@cmz.site" required autocomplete="username" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="admin-password">Пароль</label>
+                        <input class="form-input" id="admin-password" placeholder="••••••••" required type="password" autocomplete="current-password" />
+                    </div>
+                    <div id="admin-login-error" class="admin-alert-danger" style="display: none;"></div>
+                    <button class="btn btn-purple btn-block" id="admin-login-btn" type="submit">
+                        Войти в CMS 🚀
+                    </button>
+                </form>
+
+                <div class="login-security-notice">
+                    <span>🛡️ Доступ только для уполномоченных администраторов центра</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ЭКРАН 2: РАБОЧИЙ ДАШБОРД АДМИНИСТРАТОРА -->
+        <div id="admin-dashboard-view" class="admin-view" style="display: none;">
+            <div class="admin-dashboard-container">
+                <!-- ШАПКА ДАШБОРДА -->
+                <div class="admin-card dashboard-header-card">
+                    <div class="dashboard-title-wrap">
+                        <h3 class="dashboard-title">🎛️ CMS «Маленькая Страна»</h3>
+                        <span class="mode-pill">Admin Mode</span>
+                    </div>
+                    <button class="btn btn-outline btn-sm" onclick="logoutAdmin()">Выйти</button>
+                </div>
+
+                <!-- НАВИГАЦИЯ ПО ВКЛАДКАМ -->
+                <div class="admin-tabs" id="admin-tabs">
+                    <button class="btn btn-turquoise tab-btn active" id="tab-btn-leads" onclick="switchAdminTab('leads')">📋 Заявки с сайта (<span id="leads-counter">0</span>)</button>
+                    <button class="btn btn-outline tab-btn" id="tab-btn-doctors" onclick="switchAdminTab('doctors')">🩺 Специалисты и врачи (<span id="doctors-counter">0</span>)</button>
+                    <button class="btn btn-outline tab-btn" id="tab-btn-posts" onclick="switchAdminTab('posts')">✍️ Управление блогом</button>
+                    <button class="btn btn-outline tab-btn" id="tab-btn-ops" onclick="switchAdminTab('ops')">📊 Операционная панель</button>
+                    <button class="btn btn-outline tab-btn" id="tab-btn-moderation" onclick="switchAdminTab('moderation')">🛡️ Модерация (<span id="moderation-counter">0</span>)</button>
+                </div>
+
+                <!-- ВКЛАДКА 1: ЗАЯВКИ С САЙТА -->
+                <div id="admin-tab-leads" class="admin-tab-pane active">
+                    <div class="tab-pane-header">
+                        <h4 class="tab-pane-title">Входящие заявки от родителей</h4>
+                        <button class="btn btn-outline btn-sm" onclick="loadAdminLeads()">🔄 Обновить</button>
+                    </div>
+                    <div id="admin-leads-list" class="items-list">
+                        <div class="list-placeholder">Загрузка заявок...</div>
+                    </div>
+                </div>
+
+                <!-- ВКЛАДКА 2: СПЕЦИАЛИСТЫ И ВРАЧИ -->
+                <div id="admin-tab-doctors" class="admin-tab-pane" style="display: none;">
+                    <!-- Форма регистрации врача -->
+                    <div class="admin-card section-card">
+                        <h5 class="section-card-title"><span>🩺</span> Зарегистрировать нового врача / специалиста</h5>
+                        <form id="admin-doctor-reg-form" onsubmit="handleRegisterDoctor(event)">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label" for="doc-reg-fullname">ФИО специалиста *</label>
+                                    <input class="form-input" id="doc-reg-fullname" placeholder="Например: Сергеева Ольга Дмитриевна" required />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="doc-reg-specialty">Специализация *</label>
+                                    <input class="form-input" id="doc-reg-specialty" placeholder="Например: Детский клинический психолог" required />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="doc-reg-email">Email для отправки доступов *</label>
+                                    <input class="form-input" id="doc-reg-email" type="email" placeholder="doctor@cmz.site" required />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="doc-reg-phone">Номер телефона (опционально)</label>
+                                    <input class="form-input" id="doc-reg-phone" placeholder="+7 (999) 123-45-67" />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="doc-reg-license">Номер лицензии (опционально)</label>
+                                    <input class="form-input" id="doc-reg-license" placeholder="Оставьте пустым для автогенерации DOC-XXXXXX" />
+                                </div>
+                            </div>
+                            <div class="form-actions-row">
+                                <span class="form-hint">🛡️ Временный пароль сгенерируется автоматически и будет отправлен на указанный email с копией на почту клиники.</span>
+                                <button class="btn btn-purple" id="doc-reg-submit-btn" type="submit">
+                                    Зарегистрировать врача и отправить доступы ✉️
+                                </button>
+                            </div>
+                        </form>
+                        <!-- Блок статуса регистрации -->
+                        <div id="doc-reg-result-box" class="reg-result-box" style="display: none;"></div>
+                    </div>
+
+                    <!-- Список действующих врачей -->
+                    <div class="tab-pane-header">
+                        <h4 class="tab-pane-title">Действующие специалисты клиники</h4>
+                        <button class="btn btn-outline btn-sm" onclick="loadAdminDoctors()">🔄 Обновить список</button>
+                    </div>
+                    <div id="admin-doctors-list" class="items-list">
+                        <div class="list-placeholder">Загрузка списка специалистов... ⏳</div>
+                    </div>
+                </div>
+
+                <!-- ВКЛАДКА 3: УПРАВЛЕНИЕ БЛОГОМ -->
+                <div id="admin-tab-posts" class="admin-tab-pane" style="display: none;">
+                    <div class="tab-pane-header">
+                        <h4 class="tab-pane-title">Публикации и статьи</h4>
+                        <button class="btn btn-purple btn-sm" onclick="openPostEditor()">+ Добавить статью</button>
+                    </div>
+
+                    <div id="admin-post-editor" class="admin-card section-card" style="display: none;">
+                        <h5 id="editor-title-heading" class="section-card-title">Создать новую статью</h5>
+                        <form id="post-editor-form" onsubmit="handleSavePost(event)">
+                            <input id="edit-post-id" type="hidden" value=""/>
+                            <div class="form-group">
+                                <label class="form-label" for="edit-post-title">Заголовок статьи</label>
+                                <input class="form-input" id="edit-post-title" placeholder="Например: Как мягко подтолкнуть речь..." required/>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="edit-post-tags">Теги (через запятую)</label>
+                                <input class="form-input" id="edit-post-tags" placeholder="Развитие речи, Игры"/>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Обложка статьи (Внешний URL или локальный файл)</label>
+                                <div class="media-input-row">
+                                    <input class="form-input" id="edit-post-cover" placeholder="Вставьте ссылку (Rutube/VK/YouTube/Dzen) или загрузите файл" oninput="updateCoverPreview()"/>
+                                    <input type="file" id="edit-post-cover-file" accept="image/*,video/*" style="display: none;" onchange="handleAdminUploadFile('edit-post-cover-file', 'edit-post-cover')"/>
+                                    <button class="btn btn-turquoise btn-sm" type="button" onclick="document.getElementById('edit-post-cover-file').click()">📁 Загрузить файл</button>
+                                    <button class="btn btn-outline btn-sm" type="button" onclick="checkAdminMediaUrl('edit-post-cover', 'image')">Проверить ссылку 🔍</button>
+                                </div>
+                                <div id="edit-post-cover-preview" class="cover-preview-wrap" style="display: none;">
+                                    <img id="cover-preview-img" src="" alt="Превью"/>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="edit-post-video">Видеоматериал (Внешний URL или локальное видео)</label>
+                                <div class="media-input-row">
+                                    <input class="form-input" id="edit-post-video" placeholder="Ссылка на видео (Rutube, YouTube, VK Video, Dzen) или локальный файл"/>
+                                    <input type="file" id="edit-post-video-file" accept="video/*" style="display: none;" onchange="handleAdminUploadFile('edit-post-video-file', 'edit-post-video')"/>
+                                    <button class="btn btn-turquoise btn-sm" type="button" onclick="document.getElementById('edit-post-video-file').click()">📁 Загрузить видео</button>
+                                    <button class="btn btn-outline btn-sm" type="button" onclick="checkAdminMediaUrl('edit-post-video', 'video')">Проверить ссылку 🔍</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="edit-post-summary">Краткий анонс</label>
+                                <textarea class="form-input" id="edit-post-summary" placeholder="Краткое описание статьи для карточки..." required rows="2"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="edit-post-content">Полный текст статьи</label>
+                                <textarea class="form-input" id="edit-post-content" placeholder="Подробный текст статьи с практическими упражнениями..." required rows="6"></textarea>
+                            </div>
+                            <div class="form-actions-row right">
+                                <button class="btn btn-outline" onclick="closePostEditor()" type="button">Отмена</button>
+                                <button class="btn btn-turquoise" id="save-post-btn" type="submit">Сохранить статью 💾</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div id="admin-posts-list" class="items-list">
+                        <!-- Список статей админки -->
+                    </div>
+                </div>
+
+                <!-- ВКЛАДКА 4: ОПЕРАЦИОННАЯ ПАНЕЛЬ -->
+                <div id="admin-tab-ops" class="admin-tab-pane" style="display: none;">
+                    <div class="tab-pane-header">
+                        <h4 class="tab-pane-title">📊 Метрики системы и наблюдаемость</h4>
+                        <button class="btn btn-outline btn-sm" onclick="loadAdminOperations(); loadAdminBackups();">🔄 Обновить данные</button>
+                    </div>
+                    <div id="admin-ops-content" class="ops-content">
+                        <div class="list-placeholder">Загрузка операционных метрик... ⏳</div>
+                    </div>
+
+                    <!-- Карточка: Резервное копирование БД (152-ФЗ) -->
+                    <div class="admin-card backup-card">
+                        <div class="backup-card-header">
+                            <div>
+                                <h5 class="backup-card-title">📦 Резервное копирование БД (152-ФЗ)</h5>
+                                <div class="backup-card-subtext">Сжатые дампы PostgreSQL (.sql.gz) с гарантией сохранности медицинских карт и авторотацией</div>
+                            </div>
+                            <div class="backup-card-actions">
+                                <span class="badge-rotation">🛡️ Ротация: 7 дней / макс. 7 копий</span>
+                                <button id="btn-create-backup" class="btn btn-turquoise" onclick="handleCreateBackup()">📦 Создать резервный снимок</button>
+                            </div>
+                        </div>
+                        <div id="admin-backup-action-status" class="backup-status" style="display: none;"></div>
+                        <div id="admin-backups-container">
+                            <div class="list-placeholder">Загрузка списка резервных копий... ⏳</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ВКЛАДКА 5: МОДЕРАЦИЯ ОТКРЫТОГО ЧАТА -->
+                <div id="admin-tab-moderation" class="admin-tab-pane" style="display: none;">
+                    <div class="tab-pane-header">
+                        <h4 class="tab-pane-title">🛡️ Очередь модерации внешних ссылок</h4>
+                        <button class="btn btn-outline btn-sm" onclick="loadAdminModerationQueue()">🔄 Обновить очередь</button>
+                    </div>
+                    <div id="admin-moderation-list" class="items-list">
+                        <div class="list-placeholder">Загрузка сообщений на проверку... ⏳</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Клиентский скрипт панели администратора -->
+    <script src="/static/js/admin.js" defer></script>
 </body>
 </html>
