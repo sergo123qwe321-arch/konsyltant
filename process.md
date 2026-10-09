@@ -1015,10 +1015,21 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 163 из 163 тестов PASS (100% OK за 13.461s).
   - Локальный коммит (без деплоя): `feat(doctor): integrate full layout and standalone css for /doctor`.
+- [2026-10-09] [Stage 1 - Step 2.1.3: Standalone static/js/doctor.js Logic]:
+  - Создан автономный скрипт `static/js/doctor.js` (~730 строк): логика обслуживания врача перенесена из `static/js/app.js` (строки 1565–2262 и 3142–3160) и адаптирована под отдельную страницу `/doctor` (переключение view-экранов `#doctor-auth-view` / `#doctor-dashboard-view` вместо модалок лендинга; открытие/закрытие модалки предпросмотра анализов через прямое управление `style.display`).
+  - Инициализированное состояние: `currentDoctorPatientFolderId`, `currentDoctorShareToken`, `currentLatestAnalysesDocId`, `currentLatestAnalysesData`; ключ токена врача в localStorage — `doctor_token` (плюс `doctor_id`, `doctor_name`, `doctor_specialty`).
+  - Модули логики: авторизация и сессия (`handleDoctorLogin`, `showDoctorDashboard`, `showDoctorAuthView`, `logoutDoctor`); работа с медкартой (`handleDoctorSearchRecord`, `loadDoctorPatientRecord`, `viewDoctorDocument`, `downloadDoctorDocument` с Яндекс.Диска); клинические заметки (`loadDoctorNotes`, `handleSaveDoctorNotes`); RAG-консилиум GigaChat (`handleDoctorGenerateSummary`, `handleDoctorDownloadSummaryPdf`); хронология анализов (`handleDoctorGenerateAnalyses`, `loadDoctorPatientAnalysesHistory`, `openAnalysesPreviewModal`, `closeAnalysesPreviewModal`, `downloadDoctorAnalysesDocx`, `handleDoctorDownloadLatestAnalysesDocx`, `deleteDoctorAnalysesDoc`).
+  - Инициализация на `DOMContentLoaded`: автономная проверка сохраненного JWT врача (валиден → дашборд, отсутствует → форма авторизации) и deep-linking query-параметра `share_token` (`/doctor/?share_token=XYZ` — автоподстановка в поле поиска и загрузка карты; при неавторизованном доступе токен запоминается в `pending_share_token` и карта откроется сразу после логина).
+  - Все обработчики, используемые inline-`onclick`/`onsubmit` в `templates/doctor.html`, экспортированы на глобальную область видимости (классический скрипт, не module).
+  - Директива запрета соблюдена: `templates/index.html` и `static/js/app.js` не изменялись.
+  - Smoke-проверка: `GET /static/js/doctor.js` → 200 OK (35.8 КБ), `GET /doctor` → 200 OK; синтаксис подтвержден `node --check` (JS SYNTAX OK); все ключевые модули и deep-link инициализация присутствуют.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 163 из 163 тестов PASS (100% OK за 13.933s).
+  - Локальный коммит (без деплоя): `feat(doctor): create standalone static/js/doctor.js logic`.
 - **Текущее состояние:**
-  - Роут `/doctor` отдает полноценный изолированный кабинет специалиста (HTML + автономный CSS, 163/163 тестов PASS); JS-логика кабинета еще не подключена (шаг 2.1.3).
+  - Автономный кабинет `/doctor` полностью функционален на уровне клиента: разметка + изолированные стили + собственный JS (логин, медкарта, заметки, RAG-консилиум, анализы, deep-linking share_token); лендинг продолжает работать на прежнем `app.js` (163/163 тестов PASS).
 - **Что предстоит:**
-  - Шаг 2.1.3: перенос JavaScript-логики кабинета в `static/js/doctor.js` и очистка лендинга по директиве Архитектора.
+  - Следующие шаги Этапа 1: интеграционная проверка сценариев кабинета, затем очистка лендинга от докторской логики по директиве Архитектора («Add before Remove»).
 
 
 
