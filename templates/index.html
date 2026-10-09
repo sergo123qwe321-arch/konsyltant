@@ -50,9 +50,9 @@
 <a class="btn btn-turquoise" href="/app/" id="parent-login" style="padding: 10px 20px; font-size: 0.9rem;">
                         🤖 Вход для родителей
                     </a>
-<button class="btn btn-outline" onclick="openModal('doctor-modal')" style="padding: 10px 20px; font-size: 0.9rem;">
+<a class="btn btn-outline" href="/doctor" style="padding: 10px 20px; font-size: 0.9rem;">
                         🩺 Для специалистов
-                    </button>
+                    </a>
 </div>
 </nav>
 </div>
@@ -305,7 +305,7 @@
                     <div id="community-auth-actions" style="display: inline;">
                         <span style="color: var(--text-muted); font-size: 0.8rem; margin-right: 6px;">Писать без ограничений:</span>
                         <a href="javascript:void(0)" onclick="openModal('parent-modal')" style="color: #34D399; text-decoration: underline; margin-right: 8px;">🧸 Родитель</a>
-                        <a href="javascript:void(0)" onclick="openDoctorModal()" style="color: #F87171; text-decoration: underline; margin-right: 8px;">🩺 Врач</a>
+                        <a href="/doctor" style="color: #F87171; text-decoration: underline; margin-right: 8px;">🩺 Врач</a>
                         <a href="javascript:void(0)" onclick="openAdminModal()" style="color: #C084FC; text-decoration: underline;">🔐 Админ</a>
                     </div>
                     <a href="javascript:void(0)" id="community-logout-link" onclick="logoutCommunityUser()" style="display: none; color: var(--accent-turquoise); text-decoration: underline;">Сменить профиль / Выйти</a>
@@ -425,7 +425,7 @@
 <div class="legal-links">
 <a href="#privacy">Политика конфиденциальности</a>
 <a href="#terms">Защита персональных данных</a>
-<a href="#doctor" onclick="openDoctorModal(); return false;" style="color: var(--accent-purple); font-weight: 500;">🩺 Кабинет врача</a>
+<a href="/doctor" style="color: var(--accent-purple); font-weight: 500;">🩺 Кабинет врача</a>
 <a href="#admin" onclick="openAdminModal(); return false;" style="color: var(--accent-turquoise); font-weight: 500;">🔐 Панель управления (CMS)</a>
 </div>
 </div>
@@ -452,153 +452,6 @@
     🧸 Войти в систему
 </button>
 </form>
-</div>
-</div>
-
-<div class="modal" id="doctor-modal">
-<div class="modal-content" style="max-width: 440px;">
-<button class="close-modal" onclick="closeModal('doctor-modal')">×</button>
-<h3>🩺 Вход для специалистов</h3>
-<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Личный кабинет врача и просмотр медицинских карт пациентов</p>
-<form id="doctor-login-form" onsubmit="handleDoctorLogin(event)">
-<div class="form-group">
-<label class="form-label" for="doc-login">Логин врача / Код специалиста</label>
-<input class="form-input" id="doc-login" placeholder="doc_anna" required="" type="text" value="doc_anna"/>
-</div>
-<div class="form-group">
-<label class="form-label" for="doc-pass">Пароль</label>
-<input class="form-input" id="doc-pass" placeholder="••••••••" required="" type="password"/>
-</div>
-<div id="doctor-login-error" style="color: #EF4444; font-size: 0.85rem; margin-bottom: 10px; display: none;"></div>
-<button class="btn btn-purple" id="doctor-login-btn" style="width: 100%; margin-top: 10px;" type="submit">
-    🩺 Войти в кабинет врача
-</button>
-</form>
-</div>
-</div>
-
-<!-- МОДАЛЬНОЕ ОКНО: ДАШБОРД ВРАЧА (DOCTOR DASHBOARD) -->
-<div class="modal" id="doctor-dashboard-modal">
-<div class="modal-content" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; padding: 24px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 16px; margin-bottom: 16px;">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #7C3AED, #06B6D4); display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">🩺</div>
-            <div>
-                <h3 style="margin: 0; font-size: 1.25rem;" id="doc-profile-name">Доктор Центра</h3>
-                <div style="font-size: 0.85rem; color: var(--accent-turquoise);" id="doc-profile-specialty">Специалист</div>
-            </div>
-            <span style="background: rgba(16,185,129,0.2); color: #34D399; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600;">Doctor Mode</span>
-        </div>
-        <div style="display: flex; gap: 10px;">
-            <button class="btn btn-outline" onclick="logoutDoctor()" style="padding: 6px 12px; font-size: 0.8rem;">Выйти</button>
-            <button class="close-modal" onclick="closeModal('doctor-dashboard-modal')" style="position: static;">×</button>
-        </div>
-    </div>
-
-    <!-- Панель ввода / поиска токена шеринга -->
-    <div style="background: rgba(30,30,46,0.85); border: 1px solid rgba(124,58,237,0.3); border-radius: 16px; padding: 16px; margin-bottom: 20px;">
-        <h4 style="margin: 0 0 10px 0; font-size: 1rem; color: #fff;">🔑 Доступ к медицинской карте по ссылке пациента</h4>
-        <div style="display: flex; gap: 10px;">
-            <input class="form-input" id="doc-share-token-input" placeholder="Введите токен шеринга (например: grant_...)" style="flex: 1;" />
-            <button class="btn btn-purple" id="doc-search-btn" onclick="handleDoctorSearchRecord()" style="padding: 10px 18px; white-space: nowrap;">🔍 Открыть карту</button>
-        </div>
-        <div id="doc-search-error" style="color: #EF4444; font-size: 0.85rem; margin-top: 8px; display: none;"></div>
-    </div>
-
-    <!-- Контейнер просмотра медицинской карты -->
-    <div id="doc-record-view" style="display: none; overflow-y: auto; flex: 1; padding-right: 4px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(6,182,212,0.1); border: 1px solid rgba(6,182,212,0.3); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px;">
-            <div>
-                <span style="font-size: 0.85rem; color: var(--text-muted);">Папка пациента: </span>
-                <strong id="doc-view-patient-id" style="color: #fff; font-family: monospace;">-</strong>
-            </div>
-            <div style="font-size: 0.85rem; color: #34D399;" id="doc-view-expiry">⏱️ Доступ активен</div>
-        </div>
-
-        <h4 style="margin: 0 0 12px 0; font-size: 1.05rem;">📁 Документы и результаты диагностики:</h4>
-        <div id="doc-files-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-bottom: 20px;">
-            <!-- Карточки документов пациента -->
-        </div>
-
-        <!-- СЕКЦИЯ: ЗАМЕТКИ ВРАЧА ПО ПАЦИЕНТУ (Doctor Notes) -->
-        <div style="background: rgba(30,30,46,0.85); border: 1px solid rgba(124,58,237,0.3); border-radius: 14px; padding: 16px; margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h4 style="margin: 0; font-size: 1rem; color: #fff;">📝 Заметки врача по пациенту:</h4>
-                <span id="doc-notes-status" style="font-size: 0.8rem; color: #34D399; font-weight: 500; display: none;"></span>
-            </div>
-            <textarea class="form-input" id="doc-notes-input" placeholder="Введите клинические заметки, план обследования или замечания по динамике..." rows="3" style="width: 100%; box-sizing: border-box; resize: vertical; margin-bottom: 10px;"></textarea>
-            <div style="display: flex; justify-content: flex-end; gap: 8px;">
-                <button class="btn btn-purple" id="doc-save-notes-btn" onclick="handleSaveDoctorNotes()" style="padding: 8px 16px; font-size: 0.85rem;">Сохранить 💾</button>
-            </div>
-        </div>
-
-        <!-- СЕКЦИЯ: КЛИНИЧЕСКИЙ КОНСИЛИУМ И СУММАРИЗАЦИЯ (RAG Summary & PDF) -->
-        <div style="background: rgba(30,30,46,0.85); border: 1px solid rgba(6,182,212,0.3); border-radius: 14px; padding: 16px; margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
-                <div>
-                    <h4 style="margin: 0; font-size: 1rem; color: #fff;">🩺 Клинический консилиум (RAG-резюме)</h4>
-                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: var(--text-muted);">Автоматический анализ документов и формирование заключения</p>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-turquoise" id="doc-generate-summary-btn" onclick="handleDoctorGenerateSummary()" style="padding: 8px 16px; font-size: 0.85rem;">Сгенерировать резюме 🩺</button>
-                    <button class="btn btn-purple" id="doc-download-pdf-btn" onclick="handleDoctorDownloadSummaryPdf()" style="padding: 8px 16px; font-size: 0.85rem; display: none;">Скачать PDF 📄</button>
-                </div>
-            </div>
-            
-            <div id="doc-summary-loading" style="display: none; text-align: center; padding: 24px; color: var(--accent-turquoise);">
-                <div style="font-size: 1.8rem; margin-bottom: 8px;">⏳</div>
-                <div style="font-weight: 500; font-size: 0.95rem;">Консилиум анализирует документы...</div>
-            </div>
-            
-            <div id="doc-summary-container" style="display: none; flex-direction: column; gap: 12px;">
-                <!-- Структурированные карточки: анамнез, диагнозы, противопоказания (красный), препараты (янтарный), рекомендации -->
-            </div>
-        </div>
-
-        <!-- СЕКЦИЯ: ХРОНОЛОГИЯ АНАЛИЗОВ И ИССЛЕДОВАНИЙ (Block 4) -->
-        <div style="background: rgba(30,30,46,0.85); border: 1px solid rgba(124,58,237,0.3); border-radius: 14px; padding: 16px; margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
-                <div>
-                    <h4 style="margin: 0; font-size: 1rem; color: #fff;">📊 Хронология анализов и исследований</h4>
-                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: var(--text-muted);">Извлечение динамики показателей и генерация DOCX</p>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-purple" id="doc-generate-analyses-btn" onclick="handleDoctorGenerateAnalyses()" style="padding: 8px 16px; font-size: 0.85rem;">Сформировать анализы 📊</button>
-                </div>
-            </div>
-            
-            <div id="doc-analyses-loading" style="display: none; text-align: center; padding: 20px; color: var(--accent-purple);">
-                <div style="font-size: 1.8rem; margin-bottom: 8px;">⏳</div>
-                <div style="font-weight: 500; font-size: 0.95rem;">Анализируем медицинские документы...</div>
-            </div>
-            
-            <div id="doc-analyses-result" style="display: none; margin-bottom: 14px;">
-                <div style="display: flex; gap: 10px; margin-bottom: 12px;">
-                    <button class="btn btn-turquoise" id="doc-analyses-preview-btn" onclick="openAnalysesPreviewModal()" style="padding: 6px 12px; font-size: 0.85rem;">Посмотреть в браузере 👁️</button>
-                    <button class="btn btn-outline" id="doc-analyses-download-btn" onclick="handleDoctorDownloadLatestAnalysesDocx()" style="padding: 6px 12px; font-size: 0.85rem;">Скачать DOCX 📄</button>
-                </div>
-            </div>
-
-            <div id="doc-analyses-history" style="margin-top: 10px;">
-                <h5 style="margin: 0 0 8px 0; font-size: 0.85rem; color: var(--text-muted);">Ранее сгенерированные документы:</h5>
-                <div id="doc-analyses-list" style="display: flex; flex-direction: column; gap: 6px;">
-                    <!-- Список ранее сохраненных анализов -->
-                </div>
-            </div>
-        </div>
-
-        <div style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.15); border-radius: 14px; padding: 16px;">
-            <h5 style="margin: 0 0 8px 0; color: var(--accent-turquoise);">💡 Рекомендация для врача:</h5>
-            <p style="margin: 0; font-size: 0.88rem; color: var(--text-muted); line-height: 1.5;">
-                Документы защищены сквозным шифрованием 152-ФЗ. Доступ предоставлен исключительно для клинического анализа специалистами центра «Маленькая Страна».
-            </p>
-        </div>
-    </div>
-
-    <div id="doc-record-empty" style="text-align: center; color: var(--text-muted); padding: 40px 20px;">
-        <div style="font-size: 2.5rem; margin-bottom: 12px;">📋</div>
-        <p style="margin: 0; font-size: 0.95rem;">Введите токен шеринга или перейдите по ссылке, полученной от родителя, для просмотра диагностических файлов.</p>
-    </div>
 </div>
 </div>
 
@@ -857,20 +710,6 @@
 </div>
 </div>
 
-<!-- МОДАЛЬНОЕ ОКНО: ПРЕДПРОСМОТР ХРОНОЛОГИИ АНАЛИЗОВ -->
-<div class="modal" id="analyses-preview-modal">
-<div class="modal-content" style="max-width: 800px; max-height: 85vh; overflow-y: auto;">
-<button class="close-modal" onclick="closeModal('analyses-preview-modal')">×</button>
-<h3 style="color: var(--accent-turquoise); margin-bottom: 8px;">📊 Хронология анализов пациента</h3>
-<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">Структурированная таблица медицинских показателей и динамики</p>
-<div id="analyses-preview-table-container" style="overflow-x: auto; margin-bottom: 16px;"></div>
-<div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
-<button class="btn btn-outline" onclick="closeModal('analyses-preview-modal')">Закрыть</button>
-<button class="btn btn-purple" id="analyses-modal-download-btn" onclick="handleDoctorDownloadLatestAnalysesDocx()">Скачать DOCX 📄</button>
-</div>
-</div>
-</div>
-
 <!-- МОДАЛЬНОЕ ОКНО ПРЕДУПРЕЖДЕНИЯ О СТОРОННИХ ССЫЛКАХ -->
 <div class="modal" id="external-link-modal">
 <div class="modal-content" style="max-width: 500px;">
@@ -922,4 +761,4 @@
 <script src="/static/js/app.js"></script>
 </body>
 </html>
-
+

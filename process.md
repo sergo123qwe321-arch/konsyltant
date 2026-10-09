@@ -1037,10 +1037,25 @@
   - Целевой запуск `python -m unittest test_doctor_routes.py`: 3 из 3 тестов PASS.
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 15.223s; было 163 + 3 новых).
   - Локальный коммит (без деплоя): `feat(doctor): add share_token redirect and routing unit tests`.
+- [2026-10-09] [Stage 1 - Step 2.3: Demount Legacy Doctor Code from Landing]:
+  - `templates/index.html` очищен от устаревшего докторского кода (925 → 764 строк, −161 строка):
+    - Навигационная кнопка «🩺 Для специалистов» и ссылки «🩺 Врач» (чат сообщества) и «🩺 Кабинет врача» (футер) переведены на прямой переход `href="/doctor"` (удалены `onclick="openModal('doctor-modal')"` / `openDoctorModal()`).
+    - Удалены модальные окна: `#doctor-modal` (авторизация врача), `#doctor-dashboard-modal` (дашборд: медкарта, заметки, RAG-консилиум, анализы) и `#analyses-preview-modal` (предпросмотр таблицы анализов).
+    - Не затронуты: секция `#doctors` («Волшебники Центра»), admin-вкладка специалистов (`handleRegisterDoctor`, `loadAdminDoctors`), модалки родителей/админа и `#documents-modal`.
+  - `static/js/app.js` очищен от докторской логики (3195 → 2482 строки, −713 строк):
+    - Удален весь блок раздела «5.1. ЛИЧНЫЙ КАБИНЕТ ВРАЧА И ШЕРИНГ КАРТЫ (DOCTOR DASHBOARD)» (строки ~1562–2262): `openDoctorModal`, `handleDoctorLogin`, `openDoctorDashboard`, `logoutDoctor`, `handleDoctorSearchRecord`, `loadDoctorPatientRecord`, `viewDoctorDocument`, `downloadDoctorDocument`, `loadDoctorNotes`, `handleSaveDoctorNotes`, `handleDoctorGenerateSummary`, `handleDoctorDownloadSummaryPdf`, `handleDoctorGenerateAnalyses`, `loadDoctorPatientAnalysesHistory`, `openAnalysesPreviewModal`, `handleDoctorDownloadLatestAnalysesDocx`, `downloadDoctorAnalysesDocx`, `deleteDoctorAnalysesDoc`, переменные состояния `currentDoctorPatientFolderId` / `currentDoctorShareToken` / `currentLatestAnalysesDocId` / `currentLatestAnalysesData`.
+    - В `logoutCommunityUser()` вызов `logoutDoctor()` заменен инлайновой очисткой ключей `doctor_token` / `doctor_id` / `doctor_name` / `doctor_specialty` (сообщественный чат сохраняет поддержку роли DOCTOR через `getActiveCommunityAuth`).
+    - В обработчике `DOMContentLoaded` удален перехват `share_token` и хэшей `#doctor` / `#doc` (обрабатываются редиректом `main.py` и скриптом `doctor.js`); обработка `#admin` / `#cms` сохранена.
+  - Smoke-проверка: `GET /` → 200 OK, в HTML отсутствуют `doctor-dashboard-modal`, `id="doctor-modal"`, `analyses-preview-modal`, `openDoctorModal`; навигационные ссылки `href="/doctor"` присутствуют. `GET /?share_token=tok123` → 307 → `/doctor/?share_token=tok123`. `GET /doctor` → 200 OK. `GET /static/js/app.js` и `/static/js/doctor.js` → 200 OK.
+  - Синтаксис проверен: `node --check static/js/app.js` → SYNTAX OK.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 13.868s).
+  - Примечание: файлы `templates/index.html` и `static/js/app.js` исторически хранятся в git с CRLF; коммит выполнен с `git -c core.autocrlf=false add`, чтобы сохранить минимальный функциональный дифф (+5/−166 и +8/−721 строк соответственно) без перезаписи переводов строк.
+  - Локальный коммит (без деплоя): `refactor(landing): remove legacy doctor modals and logic from index.html and app.js`.
 - **Текущее состояние:**
-  - Автономный кабинет `/doctor` связан с бэкендом на уровне маршрутизации: старые ссылки `/?share_token=...` редиректятся в кабинет (307), покрыты автотестами; полный сьют 166/166 PASS.
+  - Этап 1 завершен: кабинет врача полностью изолирован на `/doctor` (HTML/CSS/JS), лендинг очищен от дублирующего докторского кода, обратная совместимость `/?share_token=` обеспечена редиректом 307, сьют 166/166 PASS.
 - **Что предстоит:**
-  - Шаг 2.3: демонтаж докторской логики из лендинга (`index.html`/`app.js`) по директиве Архитектора («Remove» после «Add»).
+  - Деплой пакета Этапа 1 на VPS Beget по регламенту AGENTS.md (после подтверждения «всё отлично работает» или явной директивы).
 
 
 
