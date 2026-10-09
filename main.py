@@ -2052,6 +2052,11 @@ async def read_index(request: Request, token: Optional[str] = None):
         return RedirectResponse(url=f"/app/?token={token}")
     return templates.TemplateResponse(request=request, name="index.html")
 
+@app.get("/doctor")
+@app.get("/doctor/")
+async def doctor_page(request: Request):
+    return templates.TemplateResponse(request=request, name="doctor.html")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
