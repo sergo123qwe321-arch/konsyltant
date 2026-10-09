@@ -1026,10 +1026,21 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 163 из 163 тестов PASS (100% OK за 13.933s).
   - Локальный коммит (без деплоя): `feat(doctor): create standalone static/js/doctor.js logic`.
+- [2026-10-09] [Stage 1 - Step 2.2: Routing, Backward Compatibility & Autotests]:
+  - В эндпоинте главной страницы `@app.get("/")` (`main.py`) добавлена обратная совместимость: query-параметр `share_token` (старые ссылки шеринга вида `/?share_token=XYZ`) теперь выполняет редирект `307` на автономный кабинет `/doctor/?share_token=XYZ`; параметр `token` (старые ссылки чата) и обычный рендеринг лендинга сохранены без изменений. Директива запрета соблюдена: `templates/index.html` и `static/js/app.js` не изменялись.
+  - В `templates/doctor.html` к элементу `<main class="doctor-main">` добавлен идентификатор `id="doctor-root"` (маркер автономного кабинета для автотестов; CSS и JS-логика не затронуты).
+  - Разработан тестовый модуль `test_doctor_routes.py` (unittest + FastAPI TestClient, 3 теста):
+    - `test_doctor_page_status_200`: `GET /doctor` и `GET /doctor/` → 200 OK с маркерами `doctor-root`, `doctor.css`, `doctor.js`;
+    - `test_landing_redirects_on_share_token`: `GET /?share_token=test_token_123` → 307 с заголовком `Location: /doctor/?share_token=test_token_123`;
+    - `test_landing_loads_normally_without_token`: обычный `GET /` → 200 без редиректов.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Целевой запуск `python -m unittest test_doctor_routes.py`: 3 из 3 тестов PASS.
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 15.223s; было 163 + 3 новых).
+  - Локальный коммит (без деплоя): `feat(doctor): add share_token redirect and routing unit tests`.
 - **Текущее состояние:**
-  - Автономный кабинет `/doctor` полностью функционален на уровне клиента: разметка + изолированные стили + собственный JS (логин, медкарта, заметки, RAG-консилиум, анализы, deep-linking share_token); лендинг продолжает работать на прежнем `app.js` (163/163 тестов PASS).
+  - Автономный кабинет `/doctor` связан с бэкендом на уровне маршрутизации: старые ссылки `/?share_token=...` редиректятся в кабинет (307), покрыты автотестами; полный сьют 166/166 PASS.
 - **Что предстоит:**
-  - Следующие шаги Этапа 1: интеграционная проверка сценариев кабинета, затем очистка лендинга от докторской логики по директиве Архитектора («Add before Remove»).
+  - Шаг 2.3: демонтаж докторской логики из лендинга (`index.html`/`app.js`) по директиве Архитектора («Remove» после «Add»).
 
 
 

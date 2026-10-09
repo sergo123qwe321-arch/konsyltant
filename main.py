@@ -2046,8 +2046,11 @@ async def read_app_with_path_token(token_path: str):
     return RedirectResponse(url="/app/")
 
 @app.get("/")
-async def read_index(request: Request, token: Optional[str] = None):
+async def read_index(request: Request, token: Optional[str] = None, share_token: Optional[str] = None):
     # Если родитель перешел по старой ссылке с токеном вида /?token=..., бесшовно перенаправляем в приложение чата
+    if share_token:
+        # Обратная совместимость: ссылки шеринга врача /?share_token=... ведут в автономный кабинет /doctor
+        return RedirectResponse(url=f"/doctor/?share_token={share_token}", status_code=307)
     if token:
         return RedirectResponse(url=f"/app/?token={token}")
     return templates.TemplateResponse(request=request, name="index.html")
