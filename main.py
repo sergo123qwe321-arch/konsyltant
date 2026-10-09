@@ -2060,6 +2060,11 @@ async def read_index(request: Request, token: Optional[str] = None, share_token:
 async def doctor_page(request: Request):
     return templates.TemplateResponse(request=request, name="doctor.html")
 
+@app.get("/admin")
+@app.get("/admin/")
+async def admin_page(request: Request):
+    return templates.TemplateResponse(request=request, name="admin.html")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)

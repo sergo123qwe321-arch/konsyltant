@@ -1052,10 +1052,19 @@
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 13.868s).
   - Примечание: файлы `templates/index.html` и `static/js/app.js` исторически хранятся в git с CRLF; коммит выполнен с `git -c core.autocrlf=false add`, чтобы сохранить минимальный функциональный дифф (+5/−166 и +8/−721 строк соответственно) без перезаписи переводов строк.
   - Локальный коммит (без деплоя): `refactor(landing): remove legacy doctor modals and logic from index.html and app.js`.
+- [2026-10-09] [Stage 2 - Step 2.1: Standalone /admin Route & Template Scaffold]:
+  - Создан минимальный автономный шаблон `templates/admin.html` (чистый HTML5-скелет с контейнером `#admin-root`, заголовком «Панель управления (CMS)» и плейсхолдером инициализации модуля; стили и JavaScript на данном шаге не подключаются).
+  - Зарегистрированы роуты в `main.py`: `GET /admin` и `GET /admin/` → `templates.TemplateResponse(request=request, name="admin.html")` (по аналогии с `/doctor`). Логика панели и API не переносились — строго каркас.
+  - Директива запрета соблюдена: `templates/index.html` и `static/js/app.js` не изменялись.
+  - Smoke-проверка (TestClient): `GET /admin` → 200 OK, `GET /admin/` → 200 OK; в теле присутствуют маркеры `admin-root` и «Панель управления».
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 13.230s).
+  - Локальный коммит (без деплоя): `feat(admin): add standalone /admin route and template scaffold`.
 - **Текущее состояние:**
-  - Этап 1 завершен: кабинет врача полностью изолирован на `/doctor` (HTML/CSS/JS), лендинг очищен от дублирующего докторского кода, обратная совместимость `/?share_token=` обеспечена редиректом 307, сьют 166/166 PASS.
+  - Этап 2 стартовал: роут `/admin` отдает автономный скелет `admin.html` (HTTP 200), лендинг и существующие тесты нетронуты (166/166 PASS); кабинет `/doctor` остается полностью рабочим.
 - **Что предстоит:**
-  - Деплой пакета Этапа 1 на VPS Beget по регламенту AGENTS.md (после подтверждения «всё отлично работает» или явной директивы).
+  - Шаг 2.2: наполнение `admin.html` полной разметкой CMS + автономный `admin.css`; шаг 2.3: перенос JS-логики в `admin.js`; затем демонтаж модалки с лендинга и адаптация `test_landing_and_admin_ops.py`.
+  - Деплой пакета изоляции (Этапы 1–2) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 
 
