@@ -1089,10 +1089,27 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 166 из 166 тестов PASS (100% OK за 16.553s).
   - Локальный коммит (без деплоя): `feat(admin): create standalone static/js/admin.js logic`.
+- [2026-10-09] [Stage 2 - Step 2.4: Demount Legacy Admin Modals & Admin Route Tests]:
+  - `templates/index.html` очищен от админ-модалок (764 → 544 строки, −220 строк):
+    - Точки входа переведены на прямую ссылку: в авторизации чата сообщества (стр. 309) `<a href="/admin" ...>🔐 Админ</a>` (удален `onclick="openAdminModal()"`), в футере (стр. 429) `<a href="/admin" ...>🔐 Панель управления (CMS)</a>` (удалены `href="#admin"` и `onclick="openAdminModal(); return false;"`).
+    - Вырезаны блоки модалок `#admin-login-modal` и `#admin-dashboard-modal` со всеми 5 вкладками (бывшие строки 493–711 плюс завершающая пустая строка). Общественные блоки (`#external-link-modal`, контакты заботы, `parent-modal`) не тронуты.
+  - `static/js/app.js` очищен от логики админки (2482 → 1406 строк, −1076 строк):
+    - Удален весь блок «5. ПАНЕЛЬ АДМИНИСТРАТОРА (CMS)» (бывшие строки 604–1673): `getAdminToken`, `openAdminModal`, `handleAdminLogin`, `logoutAdmin`, `switchAdminTab`, CRUD специалистов/постов/лидов, операционные метрики, бэкапы и модерация.
+    - В `logoutCommunityUser()` вызов `logoutAdmin()` заменен на инлайновую очистку `localStorage.removeItem('admin_token')` + `sessionStorage.removeItem('admin_token')` (по аналогии с блоком врача).
+    - В `DOMContentLoaded` удален перехват хешей `#admin` / `#cms` (переменная `hash` и вызов `openAdminModal()`); оставшийся комментарий указывает на автономный маршрут `/admin`.
+    - Удалены экспорты удаленных функций: `window.loadAdminBackups` / `window.handleCreateBackup` и их записи в `module.exports` (иначе ReferenceError при загрузке скрипта).
+    - Сохранены намеренно: `getActiveCommunityAuth()` (чтение `admin_token` для роли ADMIN в чате сообщества), ветки отображения роли `ADMIN`, инлайновая очистка токена в `logoutCommunityUser()`.
+  - Адаптирован `test_landing_and_admin_ops.py` (`test_08_admin_ops_backup_ui_and_endpoints`): маркеры UI бэкапов (`admin-tab-ops`, `btn-create-backup`, `admin-backups-container`, `admin-backup-action-status`, «Резервное копирование БД (152-ФЗ)», «Ротация: 7 дней / макс. 7 копий») теперь проверяются через `TestClient GET /admin`, плюс негативные проверки на лендинге `GET /` (блоков больше нет).
+  - Создан `test_admin_routes.py` (3 теста, по аналогии с `test_doctor_routes.py`):
+    - `test_admin_page_status_200`: `GET /admin` и `GET /admin/` → 200 с маркерами `admin-root`, `/static/css/admin.css`, `/static/js/admin.js`;
+    - `test_landing_has_no_admin_modals`: на `GET /` отсутствуют `#admin-dashboard-modal`, `#admin-login-modal`, `id="admin-login-modal"`, `id="admin-dashboard-modal"`, `openAdminModal()`;
+    - `test_landing_links_point_to_admin_route`: точки входа лендинга содержат `href="/admin"`.
+  - Smoke-проверка (TestClient): `GET /` → 200 (30 264 байта), админ-модалок нет, `href="/admin"` × 2; `GET /admin` → 200 (все маркеры присутствуют).
+  - Контроль качества: `node --check static/js/app.js` → SYNTAX OK; `python scripts/lint_no_txt_logs.py` → OK (0 txt-файлов); целевые тесты `test_landing_and_admin_ops.py + test_admin_routes.py` → 11 из 11 PASS; полный сьют `python -m unittest discover -s . -p "test_*.py"` → **169 из 169 тестов PASS** (100% OK за 16.755s).
+  - Локальный коммит (без деплоя): `refactor(admin): remove legacy admin modals from landing and isolate /admin`.
 - **Текущее состояние:**
-  - Роут `/admin` отдает полностью автономный интерфейс CMS: HTML + изолированный CSS + изолированная JS-логика (`admin.js`, все 5 вкладок, синтаксис OK, 166/166 PASS); лендинг нетронут (демонтаж модалки — следующий шаг).
+  - Этап 2 завершен: панель `/admin` полностью автономна (HTML + CSS + JS), лендинг очищен от админ-модалок и админ-логики (`index.html` 544 строки, `app.js` 1406 строк), маршрутизация закреплена тестами `test_admin_routes.py`; 169/169 PASS, линтер OK.
 - **Что предстоит:**
-  - Шаг 2.4: демонтаж админ-модалки с лендинга (`templates/index.html` + `static/js/app.js`) и адаптация `test_landing_and_admin_ops.py` (хардкод `id="admin-tab-ops"` в HTML лендинга).
   - Деплой пакета изоляции (Этапы 1–2) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 

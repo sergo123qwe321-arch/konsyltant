@@ -204,17 +204,24 @@ class TestLandingAndAdminOps(unittest.TestCase):
             self.assertEqual(res_admin.status_code, 200, f"{ep} для ADMIN должен быть 200")
 
     def test_08_admin_ops_backup_ui_and_endpoints(self):
-        """8. Проверка элементов UI резервного копирования в index.html и работы API бэкапов"""
-        with open("templates/index.html", "r", encoding="utf-8") as f:
-            html = f.read()
+        """8. Проверка элементов UI резервного копирования на странице /admin и работы API бэкапов"""
+        # 1. Проверка наличия элементов UI на автономной странице /admin
+        res_page = self.client.get("/admin")
+        self.assertEqual(res_page.status_code, 200)
+        html = res_page.text
 
-        # 1. Проверка наличия элементов UI в templates/index.html
         self.assertIn('id="admin-tab-ops"', html)
         self.assertIn('id="btn-create-backup"', html)
         self.assertIn('id="admin-backups-container"', html)
         self.assertIn('id="admin-backup-action-status"', html)
         self.assertIn('Резервное копирование БД (152-ФЗ)', html)
         self.assertIn('Ротация: 7 дней / макс. 7 копий', html)
+
+        # 1б. На лендинге этих блоков больше нет (модалки демонтированы)
+        res_landing = self.client.get("/")
+        self.assertEqual(res_landing.status_code, 200)
+        self.assertNotIn('id="admin-tab-ops"', res_landing.text)
+        self.assertNotIn('id="admin-dashboard-modal"', res_landing.text)
 
         # 2. Проверка GET /api/v1/admin/backups
         res_list = self.client.get("/api/v1/admin/backups", headers={"Authorization": f"Bearer {self.admin_token}"})
