@@ -1174,11 +1174,25 @@
   - Целевой прогон `python -m unittest test_offline_routes.py`: **3/3 PASS** (0.026s).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **178 из 178 тестов PASS** (100% OK за 22.814s; было 175 + 3 новых).
   - Локальный коммит (без деплоя): `feat(pwa): add standalone offline fallback template and route`.
+- [2026-10-10] [Stage 4 - Step 4.3: Service Worker Core and /sw.js Root Endpoint]:
+  - Создан `static/sw.js` (80 строк, единственный новый файл логики; шаблоны НЕ тронуты — регистрация SW отложена на шаг 4.4):
+    - **Версионирование:** `const CACHE_NAME = 'cmz-cache-v1'`;
+    - **`install`:** precache только критического ядра: `/offline`, `/static/css/style.css`, `/static/css/article.css`, `/static/js/bubbles.js` → `self.skipWaiting()`;
+    - **`activate`:** удаление всех кэшей с именем ≠ `CACHE_NAME` (ротация версий) → `self.clients.claim()`;
+    - **`fetch`:** (а) **152-ФЗ-защита**: `url.pathname.startsWith('/api/')` ИЛИ `request.method !== 'GET'` → `return;` (запрос мимо SW напрямую в сеть, кэш не трогается); (б) `request.mode === 'navigate'` → **Network-First**: `fetch(request)`, при обрыве сети (`.catch`) → `caches.match('/offline')`; (в) `/static/` → **Cache-First + SWR**: ответ из кэша сразу, параллельно `event.waitUntil(fetch → cache.put)` фоновое обновление; если в кэше нет — ждем сеть, иначе `Response.error()`.
+    - Синтаксис: `node --check static/sw.js` → **SYNTAX OK (exit 0)**.
+  - `main.py` (+12 строк): роут `@app.get("/sw.js")` → `service_worker()` → `FileResponse("static/sw.js", media_type="application/javascript")` + заголовки `Cache-Control: no-cache, no-store, must-revalidate`, `Pragma: no-cache`, `Expires: 0`, `Service-Worker-Allowed: /`. Корневой путь обходит `location /static/` Nginx (там `expires 30d` — недопустимо для SW-скрипта); `location /` проксирует без кэширования → Nginx-правки не требуется.
+  - `test_offline_routes.py` (+1 тест, итого 4): `test_service_worker_route_status_and_headers` — GET `/sw.js` → 200, `content-type` содержит `application/javascript`, `service-worker-allowed: /`, `cache-control` = no-cache/no-store/must-revalidate, `pragma: no-cache`, `expires: 0`, в теле — `CACHE_NAME`, `'/offline'`, `'/static/css/style.css'`, `skipWaiting`, `clients.claim`.
+  - Smoke (TestClient, встроен в тест): заголовки и тело `/sw.js` подтверждены.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Целевой прогон `python -m unittest test_offline_routes.py`: **4/4 PASS** (0.049s).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **179 из 179 тестов PASS** (100% OK за 17.434s; было 178 + 1 новый).
+  - Локальный коммит (без деплоя): `feat(pwa): add service worker core and root /sw.js endpoint`.
 - **Текущее состояние:**
   - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки); 175/175 PASS, линтер OK. Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
-  - **Этап 4 начат:** аудит контура отказоустойчивости выполнен (4.1, READ-ONLY); офлайн-заглушка `templates/offline.html` + маршрут `/offline` созданы и покрыты тестами (4.2); 178/178 PASS, линтер OK. Скрипт Service Worker НЕ создан — по «Add before Remove» ждем директивы Архитектора.
+  - **Этап 4 продолжается:** аудит (4.1, READ-ONLY), офлайн-заглушка `/offline` + `templates/offline.html` (4.2), **ядро Service Worker** `static/sw.js` + корневой роут `/sw.js` с антикэш-заголовками и `Service-Worker-Allowed: /` (4.3); 179/179 PASS, линтер OK. Регистрация SW в шаблонах — на шаге 4.4 (шаблоны пока не тронуты).
 - **Что предстоит:**
-  - Шаг 4.3+ (по директиве Архитектора): создание Service Worker (`/sw.js` через FastAPI-эндпоинт с no-cache заголовками), precache-манифест App Shell (~361 KiB), стратегии кэширования, подключение офлайн-фолбэка `offline.html` для navigation-запросов, регистрация SW в шаблонах, `manifest.json` и иконки PWA.
+  - Шаг 4.4 (по директиве Архитектора): регистрация Service Worker (`navigator.serviceWorker.register('/sw.js')`) в шаблонах `index.html`/`doctor.html`/`admin.html`/`article.html`, опционально `manifest.json` и иконки PWA.
   - Деплой пакета изоляции (Этапы 1–3) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 

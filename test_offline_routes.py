@@ -55,6 +55,28 @@ class OfflinePageTests(unittest.TestCase):
         self.assertNotIn("/static/", body)
         self.assertIn("<style>", body)
 
+    def test_service_worker_route_status_and_headers(self):
+        """GET /sw.js: 200, application/javascript, scope / и антикэш-заголовки."""
+        resp = self.client.get("/sw.js")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("application/javascript", resp.headers.get("content-type", ""))
+        # Scope разрешает контроль всего сайта (/, /doctor, /admin, /post/*)
+        self.assertEqual(resp.headers.get("service-worker-allowed"), "/")
+        # Защита от кэширования SW-скрипта (Nginx/browser)
+        cache_control = resp.headers.get("cache-control", "")
+        self.assertIn("no-cache", cache_control)
+        self.assertIn("no-store", cache_control)
+        self.assertIn("must-revalidate", cache_control)
+        self.assertEqual(resp.headers.get("pragma"), "no-cache")
+        self.assertEqual(resp.headers.get("expires"), "0")
+        # Тело: версионирование и precache оболочки
+        body = resp.text
+        self.assertIn("const CACHE_NAME = 'cmz-cache-v1'", body)
+        self.assertIn("'/offline'", body)
+        self.assertIn("'/static/css/style.css'", body)
+        self.assertIn("skipWaiting", body)
+        self.assertIn("clients.claim", body)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2072,6 +2072,18 @@ async def admin_page(request: Request):
 async def offline_page(request: Request):
     return templates.TemplateResponse(request=request, name="offline.html")
 
+# Ядро Service Worker: отдаётся из корня домена со scope "/"
+# и с защитой от кэширования (Nginx location / проксирует без expires)
+
+@app.get("/sw.js")
+async def service_worker():
+    response = FileResponse("static/sw.js", media_type="application/javascript")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    response.headers["Service-Worker-Allowed"] = "/"
+    return response
+
 # --- Автономные SSR-страницы статей и материалов (Этап 3) ---
 
 def _video_embed_url(url: str) -> str:
