@@ -221,7 +221,13 @@ def send_doctor_onboarding_email(
                     Для вас создана учетная запись врача в центре ментального здоровья детей «Маленькая Страна».
                     Специализация: <strong>{specialty}</strong>.
                 </p>
-                
+
+                <div style="background: rgba(6, 182, 212, 0.1); border-left: 4px solid #06B6D4; padding: 12px 14px; border-radius: 6px; font-size: 13px; line-height: 1.55; color: #CBD5E1; margin: 0 0 16px 0;">
+                    <strong style="color: #38BDF8;">⚖️ ПРАВОВОЙ РЕГЛАМЕНТ:</strong><br>
+                    Аккаунт на платформе «Маршрут» служит для информационной координации и не предоставляет доступа к медицинским услугам.
+                    Консультации не являются медицинскими услугами и осуществляются по прямой договоренности со специалистом вне рамок платформы.
+                    Деятельность специалиста носит информационно-просветительский характер и не заменяет медицинскую помощь.
+                </div>
                 <div class="card">
                     <div style="font-size: 13px; font-weight: 600; color: #A78BFA; margin-bottom: 12px;">🔑 ВАШИ РЕКВИЗИТЫ ДЛЯ ВХОДА:</div>
                     <div style="margin-bottom: 8px;">

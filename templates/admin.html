@@ -123,6 +123,16 @@
                                     <input class="form-input" id="doc-reg-license" placeholder="Оставьте пустым для автогенерации DOC-XXXXXX" />
                                 </div>
                             </div>
+                            <!-- Правовой регламент: немедицинский статус платформы (Этап 7, шаг 7.1) -->
+                            <div class="legal-disclaimer-box" style="background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.35); border-radius: 10px; padding: 14px 16px; margin: 16px 0;">
+                                <p style="font-size: 0.85rem; line-height: 1.55; color: var(--text-muted, #94a3b8); margin: 0 0 12px 0;">
+                                    Платформа «Маршрут» является информационно-навигационным сервисом и не оказывает медицинских услуг. Консультации специалистов носят информационно-просветительский характер, не являются медицинской помощью и осуществляются на основании личной договоренности сторон вне рамок платформы.
+                                </p>
+                                <label for="doc-reg-terms" style="display: flex; align-items: flex-start; gap: 8px; font-size: 0.88rem; line-height: 1.5; color: var(--text-gray, #e2e8f0); cursor: pointer; margin: 0;">
+                                    <input type="checkbox" id="doc-reg-terms" required style="margin-top: 3px; accent-color: #7C3AED; flex-shrink: 0;" />
+                                    Специалист уведомлен о немедицинском статусе платформы и проведении консультаций по личной договоренности вне рамок платформы
+                                </label>
+                            </div>
                             <div class="form-actions-row">
                                 <span class="form-hint">🛡️ Временный пароль сгенерируется автоматически и будет отправлен на указанный email с копией на почту клиники.</span>
                                 <button class="btn btn-purple" id="doc-reg-submit-btn" type="submit">
