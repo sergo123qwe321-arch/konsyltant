@@ -43,6 +43,76 @@ def execute_query(cursor, query, params=()):
     else:
         cursor.execute(query, params)
 
+def seed_doctor_ksenia() -> Optional[int]:
+    """
+    Идемпотентный сид целевого профиля врача кабинета (Этап 5, шаг 5.2).
+    Ищет врача по email ИЛИ license_number:
+      - запись найдена — без создания дубликата актуализирует full_name и specialty
+        (пароль и статусы не трогаем);
+      - запись отсутствует — создаёт врача с bcrypt-хэшем стартового пароля.
+    Возвращает id врача (или None при ошибке).
+    """
+    seed_full_name = "Ксения Александровна Корякина"
+    seed_specialty = "Терапевт"
+    seed_email = "ksenia.koryakina@cmz.site"
+    seed_license = "DOC-KSENIA-001"
+    seed_password = "KseniaTherapist2026!"
+
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        execute_query(
+            cursor,
+            "SELECT id FROM doctors WHERE email = ? OR license_number = ?",
+            (seed_email, seed_license),
+        )
+        row = cursor.fetchone()
+        if row:
+            doc_id = row[0]
+            execute_query(
+                cursor,
+                "UPDATE doctors SET full_name = ?, specialty = ? WHERE id = ?",
+                (seed_full_name, seed_specialty, doc_id),
+            )
+            conn.commit()
+            return doc_id
+
+        password_hash = bcrypt.hashpw(
+            seed_password.encode("utf-8"), bcrypt.gensalt()
+        ).decode("utf-8")
+        is_postgres = check_is_postgres()
+        val_verified = True if is_postgres else 1
+        if is_postgres:
+            execute_query(
+                cursor,
+                """
+                INSERT INTO doctors (full_name, specialty, license_number, is_verified, email, password_hash, role)
+                VALUES (?, ?, ?, ?, ?, ?, 'DOCTOR')
+                RETURNING id
+                """,
+                (seed_full_name, seed_specialty, seed_license, val_verified, seed_email, password_hash),
+            )
+            doc_id = cursor.fetchone()[0]
+        else:
+            execute_query(
+                cursor,
+                """
+                INSERT INTO doctors (full_name, specialty, license_number, is_verified, email, password_hash, role)
+                VALUES (?, ?, ?, ?, ?, ?, 'DOCTOR')
+                """,
+                (seed_full_name, seed_specialty, seed_license, val_verified, seed_email, password_hash),
+            )
+            doc_id = cursor.lastrowid
+        conn.commit()
+        return doc_id
+    except Exception as e:
+        logger.warning(f"[SEED DOCTOR] Не удалось засеять профиль Ксении: {e}")
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
 def init_db():
     """
     Инициализирует базу данных (PostgreSQL или SQLite) и создает таблицы.
@@ -708,6 +778,9 @@ def init_db():
     ensure_indexes(conn)
 
     conn.close()
+
+    # 6. Идемпотентный сид целевого профиля врача (Этап 5, шаг 5.2)
+    seed_doctor_ksenia()
 
 def ensure_indexes(conn=None):
     """

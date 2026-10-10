@@ -1210,12 +1210,35 @@
   - Целевой прогон `python -m unittest test_offline_routes.py`: **5/5 PASS** (0.070s).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **180 из 180 тестов PASS** (100% OK за 15.549s; было 179 + 1 новый).
   - Локальный коммит (без деплоя): `feat(pwa): register service worker across all app shells`.
+- [2026-10-10] [Stage 5 - Step 5.1: Read-only Audit of Doctor Accounts & Roles]:
+  - Режим READ-ONLY: изменения в код не вносились; отчет выдан Архитектору.
+  - Схема `doctors` (Postgres + SQLite, миграционные `ALTER TABLE`): `id`, `full_name`, `specialty`, `license_number UNIQUE`, `is_verified`, `email`, `password_hash` (bcrypt), `role DEFAULT 'DOCTOR'`, `created_at`; **поля `login` нет** — идентификатор входа = `email | license_number | id | full_name` (`DoctorLoginRequest.main.py:424`).
+  - БД: 124 записи / 12 уникальных ФИО (артефакты тест-ранов: трио Павлов-Соколова-Орлов из `test_doctor_sharing_schema.py`, `doc_*@cmz.site` из онбординг-тестов); **Ксении нет (0)**; сидов врачей в `init_db` нет; `role` везде `DOCTOR`.
+  - JWT врача (`/api/v1/doctor/login`, `main.py:909`): `sub`, `role="DOCTOR"`, `doctor_id`, `full_name`, `specialty`, `allowed_folder="folder_doc_{id}"`; пароль — `bcrypt.checkpw` в `verify_doctor_credentials` (`database.py:1393`), **хардкод-фоллбэк `doctor123/doc123/TestAccess2026!` (`database.py:1429`) — уязвимость для этапа харденинга**.
+  - Изоляция: шапка `/doctor` персонализируется из `localStorage doctor_name/doctor_specialty` (заполняются из ответа логина, `doctor.js:57–61,124–125` → `#doc-profile-name/#doc-profile-specialty`); заметки `doctor_notes(doctor_id FK NOT NULL, patient_folder_id, ...)` — эндпоинты берут `doc_id` из JWT, апсерт `WHERE doctor_id=?` (`database.py:1947+`), `delete_doctor_note(note_id, doc_id)` — врачи не перезаписывают заметки друг друга.
+  - Регистрация: `POST/GET /api/v1/admin/doctors` (`main.py:805/887`, `Depends(get_current_admin)`), UI-форма `#admin-doctor-reg-form` (`admin.html:102`, `admin.js:260`); автолицензия `DOC-xxxxxx`, 12-символьный временный пароль (bcrypt), `is_verified=True`, письмо SMTP→UniSender.
+  - Рекомендация утверждена: **Вариант B — идемпотентный сид** (этап 5.2).
+- [2026-10-10] [Stage 5 - Step 5.2: Idempotent Seed and Isolation Tests for Dr. Ksenia Koryakina]:
+  - `database.py` (+73 строки): новая функция `seed_doctor_ksenia()` (размещена перед `init_db()`) + вызов в конце `init_db()` после `conn.close()`:
+    - профиль: `full_name = "Ксения Александровна Корякина"`, `specialty = "Терапевт"`, `email = ksenia.koryakina@cmz.site`, `license_number = DOC-KSENIA-001`, `is_verified=True`, `role="DOCTOR"`, стартовый пароль `KseniaTherapist2026!` (хэш `bcrypt.gensalt()` генерируется **только при создании**);
+    - идемпотентность: поиск `WHERE email = ? OR license_number = ?` → найдена запись: `UPDATE` только `full_name`/`specialty` (пароль/статусы не трогаются), дубликат не создаётся; не найдена: `INSERT` (PG-ветка с `RETURNING id`, SQLite — `lastrowid`); ошибки не роняют старт (`logger.warning`, возврат `None`);
+    - фактически в БД: ровно **1 строка, id=125**, `is_verified=1`, `role=DOCTOR` (проверено SQL после прогона; многократные вызовы `init_db` в тест-сьюте не плодят дублей).
+  - Создан `test_doctor_ksenia_cabinet.py` (3 теста, `KseniaCabinetTests`):
+    - `test_ksenia_account_seeded` — наличие врача, ФИО/специальность/verified/role + повторный `seed_doctor_ksenia()` не меняет `COUNT(*)` (=1);
+    - `test_ksenia_login_and_jwt_payload` — POST `/api/v1/doctor/login` (`login`=email, стартовый пароль) → 200, `token_type=bearer`, `doctor_id`/`full_name`/`specialty` в ответе; декод через `verify_token` → `role=="DOCTOR"`, `full_name`, `specialty`, `doctor_id`, `sub==str(id)`;
+    - `test_ksenia_cabinet_notes_isolation` — два врача (Ксения + временный `DOC-KSENIA-ISOL-TEST` через `create_doctor`) сохраняют заметки в одну папку `folder_test_ksenia_isolation`: POST/GET возвращают свои тексты, `note.doctor_id` каждого = свой id, в БД 2 изолированные строки; **`tearDownClass` удаляет тестовые заметки и временного врача** (гигиена после замечания 5.1 о загрязнении БД; остатков после прогона: 0/0).
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Целевой прогон `python -m unittest test_doctor_ksenia_cabinet.py`: **3/3 PASS** (0.710s).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **183 из 183 тестов PASS** (100% OK за 15.355s; было 180 + 3 новых).
+  - Локальный коммит (без деплоя): `feat(doctor): add idempotent seed and isolation tests for Dr. Ksenia Koryakina`.
 - **Текущее состояние:**
   - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки); 175/175 PASS, линтер OK. Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
   - **Этап 4 завершен:** аудит (4.1), офлайн-заглушка `/offline` + `templates/offline.html` (4.2), ядро Service Worker `static/sw.js` + корневой роут `/sw.js` с антикэш-заголовками (4.3), **регистрация SW во всех 4 оболочках** (4.4); 180/180 PASS, линтер OK. Интеграция PWA-контура: `sw.js` → precache `/offline` + ядра → Network-First навигации с офлайн-фоллбэком, Cache-First+SWR для `/static/`, API мимо кэша (152-ФЗ).
+  - **Этап 5 начат:** аудит учетных записей врачей (5.1, READ-ONLY) → схема `doctors`, JWT-пейлоад, изоляция заметок, админ-онбординг; **идемпотентный сид профиля Ксении Корякиной** (`seed_doctor_ksenia()` в `init_db`) + тесты изоляции кабинета (5.2); 183/183 PASS, линтер OK. Замечания для этапа харденинга: fallback-пароли `doctor123/doc123/TestAccess2026!`, ~112 тестовых дублей врачей в БД.
 - **Что предстоит:**
+  - Шаг 5.3 (по директиве Архитектора): персонализация кабинета Ксении (профиль/дашборд) и дальнейшая изоляция данных.
   - Опционально (по директиве Архитектора): `manifest.json`, иконки PWA (192/512), favicon (сейчас отсутствует), переход `Alik.png` → `Alik.webp` в precache.
-  - Деплой пакета изоляции (Этапы 1–4) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
+  - Деплой пакета изоляции (Этапы 1–5) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 
 
