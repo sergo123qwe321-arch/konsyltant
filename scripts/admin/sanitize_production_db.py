@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 """
-scripts/admin/sanitize_production_db.py — санация боевой базы konsyltant.db
-(Этап 7, шаг 7.2б).
+scripts/admin/sanitize_production_db.py — санация боевой базы
+(Этап 7, шаг 7.2б; Этап 8, шаг 8.2 — поддержка PostgreSQL).
 
-Что делает:
-  1. Авто-резервная копия `konsyltant.db.backup_<timestamp>` (shutil.copy2) ПЕРЕД записью.
-  2. Единая транзакция c `PRAGMA foreign_keys = ON`:
-       - удаление из `doctors` всего, что не входит в утвержденный Allowlist;
-       - удаление зависимых записей (`patient_share_grants`, `doctor_notes`,
-         `doctor_chat_history`, `patient_analyses_documents`) с doctor_id вне
-         Allowlist или «висячих» (NULL / уже удаленные врачи);
-       - удаление тестовых учеток из `patient_access` (keep-list: admin,
-         svetlana, DOC-PRODUCER/PRODUCER-001), реальные записи пациентов не трогаются.
-  3. `VACUUM` после коммита (дефрагментация файла).
+Поддерживает обе СУБД через единый вход `database.get_connection()`:
+  * SQLite (локально: konsyltant.db / SQLITE_DB_PATH):
+      - `PRAGMA foreign_keys = ON`;
+      - явная транзакция `BEGIN IMMEDIATE` ... `COMMIT`/`ROLLBACK`;
+      - `VACUUM` после коммита (дефрагментация файла);
+      - бэкап = копия файла `konsyltant.db.backup_<timestamp>` (shutil.copy2).
+  * PostgreSQL (прод, контейнер с `DATABASE_URL=postgresql://...`):
+      - штатная транзакция `COMMIT`/`ROLLBACK` (прагма и VACUUM не применяются);
+      - бэкап = `pg_dump --format=custom` в `backups/konsyltant_pg_<timestamp>.dump`.
+
+Правила очистки (одинаковы для обеих СУБД):
+  - удаление из `doctors` всего, что не входит в утвержденный Allowlist;
+  - удаление зависимых записей (`patient_share_grants`, `doctor_notes`,
+    `doctor_chat_history`, `patient_analyses_documents`) с doctor_id вне
+    Allowlist или «висячих» (NULL);
+  - удаление тестовых учеток из `patient_access` (keep-list: admin, svetlana,
+    DOC-PRODUCER/PRODUCER-001); реальные записи пациентов не трогаются;
+  - идемпотентный фикс каталога Светланы `admin_vault` -> `admin_vault_svetlana`.
+
+Все списки (Allowlist, keep-list) подставляются в SQL строковыми литералами —
+синтаксис `IN (...)`/`NOT IN (...)` идентично валиден в SQLite и PostgreSQL.
 
 По умолчанию — dry-run (только статистика, без изменений и без бэкапа).
 Фактическое выполнение: `--apply`.
@@ -20,12 +31,16 @@ scripts/admin/sanitize_production_db.py — санация боевой базы
 import argparse
 import os
 import shutil
-import sqlite3
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import database  # noqa: E402  — строго после выставления sys.path
 
 # Утвержденный Allowlist специалистов (Этап 7, шаг 7.2б)
 ALLOWLIST_LICENSES = ("DOC-KSENIA-001", "DOC-PRODUCER", "PRODUCER-001")
@@ -49,69 +64,81 @@ CHILD_TABLES = (
     "patient_analyses_documents",
 )
 
-PLACEHOLDER_DOCS = ",".join("?" * len(ALLOWLIST_LICENSES))
-PLACEHOLDER_ADMINS = ",".join("?" * len(KEEP_ADMIN_TOKENS))
-PLACEHOLDER_DOCTORS = ",".join("?" * len(KEEP_DOCTOR_TOKENS))
-PLACEHOLDER_TEST_FOLDERS = ",".join("?" * len(TEST_PATIENT_FOLDERS))
-PLACEHOLDER_TEST_TOKENS = ",".join("?" * len(TEST_PATIENT_TOKENS))
+
+def sql_in(values) -> str:
+    """Список строковых литералов для IN/NOT IN (валидно в SQLite и PostgreSQL)."""
+    return ", ".join("'" + str(v).replace("'", "''") + "'" for v in values)
+
+
+ALLOWLIST_SQL = sql_in(ALLOWLIST_LICENSES)
 
 CHILD_DELETE_SQL = (
     "DELETE FROM {table} WHERE doctor_id IS NULL "
-    "OR doctor_id NOT IN (SELECT id FROM doctors WHERE license_number IN ({allowlist}))"
+    f"OR doctor_id NOT IN (SELECT id FROM doctors WHERE license_number IN ({ALLOWLIST_SQL}))"
 )
 PATIENT_ACCESS_WHERE = (
-    "(("
-    f"role = 'ADMIN' AND access_token NOT IN ({PLACEHOLDER_ADMINS})) "
-    f"OR (role = 'DOCTOR' AND access_token NOT IN ({PLACEHOLDER_DOCTORS})) "
-    "OR (role = 'PATIENT' AND ("
-    f"gdrive_folder_id IN ({PLACEHOLDER_TEST_FOLDERS}) "
-    f"OR access_token IN ({PLACEHOLDER_TEST_TOKENS}))))"
+    "((role = 'ADMIN' AND access_token NOT IN (" + sql_in(KEEP_ADMIN_TOKENS) + ")) "
+    "OR (role = 'DOCTOR' AND access_token NOT IN (" + sql_in(KEEP_DOCTOR_TOKENS) + ")) "
+    "OR (role = 'PATIENT' AND (gdrive_folder_id IN (" + sql_in(TEST_PATIENT_FOLDERS) + ") "
+    "OR access_token IN (" + sql_in(TEST_PATIENT_TOKENS) + "))))"
 )
 PATIENT_ACCESS_DELETE_SQL = "DELETE FROM patient_access WHERE " + PATIENT_ACCESS_WHERE
 PATIENT_ACCESS_COUNT_SQL = "SELECT COUNT(*) FROM patient_access WHERE " + PATIENT_ACCESS_WHERE
 
+SVETLANA_UPDATE_SQL = (
+    "UPDATE patient_access SET gdrive_folder_id = ? "
+    "WHERE access_token = ? AND role = 'ADMIN' AND COALESCE(gdrive_folder_id, '') <> ?"
+)
 
-def resolve_db_path(cli_path: str) -> Path:
+
+def resolve_sqlite_path(cli_path: str) -> Path:
     if cli_path:
         return Path(cli_path)
     env_path = os.getenv("SQLITE_DB_PATH") or os.getenv("DB_FILE")
     if env_path:
         return Path(env_path)
-    return PROJECT_ROOT / "konsyltant.db"
+    return Path(database.DB_FILE)
 
 
-def make_backup(db_path: Path) -> Path:
+def make_backup(is_postgres: bool, sqlite_path: Path) -> Path:
+    """Резервная копия ПЕРЕД записью: файл (SQLite) или pg_dump (PostgreSQL)."""
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_path = db_path.with_name(f"{db_path.name}.backup_{timestamp}")
-    shutil.copy2(db_path, backup_path)
+    if is_postgres:
+        db_url = os.getenv("DATABASE_URL", "")
+        if not db_url:
+            raise RuntimeError("DATABASE_URL не задан — pg_dump невозможен.")
+        out_path = PROJECT_ROOT / "backups" / f"konsyltant_pg_{timestamp}.dump"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd = ["pg_dump", f"--dbname={db_url}", "--format=custom", f"--file={out_path}"]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except FileNotFoundError:
+            raise RuntimeError(
+                "pg_dump не найден в PATH — на проде бэкап обязателен, прерывание."
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                f"pg_dump завершился с ошибкой: {(exc.stderr or '').strip()}"
+            )
+        return out_path
+    backup_path = sqlite_path.with_name(f"{sqlite_path.name}.backup_{timestamp}")
+    shutil.copy2(sqlite_path, backup_path)
     return backup_path
 
 
-def child_delete_params() -> tuple:
-    return tuple(ALLOWLIST_LICENSES)
-
-
-def patient_access_delete_params() -> tuple:
-    return (
-        *KEEP_ADMIN_TOKENS,
-        *KEEP_DOCTOR_TOKENS,
-        *TEST_PATIENT_FOLDERS,
-        *TEST_PATIENT_TOKENS,
-    )
-
-
-def collect_stats(conn: sqlite3.Connection) -> dict:
+def collect_stats(conn) -> dict:
     cursor = conn.cursor()
     stats = {"tables": {}, "keep_doctors": [], "patient_access_breakdown": {}}
 
     # 1. Врачи
-    total = cursor.execute("SELECT COUNT(*) FROM doctors").fetchone()[0]
-    keep_rows = cursor.execute(
+    database.execute_query(cursor, "SELECT COUNT(*) FROM doctors")
+    total = cursor.fetchone()[0]
+    database.execute_query(
+        cursor,
         "SELECT id, full_name, license_number, email FROM doctors "
-        f"WHERE license_number IN ({PLACEHOLDER_DOCS}) ORDER BY id",
-        tuple(ALLOWLIST_LICENSES),
-    ).fetchall()
-    keep_ids = [row[0] for row in keep_rows]
+        f"WHERE license_number IN ({ALLOWLIST_SQL}) ORDER BY id",
+    )
+    keep_rows = cursor.fetchall()
     stats["keep_doctors"] = keep_rows
     stats["tables"]["doctors"] = {
         "total": total,
@@ -121,12 +148,14 @@ def collect_stats(conn: sqlite3.Connection) -> dict:
 
     # 2. Зависимые таблицы
     for table in CHILD_TABLES:
-        table_total = cursor.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-        to_delete = cursor.execute(
+        database.execute_query(cursor, f"SELECT COUNT(*) FROM {table}")
+        table_total = cursor.fetchone()[0]
+        database.execute_query(
+            cursor,
             f"SELECT COUNT(*) FROM {table} WHERE doctor_id IS NULL "
-            f"OR doctor_id NOT IN (SELECT id FROM doctors WHERE license_number IN ({PLACEHOLDER_DOCS}))",
-            tuple(ALLOWLIST_LICENSES),
-        ).fetchone()[0]
+            f"OR doctor_id NOT IN (SELECT id FROM doctors WHERE license_number IN ({ALLOWLIST_SQL}))",
+        )
+        to_delete = cursor.fetchone()[0]
         stats["tables"][table] = {
             "total": table_total,
             "keep": table_total - to_delete,
@@ -134,23 +163,24 @@ def collect_stats(conn: sqlite3.Connection) -> dict:
         }
 
     # 3. Учетные записи
-    pa_total = cursor.execute("SELECT COUNT(*) FROM patient_access").fetchone()[0]
-    pa_delete = cursor.execute(
-        PATIENT_ACCESS_COUNT_SQL, patient_access_delete_params()
-    ).fetchone()[0]
+    database.execute_query(cursor, "SELECT COUNT(*) FROM patient_access")
+    pa_total = cursor.fetchone()[0]
+    database.execute_query(cursor, PATIENT_ACCESS_COUNT_SQL)
+    pa_delete = cursor.fetchone()[0]
     stats["tables"]["patient_access"] = {
         "total": pa_total,
         "keep": pa_total - pa_delete,
         "delete": pa_delete,
     }
     for role in ("ADMIN", "DOCTOR", "PATIENT"):
-        role_total = cursor.execute(
-            "SELECT COUNT(*) FROM patient_access WHERE role = ?", (role,)
-        ).fetchone()[0]
-        role_delete = cursor.execute(
-            PATIENT_ACCESS_COUNT_SQL + " AND role = ?",
-            (*patient_access_delete_params(), role),
-        ).fetchone()[0]
+        database.execute_query(
+            cursor, "SELECT COUNT(*) FROM patient_access WHERE role = ?", (role,)
+        )
+        role_total = cursor.fetchone()[0]
+        database.execute_query(
+            cursor, PATIENT_ACCESS_COUNT_SQL + " AND role = ?", (role,)
+        )
+        role_delete = cursor.fetchone()[0]
         stats["patient_access_breakdown"][role] = {
             "total": role_total,
             "delete": role_delete,
@@ -158,18 +188,20 @@ def collect_stats(conn: sqlite3.Connection) -> dict:
         }
 
     # 4. Каталог Светланы (коллизия admin_vault -> admin_vault_svetlana)
-    svetlana_folder = cursor.execute(
+    database.execute_query(
+        cursor,
         "SELECT gdrive_folder_id FROM patient_access WHERE access_token = ? AND role = 'ADMIN'",
         (SVETLANA_LOGIN,),
-    ).fetchone()
+    )
+    svetlana_folder = cursor.fetchone()
     stats["svetlana_vault"] = svetlana_folder[0] if svetlana_folder else "(нет записи)"
     stats["svetlana_vault_ok"] = stats["svetlana_vault"] == SVETLANA_VAULT
     return stats
 
 
-def print_stats(stats: dict, db_path: Path) -> None:
+def print_stats(stats: dict, target: str) -> None:
     print("=" * 72)
-    print(f"САНАЦИЯ БАЗЫ: {db_path}")
+    print(f"САНАЦИЯ БАЗЫ: {target}")
     print("Allowlist специалистов:", ", ".join(ALLOWLIST_LICENSES))
     print("=" * 72)
     header = f"{'Таблица':<30}{'Было':>8}{'Удалить':>10}{'Оставить':>11}"
@@ -191,41 +223,37 @@ def print_stats(stats: dict, db_path: Path) -> None:
     print("=" * 72)
 
 
-def apply_sanitize(conn: sqlite3.Connection) -> None:
+def apply_sanitize(conn, is_postgres: bool) -> None:
+    """Единая транзакция санации (COMMIT при успехе, ROLLBACK при ошибке)."""
     cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON")
-    conn.execute("BEGIN IMMEDIATE")
+    if not is_postgres:
+        # PRAGMA меняется только вне транзакции; далее явный BEGIN (изоляция записи)
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.isolation_level = None
+        conn.execute("BEGIN IMMEDIATE")
     try:
         # 1. Зависимые записи (до удаления врачей — явно, без надежды на каскад)
         for table in CHILD_TABLES:
-            cursor.execute(
-                CHILD_DELETE_SQL.format(table=table, allowlist=PLACEHOLDER_DOCS),
-                child_delete_params(),
-            )
+            database.execute_query(cursor, CHILD_DELETE_SQL.format(table=table))
         # 2. Врачи вне Allowlist
-        cursor.execute(
-            f"DELETE FROM doctors WHERE license_number NOT IN ({PLACEHOLDER_DOCS})",
-            tuple(ALLOWLIST_LICENSES),
+        database.execute_query(
+            cursor, f"DELETE FROM doctors WHERE license_number NOT IN ({ALLOWLIST_SQL})"
         )
         # 3. Тестовые учетные записи
-        cursor.execute(
-            PATIENT_ACCESS_DELETE_SQL, patient_access_delete_params()
-        )
+        database.execute_query(cursor, PATIENT_ACCESS_DELETE_SQL)
         # 4. Каталог Светланы (устранение коллизии с admin_vault)
-        cursor.execute(
-            "UPDATE patient_access SET gdrive_folder_id = ? "
-            "WHERE access_token = ? AND role = 'ADMIN' AND COALESCE(gdrive_folder_id, '') <> ?",
-            (SVETLANA_VAULT, SVETLANA_LOGIN, SVETLANA_VAULT),
+        database.execute_query(
+            cursor, SVETLANA_UPDATE_SQL, (SVETLANA_VAULT, SVETLANA_LOGIN, SVETLANA_VAULT)
         )
-        conn.execute("COMMIT")
+        conn.commit()
     except Exception:
-        conn.execute("ROLLBACK")
+        conn.rollback()
         raise
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Санация боевой базы konsyltant.db (Этап 7, шаг 7.2б)"
+        description="Санация боевой базы (SQLite/PostgreSQL), Этап 7.2б + 8.2"
     )
     parser.add_argument(
         "--apply",
@@ -236,40 +264,62 @@ def main() -> int:
         "--db",
         type=str,
         default=None,
-        help="путь к файлу SQLite (по умолчанию: SQLITE_DB_PATH / konsyltant.db)",
+        help="путь к файлу SQLite (только для SQLite; игнорируется при PostgreSQL)",
     )
     args = parser.parse_args()
 
-    db_path = resolve_db_path(args.db)
-    if not db_path.exists():
-        print(f"[ERROR] База не найдена: {db_path}")
-        return 1
-    if db_path.name.startswith("test_"):
-        print(f"[ERROR] Это тестовая база ({db_path.name}) — санация запрещена. "
-              "Запускайте скрипт без переменных SQLITE_DB_PATH/DB_FILE.")
-        return 1
+    is_postgres = database.check_is_postgres()
 
-    conn = sqlite3.connect(db_path, isolation_level=None)
+    if is_postgres:
+        target = "PostgreSQL (DATABASE_URL)"
+        sqlite_path = None
+        if args.db:
+            print("[ERROR] --db применим только к SQLite; для PostgreSQL используется "
+                  "DATABASE_URL окружения.")
+            return 1
+    else:
+        if args.db:
+            os.environ["SQLITE_DB_PATH"] = args.db
+            os.environ["DB_FILE"] = args.db
+        sqlite_path = resolve_sqlite_path(args.db)
+        target = str(sqlite_path)
+        if sqlite_path.name.startswith("test_"):
+            print(f"[ERROR] Это тестовая база ({sqlite_path.name}) — санация запрещена. "
+                  "Запускайте скрипт без переменных SQLITE_DB_PATH/DB_FILE.")
+            return 1
+        if not sqlite_path.exists():
+            print(f"[ERROR] База не найдена: {sqlite_path}")
+            return 1
+
+    conn = database.get_connection()
     try:
         stats = collect_stats(conn)
-        print_stats(stats, db_path)
+        print_stats(stats, target)
 
         if not args.apply:
             print("DRY-RUN: изменения не выполнялись. Для применения: --apply")
             return 0
 
-        backup_path = make_backup(db_path)
-        print(f"[BACKUP] Резервная копия создана: {backup_path.name}")
+        try:
+            backup_path = make_backup(is_postgres, sqlite_path)
+        except RuntimeError as exc:
+            print(f"[ERROR] Бэкап не создан, санация прервана: {exc}")
+            return 1
+        print(f"[BACKUP] Резервная копия создана: {backup_path}")
 
-        apply_sanitize(conn)
+        apply_sanitize(conn, is_postgres)
         print("[APPLY] Транзакция санации выполнена и подтверждена.")
 
-        conn.execute("VACUUM")
-        print("[VACUUM] Файл базы дефрагментирован.")
+        if is_postgres:
+            print("[VACUUM] Пропущено: для PostgreSQL дефрагментация файла не требуется "
+                  "(изменения уже подтверждены COMMIT).")
+        else:
+            conn.execute("VACUUM")
+            print("[VACUUM] Файл базы дефрагментирован.")
 
         after = collect_stats(conn)
         print("\nИТОГОВОЕ СОСТОЯНИЕ:")
-        print_stats(after, db_path)
+        print_stats(after, target)
         return 0
     finally:
         conn.close()

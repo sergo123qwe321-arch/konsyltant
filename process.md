@@ -1324,6 +1324,16 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **189 из 189 тестов PASS** (100% OK за 17.064s), демо-врачи засеялись только в `test_konsyltant.db`.
   - Локальный коммит (без деплоя): `fix(db): guard demo doctor seed behind environment flag`.
+- [2026-10-10] [Stage 8 - Step 8.2: PostgreSQL Sanitization Support + Config Finalization]:
+  - `scripts/admin/sanitize_production_db.py` переведен на универсальный бэкенд: подключение только через `database.get_connection()` / `database.check_is_postgres()`; все запросы идут через `database.execute_query()` (автоконверсия `?` → `%s` для PG). Списки (Allowlist, keep-list, тестовые папки/токены) подставляются в SQL **строковыми литералами** через `sql_in()` — `IN (...)`/`NOT IN (...)` одинаково валиден в SQLite и PostgreSQL. Схема транзакции: SQLite — `PRAGMA foreign_keys = ON` + явный `BEGIN IMMEDIATE` → `COMMIT`/`ROLLBACK` + `VACUUM`; PostgreSQL — штатный `COMMIT`/`ROLLBACK`, прагма и `VACUUM` пропускаются. Бэкап перед `--apply`: SQLite — копия файла `konsyltant.db.backup_<ts>`, PostgreSQL — `pg_dump --format=custom` в `backups/konsyltant_pg_<ts>.dump` (каталог `backups/*` уже в `.gitignore`); **при невозможности создать бэкап санация прерывается** (exit 1). Флаги `--apply` и dry-run (по умолчанию) сохранены; `--db` действует только для SQLite; guard по `test_*.db` сохранен.
+  - `nginx/default.conf`: добавлен точный блок `location = /sw.js` → `proxy_pass http://web:8000` (+ заголовки Host/X-Real-IP/X-Forwarded-For/X-Forwarded-Proto) с `add_header Cache-Control "no-cache, no-store, must-revalidate" always` и `add_header Pragma "no-cache" always` — запрет кэширования Service Worker теперь зафиксирован и на уровне Nginx, а не только в ответе FastAPI (`main.py:2106`).
+  - `.env.example`: в секцию БД добавлен `ENABLE_DEMO_DOCTORS_SEED=0` с комментарием (0 = выключено для прода, 1 = включено для тестов) — закрывает пункт чек-листа шага 8.1.
+  - Проверка (read-only) dry-run на боевой `konsyltant.db`: exit 0, статистика `doctors` 3/0/3, `patient_access` 28/0/28, каталог Светланы OK; SHA256 до/после идентичен `3BE167ECA82EF3CCD0287A432BF1C07EE29E2708DD54E73B8744215E6EFDE634`, mtime не изменился, новых бэкапов не создано.
+  - Прогон `--apply` проверен на **копии** базы во временной папке (`--db <temp>/sanitize_probe.db`): бэкап создан, транзакция + VACUUM отработали, итоговое состояние идентично боевому (`doctors`=3, `patient_access`=28, `svetlana`=admin_vault_svetlana); копия и её бэкап удалены, боевой файл не затронут. Guard на `test_konsyltant.db`: exit 1 «санация запрещена».
+  - Ограничение: ветка PostgreSQL **локально не испытана** (в окружении нет `psycopg2` и сервера) — проверка на проде выполняется по Runbook шага 8.1 (бэкап `pg_dump` → dry-run → `--apply`).
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **189 из 189 тестов PASS** (100% OK за 17.679s).
+  - Локальный коммит (без деплоя): `chore(deploy): prepare postgres sanitization support and finalize nginx configs`.
 - **Текущее состояние:**
   - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки). Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
   - **Этап 4 завершен (PWA):** офлайн-заглушка `/offline`, ядро `static/sw.js` + роут `/sw.js` (антикэш), регистрация SW во всех 4 оболочках; интеграция: precache → Network-First навигации /offline-фоллбэком, Cache-First+SWR статики, API мимо кэша (152-ФЗ).
@@ -1336,7 +1346,7 @@
   - Шаг 6.4+ (отложен): разграничение прав администраторов (роль сейчас одна `ADMIN`).
   - Шаг 5.3 (отложен): персонализация кабинета Ксении.
   - Опционально (по директиве Архитектора): `manifest.json`, иконки PWA (192/512), favicon (сейчас отсутствует), переход `Alik.png` → `Alik.webp` в precache.
-  - Деплой пакета изоляции (Этапы 1–7) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
+  - Деплой пакета изоляции (Этапы 1–7) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора. Подготовка к выкатке: pre-flight аудит (шаг 8.1, read-only) и инфраструктурная финализация (шаг 8.2: PG-поддержка санации, `location = /sw.js` в Nginx, `ENABLE_DEMO_DOCTORS_SEED=0` в `.env.example`) — выполнены; Runbook деплоя сформирован в отчете по шагу 8.1.
 
 
 
