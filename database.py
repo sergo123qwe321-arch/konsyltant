@@ -117,17 +117,21 @@ def seed_doctor_ksenia() -> Optional[int]:
 
 def seed_admin_svetlana() -> Optional[int]:
     """
-    Идемпотентный сид учетной записи администратора Светланы (Этап 6, шаг 6.2).
+    Идемпотентный сид учетной записи администратора Светланы (Этап 6, шаг 6.2;
+    Этап 7, шаг 7.2б — изоляция каталога).
     Поиск: access_token == 'svetlana' AND role == 'ADMIN':
-      - запись найдена — UPDATE только full_name и specialization
+      - запись найдена — UPDATE full_name, specialization и gdrive_folder_id
         (пароль не сбрасывается, дубликаты не создаются);
       - запись отсутствует — INSERT с bcrypt-хэшем стартового пароля.
+    Каталог Светланы: 'admin_vault_svetlana' (собственный vault, не общий
+    'admin_vault' дефолтного администратора — устранение коллизии).
     Возвращает id записи (или None при ошибке).
     """
     seed_login = "svetlana"
     seed_password = "svetlanadefmarshryt123"
     seed_full_name = "дефектолог Светлана / руководитель платформы Маршрут"
     seed_specialization = "Дефектолог / Руководитель платформы"
+    seed_vault = "admin_vault_svetlana"
 
     conn = None
     try:
@@ -143,8 +147,8 @@ def seed_admin_svetlana() -> Optional[int]:
             admin_id = row[0]
             execute_query(
                 cursor,
-                "UPDATE patient_access SET full_name = ?, specialization = ? WHERE id = ?",
-                (seed_full_name, seed_specialization, admin_id),
+                "UPDATE patient_access SET full_name = ?, specialization = ?, gdrive_folder_id = ? WHERE id = ?",
+                (seed_full_name, seed_specialization, seed_vault, admin_id),
             )
             conn.commit()
             return admin_id
@@ -159,10 +163,10 @@ def seed_admin_svetlana() -> Optional[int]:
                 cursor,
                 """
                 INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, is_verified, full_name, specialization)
-                VALUES (?, ?, 'admin_vault', 'ADMIN', ?, ?, ?)
+                VALUES (?, ?, ?, 'ADMIN', ?, ?, ?)
                 RETURNING id
                 """,
-                (seed_login, password_hash, val_verified, seed_full_name, seed_specialization),
+                (seed_login, password_hash, seed_vault, val_verified, seed_full_name, seed_specialization),
             )
             admin_id = cursor.fetchone()[0]
         else:
@@ -170,9 +174,9 @@ def seed_admin_svetlana() -> Optional[int]:
                 cursor,
                 """
                 INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, is_verified, full_name, specialization)
-                VALUES (?, ?, 'admin_vault', 'ADMIN', ?, ?, ?)
+                VALUES (?, ?, ?, 'ADMIN', ?, ?, ?)
                 """,
-                (seed_login, password_hash, val_verified, seed_full_name, seed_specialization),
+                (seed_login, password_hash, seed_vault, val_verified, seed_full_name, seed_specialization),
             )
             admin_id = cursor.lastrowid
         conn.commit()
@@ -199,7 +203,7 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 access_token TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                gdrive_folder_id TEXT UNIQUE NOT NULL,
+                gdrive_folder_id TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 role VARCHAR(20) DEFAULT 'PATIENT',
                 full_name VARCHAR(100) DEFAULT '',

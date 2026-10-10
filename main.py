@@ -631,24 +631,28 @@ def admin_login_api(req: AdminLoginRequest):
     if not verify_admin_credentials(username, req.password):
         raise HTTPException(status_code=401, detail="Неверный логин или пароль администратора")
 
-    # Отображаемое имя администратора из БД (Этап 6, шаг 6.3)
+    # Отображаемое имя администратора и его vault из БД (Этап 6, шаг 6.3; Этап 7, шаг 7.2б)
     full_name = username
+    allowed_folder = "admin_vault"
     conn = get_connection()
     cursor = conn.cursor()
     execute_query(
         cursor,
-        "SELECT full_name FROM patient_access WHERE access_token = ? AND role = 'ADMIN'",
+        "SELECT full_name, gdrive_folder_id FROM patient_access WHERE access_token = ? AND role = 'ADMIN'",
         (username,),
     )
     row = cursor.fetchone()
     conn.close()
-    if row and row[0]:
-        full_name = row[0]
+    if row:
+        if row[0]:
+            full_name = row[0]
+        if row[1]:
+            allowed_folder = row[1]
 
     token = create_access_token(data={
         "sub": username,
         "role": "ADMIN",
-        "allowed_folder": "admin_vault",
+        "allowed_folder": allowed_folder,
         "full_name": full_name
     })
     return {

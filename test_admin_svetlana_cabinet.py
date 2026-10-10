@@ -62,7 +62,7 @@ class SvetlanaAdminCabinetTests(unittest.TestCase):
         self.assertTrue(bool(is_verified), "Запись должна быть верифицирована")
         self.assertEqual(full_name, SVETLANA_FULL_NAME)
         self.assertEqual(specialization, SVETLANA_SPECIALIZATION)
-        self.assertEqual(vault, "admin_vault")
+        self.assertEqual(vault, "admin_vault_svetlana")
         self.assertGreater(admin_id, 0)
 
         # Идемпотентность: повторный init_db() не плодит дубликатов
@@ -90,7 +90,7 @@ class SvetlanaAdminCabinetTests(unittest.TestCase):
         self.assertIsNotNone(payload, "JWT должен быть валидным")
         self.assertEqual(payload.get("role"), "ADMIN")
         self.assertEqual(payload.get("sub"), SVETLANA_LOGIN)
-        self.assertEqual(payload.get("allowed_folder"), "admin_vault")
+        self.assertEqual(payload.get("allowed_folder"), "admin_vault_svetlana")
         # Имя продублировано в payload JWT (для персонализации шапки)
         self.assertEqual(payload.get("full_name"), SVETLANA_FULL_NAME)
 

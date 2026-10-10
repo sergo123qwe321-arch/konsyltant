@@ -6,6 +6,7 @@ __pycache__/
 konsyltant.db
 *.db
 test_konsyltant.db*
+konsyltant.db.backup_*
 процесс.txt
 Процесс для Гемини.txt
 log.txt
