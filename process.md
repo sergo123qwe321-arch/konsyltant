@@ -1334,6 +1334,13 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **189 из 189 тестов PASS** (100% OK за 17.679s).
   - Локальный коммит (без деплоя): `chore(deploy): prepare postgres sanitization support and finalize nginx configs`.
+- [2026-10-10] [Stage 8 - Step 8.3: Git Sync & VPS Access Check]:
+  - `git remote -v`: `origin` = `https://github.com/sergo123qwe321-arch/konsyltant.git` (fetch/push).
+  - Перед отправкой: ветка `main` опережала `origin/main` на **29 коммитов**, рабочее дерево чистое.
+  - `git push origin main` → **OK (exit 0)**, диапазон `b75981b..3a98b15  main -> main`.
+  - Синхронизация подтверждена после `git fetch`: `git status -sb` → `## main...origin/main` (0 ahead / 0 behind), `HEAD` = `origin/main` = `3a98b15fda0823b1b8e73beaf71665023806862d`. В удаленном репозитории теперь весь пакет: `301b0fb` (санация 7.2б), `400e089` (fallback-пароли 7.2в), `28efd2d` (флаг демо-сидов 7.3), `3a98b15` (инфраструктура 8.2), плюс 26 более ранних коммитов пакета.
+  - Проверка сетевого шлюза к VPS: `ssh -o BatchMode=yes -o ConnectTimeout=5 root@159.194.232.74 "echo SSH_OK && pwd"` → **`Permission denied (publickey,password)`, exit 255** — прямого доступа по ключу из терминала нет. Договоренность: команды на боевом сервере выполняются **через консоль Продюсера**; путь к проекту на VPS в рамках шага 8.3 не подтверждается и уточняется непосредственно при выкатке по Runbook шага 8.1.
+  - Локальный коммит записи: `chore(docs): record step 8.3 git sync and vps access check`.
 - **Текущее состояние:**
   - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки). Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
   - **Этап 4 завершен (PWA):** офлайн-заглушка `/offline`, ядро `static/sw.js` + роут `/sw.js` (антикэш), регистрация SW во всех 4 оболочках; интеграция: precache → Network-First навигации /offline-фоллбэком, Cache-First+SWR статики, API мимо кэша (152-ФЗ).
