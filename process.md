@@ -1121,10 +1121,24 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 169 из 169 тестов PASS (100% OK за 25.221s).
   - Локальный коммит (без деплоя): `feat(articles): add standalone SSR template and routes for /post/{id} and /library/{id}`.
+- [2026-10-10] [Stage 3 - Step 3.3: Route Integration Tests for /post and /library]:
+  - Создан тестовый модуль `test_article_routes.py` (6 тестов, по аналогии с `test_doctor_routes.py` и `test_admin_routes.py`, `TestClient`):
+    - `test_post_page_status_200`: существующий пост (ID определяется из БД динамически, в сидах — 27/28) → 200 OK, маркеры `<link rel="stylesheet" href="/static/css/article.css"`, `og:title`, `og:description`, `property="og:type" content="article"`, отсутствие `static/js/app.js` (Zero-JS);
+    - `test_post_page_404_not_found`: `/post/999999999` → 404;
+    - `test_post_page_422_invalid_id`: `/post/abc` → 422;
+    - `test_library_page_status_200`: существующий материал библиотеки (ID из БД) → 200, маркеры категории `meta-badge-category`, ссылки `class="back-link"` и текста «← На главную», без `app.js`;
+    - `test_library_page_404_not_found`: `/library/999999999` → 404;
+    - `test_article_css_status_200`: `/static/css/article.css` → 200, в теле найдено правило `article-body`.
+  - Исправление в ходе отладки: маркер ссылки стилей уточнен на `<link rel="stylesheet" href="/static/css/article.css"` (шаблон самозакрывающийся, `/>` в конце) — ассерт приведен к фактической разметке.
+  - Директива запрета соблюдена: `templates/index.html` и `static/js/app.js` не изменялись.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Целевые тесты `python -m unittest test_article_routes.py`: 6 из 6 PASS.
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **175 из 175 тестов PASS** (100% OK за 17.440s).
+  - Локальный коммит (без деплоя): `test(articles): add route integration tests for /post and /library`.
 - **Текущее состояние:**
-  - Этап 2 закрыт (коммит `81eff3b`); Этап 3 в работе: созданы Zero-JS SSR-страницы `/post/{id}` и `/library/{id}` (единый шаблон `article.html` + `article.css` + серверные OG-теги), лендинг пока читает статьи через модалку `#article-modal` (не тронут); 169/169 PASS, линтер OK.
+  - Этап 2 закрыт (коммит `81eff3b`); Этап 3: SSR-страницы `/post/{id}` и `/library/{id}` приняты (`143cf17`) и закреплены интеграционными тестами `test_article_routes.py` (175/175 PASS, линтер OK); лендинг пока читает статьи через модалку `#article-modal` (не тронут).
 - **Что предстоит:**
-  - Шаг 3.3 (по директиве Архитектора), затем шаг 3.4: демонтаж модалки `#article-modal` с лендинга (`templates/index.html` + `static/js/app.js`) и перевод кнопок «Читать статью»/«Читать далее» на ссылки `/post/{id}`.
+  - Шаг 3.4: демонтаж модалки `#article-modal` с лендинга (`templates/index.html` + `static/js/app.js`) и перевод кнопок «Читать статью»/«Читать далее» на ссылки `/post/{id}` — по директиве Архитектора.
   - Деплой пакета изоляции (Этапы 1–3) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 
