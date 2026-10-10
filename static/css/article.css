@@ -1,0 +1,269 @@
+/* ==========================================================================
+   СТИЛИ СТАТЬИ (ARTICLE CSS — /post/{id} и /library/{id})
+   Автономная long-read тема центра «Маленькая Страна». Mobile-first,
+   без зависимостей от style.css. Zero-JS страница.
+   ========================================================================== */
+
+:root {
+    --bg-deep: #101524;
+    --bg-card: rgba(24, 24, 37, 0.88);
+    --accent-purple: #7C3AED;
+    --accent-turquoise: #06B6D4;
+    --border-glass: rgba(255, 255, 255, 0.08);
+    --text-main: #E2E8F0;
+    --text-muted: #94A3B8;
+    --radius-card: 16px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: 'Segoe UI', 'Plus Jakarta Sans', 'Rubik', Arial, sans-serif;
+    background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(124, 58, 237, 0.16), transparent 60%),
+        radial-gradient(1000px 500px at 110% 10%, rgba(6, 182, 212, 0.12), transparent 55%),
+        var(--bg-deep);
+    color: var(--text-main);
+    min-height: 100vh;
+    line-height: 1.6;
+}
+
+/* КОНТЕЙНЕР (mobile-first) */
+.article {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 20px 16px 48px;
+}
+
+/* ССЫЛКА НАЗАД */
+.back-link {
+    display: inline-block;
+    margin-bottom: 20px;
+    color: var(--accent-turquoise);
+    text-decoration: none;
+    font-size: 0.92rem;
+    font-weight: 600;
+    padding: 8px 14px;
+    border: 1px solid var(--border-glass);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.back-link:hover,
+.back-link:focus {
+    background: rgba(6, 182, 212, 0.12);
+    border-color: rgba(6, 182, 212, 0.45);
+}
+
+/* МЕТАДАННЫЕ */
+.article-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.meta-item {
+    font-size: 0.85rem;
+    color: var(--accent-turquoise);
+}
+
+.meta-badge {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--text-main);
+    background: rgba(124, 58, 237, 0.18);
+    border: 1px solid rgba(124, 58, 237, 0.4);
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.meta-badge-category {
+    background: rgba(6, 182, 212, 0.15);
+    border-color: rgba(6, 182, 212, 0.4);
+    color: #67E8F9;
+}
+
+/* ЗАГОЛОВОК И АНОНС */
+.article-title {
+    margin: 0 0 14px;
+    font-size: 1.7rem;
+    line-height: 1.25;
+    color: #fff;
+    font-weight: 800;
+}
+
+.article-summary {
+    margin: 0 0 22px;
+    font-size: 1.05rem;
+    line-height: 1.65;
+    color: var(--text-muted);
+    border-left: 3px solid var(--accent-purple);
+    padding-left: 14px;
+}
+
+/* МЕДИА */
+.article-cover {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 420px;
+    object-fit: cover;
+    border-radius: var(--radius-card);
+    border: 1px solid var(--border-glass);
+    margin-bottom: 22px;
+}
+
+.article-media {
+    margin-bottom: 24px;
+}
+
+.article-video {
+    display: block;
+    width: 100%;
+    max-height: 420px;
+    border-radius: var(--radius-card);
+    border: 1px solid var(--border-glass);
+    background: #000;
+}
+
+.article-video-frame {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    min-height: 220px;
+    border: none;
+    border-radius: var(--radius-card);
+    background: #000;
+}
+
+.media-source-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 0.84rem;
+    color: var(--accent-turquoise);
+    text-decoration: none;
+}
+
+.media-source-link:hover {
+    text-decoration: underline;
+}
+
+/* ТЕКСТ СТАТЬИ */
+.article-body {
+    background: var(--bg-card);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-card);
+    padding: 22px 20px;
+    font-size: 1.02rem;
+    line-height: 1.8;
+    color: var(--text-main);
+    white-space: pre-line;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    margin-bottom: 26px;
+}
+
+/* ВЛОЖЕНИЯ */
+.article-attachments {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-card);
+    padding: 18px 20px;
+    margin-bottom: 26px;
+}
+
+.attachments-title {
+    margin: 0 0 12px;
+    font-size: 1.02rem;
+    color: #fff;
+}
+
+.attachments-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.attachments-item a {
+    display: block;
+    padding: 10px 14px;
+    border: 1px solid var(--border-glass);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--accent-turquoise);
+    text-decoration: none;
+    font-size: 0.9rem;
+    word-break: break-word;
+}
+
+.attachments-item a:hover {
+    border-color: rgba(6, 182, 212, 0.45);
+    background: rgba(6, 182, 212, 0.1);
+}
+
+/* ФУТЕР СТАТЬИ */
+.article-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+    border-top: 1px solid var(--border-glass);
+    padding-top: 22px;
+}
+
+.article-btn {
+    display: inline-block;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-size: 0.94rem;
+    font-weight: 600;
+    text-decoration: none;
+    text-align: center;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.article-btn:hover {
+    transform: translateY(-1px);
+}
+
+.article-btn-outline {
+    color: var(--text-main);
+    border: 1px solid var(--border-glass);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.article-btn-accent {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent-purple), var(--accent-turquoise));
+    box-shadow: 0 8px 24px rgba(124, 58, 237, 0.35);
+}
+
+/* АДЕПТИВНОСТЬ (tablet+) */
+@media (min-width: 640px) {
+    .article {
+        padding: 32px 24px 64px;
+    }
+
+    .article-title {
+        font-size: 2.1rem;
+    }
+
+    .article-body {
+        padding: 28px 30px;
+        font-size: 1.06rem;
+    }
+
+    .article-video-frame {
+        min-height: 320px;
+    }
+}

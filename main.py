@@ -2065,6 +2065,74 @@ async def doctor_page(request: Request):
 async def admin_page(request: Request):
     return templates.TemplateResponse(request=request, name="admin.html")
 
+# --- Автономные SSR-страницы статей и материалов (Этап 3) ---
+
+def _video_embed_url(url: str) -> str:
+    """Серверный аналог getEmbedVideoUrl из app.js: ссылка -> embed-URL плеера."""
+    trimmed = url.strip()
+    if not trimmed:
+        return ""
+    if "rutube.ru" in trimmed:
+        match = re.search(r"rutube\.ru/(?:video|play/embed)/([a-zA-Z0-9]+)", trimmed)
+        return f"https://rutube.ru/play/embed/{match.group(1)}" if match else trimmed
+    if "vk.com" in trimmed or "vkvideo.ru" in trimmed:
+        if "video_ext.php" in trimmed:
+            return trimmed
+        match = re.search(r"video(-?\d+)_(\d+)", trimmed)
+        if match:
+            return f"https://vk.com/video_ext.php?oid={match.group(1)}&id={match.group(2)}&hd=2"
+        return trimmed
+    if "youtube.com" in trimmed or "youtu.be" in trimmed:
+        if "embed/" in trimmed:
+            return trimmed
+        if "youtu.be" in trimmed:
+            video_id = trimmed.split("youtu.be/")[1].split("?")[0].split("&")[0]
+        elif "v=" in trimmed:
+            video_id = trimmed.split("v=")[1].split("&")[0]
+        else:
+            return trimmed
+        if video_id:
+            return f"https://www.youtube.com/embed/{video_id}"
+    return trimmed
+
+def _build_article_context(request: Request, article: dict) -> dict:
+    """Контекст для templates/article.html (пост или материал библиотеки)."""
+    video_url = (article.get("video_url") or "").strip()
+    cover_url = (article.get("cover_image_url") or "").strip()
+    summary = (article.get("summary") or "").strip()
+    content = (article.get("content") or "").strip()
+    return {
+        "article": article,
+        "page_url": str(request.url),
+        "meta_description": summary or content[:300],
+        "published_date": str(article.get("created_at") or "")[:10],
+        "tags": article.get("tags") or [],
+        "category": article.get("category"),
+        "cover_url": cover_url,
+        "video_url": video_url,
+        "video_embed_url": _video_embed_url(video_url) if video_url else "",
+        "is_local_video": video_url.endswith((".mp4", ".webm")) or "/static/uploads/" in video_url,
+        "attachments": article.get("attachments") or [],
+    }
+
+@app.get("/post/{post_id}")
+async def post_page(request: Request, post_id: int):
+    post = get_post_by_id(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Статья не найдена")
+    return templates.TemplateResponse(
+        request=request, name="article.html", context=_build_article_context(request, post)
+    )
+
+@app.get("/library/{item_id}")
+async def library_item_page(request: Request, item_id: int):
+    item = get_library_item_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Материал не найден")
+    return templates.TemplateResponse(
+        request=request, name="article.html", context=_build_article_context(request, item)
+    )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)

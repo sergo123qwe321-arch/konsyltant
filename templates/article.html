@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>{{ article.title }} — Центр Ментального Здоровья</title>
+    <meta name="description" content="{{ meta_description }}"/>
+
+    <!-- OpenGraph для мессенджеров и соцсетей -->
+    <meta property="og:title" content="{{ article.title }}"/>
+    <meta property="og:description" content="{{ meta_description }}"/>
+    {% if cover_url %}
+    <meta property="og:image" content="{{ cover_url }}"/>
+    {% endif %}
+    <meta property="og:url" content="{{ page_url }}"/>
+    <meta property="og:type" content="article"/>
+    <meta property="og:site_name" content="Маленькая Страна"/>
+
+    <!-- Автономные стили long-read страницы -->
+    <link rel="stylesheet" href="/static/css/article.css"/>
+</head>
+<body>
+<article class="article">
+    <a href="/" class="back-link">← На главную</a>
+
+    <!-- МЕТАДАННЫЕ: дата, категория, теги -->
+    <div class="article-meta">
+        {% if published_date %}
+        <time class="meta-item meta-date" datetime="{{ published_date }}">📅 {{ published_date }}</time>
+        {% endif %}
+        {% if category %}
+        <span class="meta-badge meta-badge-category">📚 {{ category }}</span>
+        {% endif %}
+        {% for tag in tags %}
+        <span class="meta-badge">{{ tag }}</span>
+        {% endfor %}
+    </div>
+
+    <h1 class="article-title">{{ article.title }}</h1>
+
+    {% if article.summary %}
+    <p class="article-summary">{{ article.summary }}</p>
+    {% endif %}
+
+    <!-- МЕДИА: обложка -->
+    {% if cover_url %}
+    <img class="article-cover" src="{{ cover_url }}" alt="Обложка: {{ article.title }}"/>
+    {% endif %}
+
+    <!-- МЕДИА: видео (локальный файл или embed Rutube/VK/YouTube) -->
+    {% if video_url %}
+    <div class="article-media">
+        {% if is_local_video %}
+        <video class="article-video" controls preload="metadata"
+               src="{{ video_url }}"{% if cover_url %} poster="{{ cover_url }}"{% endif %}></video>
+        {% else %}
+        <iframe class="article-video-frame" src="{{ video_embed_url }}"
+                title="Видеоматериал к статье" allowfullscreen
+                allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"></iframe>
+        {% endif %}
+        <a class="media-source-link" href="{{ video_url }}" target="_blank" rel="noopener noreferrer">🔗 Смотреть на первоисточнике ↗</a>
+    </div>
+    {% endif %}
+
+    <!-- ТЕКСТ СТАТЬИ (переносы строк сохраняются, HTML не интерпретируется) -->
+    <div class="article-body">{{ article.content }}</div>
+
+    <!-- ВЛОЖЕНИЯ -->
+    {% if attachments %}
+    <section class="article-attachments">
+        <h2 class="attachments-title">📎 Вложения</h2>
+        <ul class="attachments-list">
+            {% for attachment in attachments %}
+            <li class="attachments-item">
+                <a href="{{ attachment.url }}" target="_blank" rel="noopener noreferrer">
+                    {{ attachment.title or attachment.url }}
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    <!-- ФУТЕР СТАТЬИ -->
+    <footer class="article-footer">
+        <a href="/" class="article-btn article-btn-outline">← На главную</a>
+        <a href="/#contacts" class="article-btn article-btn-accent">Записаться на консультацию →</a>
+    </footer>
+</article>
+</body>
+</html>

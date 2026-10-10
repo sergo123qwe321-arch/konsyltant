@@ -1107,10 +1107,25 @@
   - Smoke-проверка (TestClient): `GET /` → 200 (30 264 байта), админ-модалок нет, `href="/admin"` × 2; `GET /admin` → 200 (все маркеры присутствуют).
   - Контроль качества: `node --check static/js/app.js` → SYNTAX OK; `python scripts/lint_no_txt_logs.py` → OK (0 txt-файлов); целевые тесты `test_landing_and_admin_ops.py + test_admin_routes.py` → 11 из 11 PASS; полный сьют `python -m unittest discover -s . -p "test_*.py"` → **169 из 169 тестов PASS** (100% OK за 16.755s).
   - Локальный коммит (без деплоя): `refactor(admin): remove legacy admin modals from landing and isolate /admin`.
+- [2026-10-09] [Stage 3 - Step 3.2: Standalone SSR Pages for Posts & Library Materials]:
+  - Создан автономный Jinja2-шаблон `templates/article.html` (Zero-JS, без подключения `app.js`):
+    - Head: `<title>{{ article.title }} — Центр Ментального Здоровья</title>`, `meta description` (из `summary`, фолбэк — первые 300 символов `content`), OpenGraph `og:title`/`og:description`/`og:image` (только при наличии `cover_image_url`)/`og:url` (текущий абсолютный URL запроса)/`og:type=article`/`og:site_name`;
+    - Тело: кнопка `← На главную`, метаданные (`<time>` дата публикации, бейдж категории для материалов библиотеки, бейджи тегов), `<h1>`, анонс-лид, обложка, видео (локальный `<video controls poster>` для mp4/webm/`/static/uploads/` либо `<iframe>` embed для Rutube/VK/YouTube + ссылка «Смотреть на первоисточнике»), текст статьи (`white-space: pre-line` — переносы строк сохраняются, HTML экранируется), блок вложений `attachments` (список ссылок), футер с кнопками «← На главную» и «Записаться на консультацию →» (`href="/#contacts"`).
+  - Созданы автономные стили `static/css/article.css` (6 018 байт): mobile-first long-read тема (палитра в духе `admin.css`: `--bg-deep`, фиолетово-бирюзовые радиальные градиенты), контейнер max-width 720px (в пределах 680–760px), интерлиньяж 1.8 для текста, бейджи-пилюли, адаптивные картинки и видеоплееры (`aspect-ratio 16/9`), брейкпоинт 640px; полная независимость от `style.css`.
+  - Маршрутизация в `main.py` (рядом с HTML-роутами `/`, `/doctor`, `/admin`, keyword-стиль `TemplateResponse`):
+    - `GET /post/{post_id}` → `get_post_by_id(post_id)`, при `None` — `HTTPException(404, "Статья не найдена")`, рендер `article.html`;
+    - `GET /library/{item_id}` → `get_library_item_by_id(item_id)`, при `None` — `HTTPException(404, "Материал не найден")`, рендер `article.html`;
+    - хелперы `_video_embed_url(url)` (серверный порт логики `getEmbedVideoUrl` из `app.js`: Rutube/VK/YouTube → embed-URL) и `_build_article_context(request, article)` (общий контекст для поста и материала, включая `category`/`attachments`/`published_date`).
+  - Директива запрета соблюдена: `templates/index.html` и `static/js/app.js` не изменялись (демонтаж `#article-modal` — шаг 3.4).
+  - Smoke-проверка (TestClient): `GET /post/27` (реальный пост из БД) → 200 OK, в `<head>` все OG-теги и `article.css`, `app.js` не подключен; `GET /post/999999999` → 404 «Статья не найдена»; `GET /post/abc` → 422 (валидация int); `GET /library/1` → 200 с бейджем категории; `GET /library/999999999` → 404; `GET /static/css/article.css` → 200 (6 018 байт).
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: 169 из 169 тестов PASS (100% OK за 25.221s).
+  - Локальный коммит (без деплоя): `feat(articles): add standalone SSR template and routes for /post/{id} and /library/{id}`.
 - **Текущее состояние:**
-  - Этап 2 завершен: панель `/admin` полностью автономна (HTML + CSS + JS), лендинг очищен от админ-модалок и админ-логики (`index.html` 544 строки, `app.js` 1406 строк), маршрутизация закреплена тестами `test_admin_routes.py`; 169/169 PASS, линтер OK.
+  - Этап 2 закрыт (коммит `81eff3b`); Этап 3 в работе: созданы Zero-JS SSR-страницы `/post/{id}` и `/library/{id}` (единый шаблон `article.html` + `article.css` + серверные OG-теги), лендинг пока читает статьи через модалку `#article-modal` (не тронут); 169/169 PASS, линтер OK.
 - **Что предстоит:**
-  - Деплой пакета изоляции (Этапы 1–2) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
+  - Шаг 3.3 (по директиве Архитектора), затем шаг 3.4: демонтаж модалки `#article-modal` с лендинга (`templates/index.html` + `static/js/app.js`) и перевод кнопок «Читать статью»/«Читать далее» на ссылки `/post/{id}`.
+  - Деплой пакета изоляции (Этапы 1–3) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 
 
