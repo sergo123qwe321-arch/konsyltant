@@ -1544,7 +1544,9 @@ def verify_doctor(doctor_id: int) -> bool:
 def verify_doctor_credentials(login: str, password: str):
     """
     Аутентификация врача по email, license_number, id или ФИО.
-    Проверяет пароль через bcrypt (password_hash) либо fallback-пароли в тестах.
+    Пароль проверяется строго через bcrypt (password_hash): если хэш
+    отсутствует/пуст либо bcrypt.checkpw() возвращает False — доступ
+    запрещается (возврат None).
     """
     if not login or not password:
         return None
@@ -1575,10 +1577,6 @@ def verify_doctor_credentials(login: str, password: str):
                     pw_match = bcrypt.checkpw(password.encode('utf-8'), pw_hash.encode('utf-8'))
                 except Exception:
                     pass
-            
-            # Фоллбэк для тестовых заглушек
-            if not pw_match and password in ("doctor123", "doc123", "TestAccess2026!"):
-                pw_match = True
 
             if pw_match:
                 conn.close()

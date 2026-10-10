@@ -8,6 +8,8 @@ import pathlib
 import sys
 import unittest
 
+import bcrypt
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -135,7 +137,9 @@ class KseniaCabinetTests(unittest.TestCase):
             license_number=ISOLATION_LICENSE,
             is_verified=False,
             email=ISOLATION_EMAIL,
-            password_hash=None,
+            password_hash=bcrypt.hashpw(
+                b"TempDoctorPass2026!", bcrypt.gensalt()
+            ).decode("utf-8"),
         )
         other_id = other["id"]
         self.assertNotEqual(ksenia_id, other_id)
@@ -150,7 +154,7 @@ class KseniaCabinetTests(unittest.TestCase):
 
         r_other = self.client.post(
             "/api/v1/doctor/login",
-            json={"login": ISOLATION_EMAIL, "password": "doctor123"},
+            json={"login": ISOLATION_EMAIL, "password": "TempDoctorPass2026!"},
         )
         self.assertEqual(r_other.status_code, 200)
         token_other = r_other.json()["access_token"]
