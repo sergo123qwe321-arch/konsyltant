@@ -17,6 +17,9 @@ TEST_DB_FILE = "test_konsyltant.db"
 # уже установленные значения os.environ.
 os.environ["SQLITE_DB_PATH"] = TEST_DB_FILE
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_FILE}"
+# Демо-врачи (doc_anna/doc_mikhail/doc_elena) — только в изолированной
+# тестовой среде; в проде флаг не задан и сид отключен (Этап 7, шаг 7.3).
+os.environ["ENABLE_DEMO_DOCTORS_SEED"] = "1"
 
 # Свежая тестовая база на каждый прогон: детерминированное состояние сидов,
 # отсутствие накопленного мусора предыдущих прогонов.

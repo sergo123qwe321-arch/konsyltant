@@ -737,26 +737,29 @@ def init_db():
         """)
         conn.commit()
     
-    # 1. Сидирование врачей
-    cursor.execute("SELECT COUNT(*) FROM patient_access WHERE role = 'DOCTOR'")
-    if cursor.fetchone()[0] < 3:
-        salt = bcrypt.gensalt()
-        pw_hash = bcrypt.hashpw(b"doctor123", salt).decode('utf-8')
-        val_verified = True if is_postgres else 1
-        # Очистим старые неполные данные врачей
-        cursor.execute("DELETE FROM patient_access WHERE role = 'DOCTOR'")
-        execute_query(cursor, """
-            INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, full_name, specialization, experience_years, avatar_url, is_verified)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("doc_anna", pw_hash, "folder_doc_anna", "DOCTOR", "Анна Сергеевна Волкова", "Ведущий нейропсихолог", 10, "", val_verified))
-        execute_query(cursor, """
-            INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, full_name, specialization, experience_years, avatar_url, is_verified)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("doc_mikhail", pw_hash, "folder_doc_mikhail", "DOCTOR", "Михаил Андреевич Морозов", "Клинический логопед-дефектолог", 8, "", val_verified))
-        execute_query(cursor, """
-            INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, full_name, specialization, experience_years, avatar_url, is_verified)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("doc_elena", pw_hash, "folder_doc_elena", "DOCTOR", "Елена Викторовна Смирнова", "Детский психотерапевт", 12, "", val_verified))
+    # 1. Сидирование врачей (демо-аккаунты doc_anna/doc_mikhail/doc_elena).
+    # В боевой среде засев отключен флагом: без ENABLE_DEMO_DOCTORS_SEED=1
+    # демо-врачи никогда не создаются (Этап 7, шаг 7.3).
+    if os.getenv("ENABLE_DEMO_DOCTORS_SEED", "0") == "1":
+        cursor.execute("SELECT COUNT(*) FROM patient_access WHERE role = 'DOCTOR'")
+        if cursor.fetchone()[0] < 3:
+            salt = bcrypt.gensalt()
+            pw_hash = bcrypt.hashpw(b"doctor123", salt).decode('utf-8')
+            val_verified = True if is_postgres else 1
+            # Очистим старые неполные данные врачей
+            cursor.execute("DELETE FROM patient_access WHERE role = 'DOCTOR'")
+            execute_query(cursor, """
+                INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, full_name, specialization, experience_years, avatar_url, is_verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, ("doc_anna", pw_hash, "folder_doc_anna", "DOCTOR", "Анна Сергеевна Волкова", "Ведущий нейропсихолог", 10, "", val_verified))
+            execute_query(cursor, """
+                INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, full_name, specialization, experience_years, avatar_url, is_verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, ("doc_mikhail", pw_hash, "folder_doc_mikhail", "DOCTOR", "Михаил Андреевич Морозов", "Клинический логопед-дефектолог", 8, "", val_verified))
+            execute_query(cursor, """
+                INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, full_name, specialization, experience_years, avatar_url, is_verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, ("doc_elena", pw_hash, "folder_doc_elena", "DOCTOR", "Елена Викторовна Смирнова", "Детский психотерапевт", 12, "", val_verified))
 
     # 2. Сидирование услуг
     cursor.execute("SELECT COUNT(*) FROM public_services")
