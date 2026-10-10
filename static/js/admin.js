@@ -19,6 +19,20 @@ function getAdminToken() {
     return sessionStorage.getItem('admin_token') || localStorage.getItem('admin_token') || '';
 }
 
+/* --- Персонализация шапки: имя из хранилища -> #admin-profile-name (Этап 6, шаг 6.3) --- */
+function getAdminDisplayName() {
+    return localStorage.getItem('admin_name')
+        || sessionStorage.getItem('admin_name')
+        || 'Администратор';
+}
+
+function renderAdminProfile() {
+    const el = document.getElementById('admin-profile-name');
+    if (el) {
+        el.textContent = getAdminDisplayName();
+    }
+}
+
 /* --- Переключение экранов: login <-> dashboard --- */
 function showAdminView(name) {
     const loginView = document.getElementById('admin-login-view');
@@ -40,6 +54,7 @@ function showAdminView(name) {
     if (guestBar) {
         guestBar.style.display = (name === 'dashboard') ? 'none' : '';
     }
+    renderAdminProfile();
 }
 
 async function handleAdminLogin(e) {
@@ -68,6 +83,9 @@ async function handleAdminLogin(e) {
         const data = await res.json();
         sessionStorage.setItem('admin_token', data.access_token);
         localStorage.setItem('admin_token', data.access_token);
+        const adminName = data.full_name || data.username || 'Администратор';
+        sessionStorage.setItem('admin_name', adminName);
+        localStorage.setItem('admin_name', adminName);
         document.getElementById('admin-login-form').reset();
         showAdminView('dashboard');
         loadAdminLeads();
@@ -84,6 +102,8 @@ async function handleAdminLogin(e) {
 function logoutAdmin() {
     sessionStorage.removeItem('admin_token');
     localStorage.removeItem('admin_token');
+    sessionStorage.removeItem('admin_name');
+    localStorage.removeItem('admin_name');
     showAdminView('login');
     alert('Вы вышли из Панели управления CMS.');
 }

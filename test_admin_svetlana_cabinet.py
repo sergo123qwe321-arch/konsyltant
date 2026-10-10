@@ -72,7 +72,7 @@ class SvetlanaAdminCabinetTests(unittest.TestCase):
         self.assertEqual(count_after, 1)
 
     def test_svetlana_login_success(self):
-        """POST /api/v1/admin/login: 200, bearer и валидный JWT с ролью ADMIN."""
+        """POST /api/v1/admin/login: 200, bearer, валидный JWT и full_name в ответе."""
         resp = self.client.post(
             "/api/v1/admin/login",
             json={"username": SVETLANA_LOGIN, "password": SVETLANA_PASSWORD},
@@ -82,12 +82,16 @@ class SvetlanaAdminCabinetTests(unittest.TestCase):
         self.assertEqual(data["token_type"], "bearer")
         self.assertEqual(data["role"], "ADMIN")
         self.assertEqual(data["username"], SVETLANA_LOGIN)
+        # Персонализация (Этап 6, шаг 6.3): отображаемое имя в ответе логина
+        self.assertEqual(data.get("full_name"), SVETLANA_FULL_NAME)
 
         payload = verify_token(data["access_token"])
         self.assertIsNotNone(payload, "JWT должен быть валидным")
         self.assertEqual(payload.get("role"), "ADMIN")
         self.assertEqual(payload.get("sub"), SVETLANA_LOGIN)
         self.assertEqual(payload.get("allowed_folder"), "admin_vault")
+        # Имя продублировано в payload JWT (для персонализации шапки)
+        self.assertEqual(payload.get("full_name"), SVETLANA_FULL_NAME)
 
     def test_svetlana_admin_api_access(self):
         """Токен Светланы открывает защищенный админ-эндпоинт (GET /api/v1/admin/leads)."""

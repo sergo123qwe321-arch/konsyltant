@@ -1252,13 +1252,30 @@
   - Целевой прогон `python -m unittest test_admin_svetlana_cabinet.py`: **3/3 PASS** (0.709s).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **186 из 186 тестов PASS** (100% OK за 16.323s; было 183 + 3 новых).
   - Локальный коммит (без деплоя): `feat(admin): add idempotent seed and tests for admin Svetlana`.
+- [2026-10-10] [Stage 6 - Step 6.3: Personalize /admin Dashboard Header for Admin Svetlana]:
+  - `main.py` (+29/−7 строк), `POST /api/v1/admin/login`:
+    - после `verify_admin_credentials` — выборка `SELECT full_name FROM patient_access WHERE access_token=? AND role='ADMIN'` (хелперы `get_connection`/`execute_query`, уже импортированы) с фоллбэком `full_name = username` при пустом значении;
+    - `full_name` добавлен в **JSON-ответ** (`access_token, token_type, role, username, full_name`) и в **payload JWT** (`sub, role, allowed_folder, full_name`).
+  - `templates/admin.html` (+2/−1): в шапке дашборда (`#admin-dashboard-view` → `.dashboard-header-card` → `.dashboard-title-wrap`) добавлен `<span id="admin-profile-name" class="admin-profile-name admin-user-label">Администратор</span>` (дополнительный существующий класс `admin-user-label` дает готовый тихий стиль `admin.css:105` — визуальная целостность без правки CSS); кнопке выхода в шапке дашборда добавлен `id="admin-logout-btn"` (кнопка сохранена, `admin.html:74`).
+  - `static/js/admin.js` (+20/−1):
+    - `getAdminDisplayName()` — чтение `admin_name` из `localStorage` → `sessionStorage` → фоллбэк `'Администратор'`;
+    - `renderAdminProfile()` — запись имени в `#admin-profile-name`; вызывается в конце `showAdminView()` (покрывает и `showAdminView('dashboard')`, и автосохраненную сессию при `DOMContentLoaded`-ините);
+    - `handleAdminLogin`: после успеха — `admin_name = data.full_name || data.username || 'Администратор'` в `sessionStorage` и `localStorage`;
+    - `logoutAdmin`: очистка `admin_name` в обоих хранилищах.
+  - `test_admin_svetlana_cabinet.py`: `test_svetlana_login_success` дополнен — `data["full_name"] == "дефектолог Светлана / руководитель платформы Маршрут"` (ответ) и `payload["full_name"] == та же строка` (JWT).
+  - Синтаксис: `node --check static/js/admin.js` → **SYNTAX OK (exit 0)**.
+  - Smoke (TestClient): `GET /admin` → 200 с `id="admin-profile-name"`, `id="admin-logout-btn"`, текстом `Администратор`; `GET /static/js/admin.js` содержит `admin_name`, `renderAdminProfile`, `data.full_name || data.username`, `removeItem('admin_name')`.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Целевой прогон `python -m unittest test_admin_svetlana_cabinet.py`: **3/3 PASS** (0.475s).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **186 из 186 тестов PASS** (100% OK за 17.161s).
+  - Локальный коммит (без деплоя): `feat(admin): personalize /admin dashboard header for admin Svetlana`.
 - **Текущее состояние:**
   - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки). Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
   - **Этап 4 завершен (PWA):** офлайн-заглушка `/offline`, ядро `static/sw.js` + роут `/sw.js` (антикэш), регистрация SW во всех 4 оболочках; интеграция: precache → Network-First навигации /offline-фоллбэком, Cache-First+SWR статики, API мимо кэша (152-ФЗ).
   - **Этап 5 закрыт Архитектором** (коммит `2165dfb`): аудит учетных записей врачей + идемпотентный сид и тесты кабинета Ксении Корякиной; замечания для харденинга: fallback-пароли `doctor123/doc123/TestAccess2026!`, ~112 тестовых дублей врачей.
-  - **Этап 6 в работе:** аудит админ-контура (6.1, READ-ONLY) → хранение в `patient_access`, JWT без имени, нет разделения прав; **сид учетной записи `svetlana` + тесты логина/доступа** (6.2); 186/186 PASS, линтер OK. Правовой статус «Маршрут» = информационный сервис учтен для формулировок кабинета.
+  - **Этап 6 в работе:** аудит админ-контура (6.1), сид учетной записи `svetlana` + тесты (6.2), **персонализация шапки `/admin`** — `full_name` в ответе логина/JWT, `#admin-profile-name` + хранилище `admin_name` + очистка при логауте (6.3); 186/186 PASS, линтер OK. Правовой статус «Маршрут» = информационный сервис учтен для формулировок кабинета.
 - **Что предстоит:**
-  - Шаг 6.3 (по директиве Архитектора): персонализация шапки `/admin` под Светлану (имя в ответе логина/JWT `full_name` и отображение в `admin-user-bar`), возможно — разграничение прав.
+  - Шаг 6.4+ (по директиве Архитектора): возможное разграничение прав администраторов (сейчас роль одна `ADMIN`), доведение стилей `admin-profile-name`.
   - Шаг 5.3 (отложен, по директиве): персонализация кабинета Ксении.
   - Опционально (по директиве Архитектора): `manifest.json`, иконки PWA (192/512), favicon (сейчас отсутствует), переход `Alik.png` → `Alik.webp` в precache.
   - Деплой пакета изоляции (Этапы 1–6) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
