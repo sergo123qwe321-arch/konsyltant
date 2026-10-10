@@ -1135,10 +1135,26 @@
   - Целевые тесты `python -m unittest test_article_routes.py`: 6 из 6 PASS.
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **175 из 175 тестов PASS** (100% OK за 17.440s).
   - Локальный коммит (без деплоя): `test(articles): add route integration tests for /post and /library`.
+- [2026-10-10] [Stage 3 - Step 3.4: Demount #article-modal & Switch Cards to /post/{id}]:
+  - `templates/index.html` очищен от модалки чтения (544 → 528 строк, −16 строк):
+    - Удален блок `#article-modal` (бывшие строки 477–492: комментарий, `#article-modal-tags`, `#article-modal-title`, `#article-modal-date`, `#article-modal-media`, `#article-modal-body`, `#article-modal-attachments`, кнопка «Закрыть статью»).
+    - Общественные модалки не тронуты: `#parent-modal` (стр. 436), `#external-link-modal` (стр. 478), `#documents-modal`.
+  - `static/js/app.js` очищен от логики модалки (1406 → 1293 строки, −113 строк):
+    - Карточки свежих постов (`renderLatestPosts`, стр. 296): кнопка `onclick="openArticleReader(...)"` → семантическая ссылка `<a href="/post/${post.id}" class="btn-read-post">Читать статью ✨</a>`;
+    - Карточки библиотеки/блога (`createBlogCardHTML`, стр. 330): → `<a href="/post/${post.id}" class="btn-read-blog">Читать далее ✨</a>`;
+    - Удалены функции `openArticleReader(postId)`, `renderMediaBlock()` и `getEmbedVideoUrl()` (бывшие строки 408–520) — они использовались исключительно модалкой; серверные аналоги (`_video_embed_url`) работают в `main.py` для `/post/{id}`;
+    - Утилиты `openModal()`/`closeModal()` сохранены (используются `parent-modal`, `external-link-modal` и др.); `cachedPosts` сохранен (общий кэш списков).
+  - Директива «строго 2 файла» соблюдена: `templates/index.html` и `static/js/app.js` — единственные измененные файлы кода (плюс `process.md`).
+  - Синтаксис: `node --check static/js/app.js` → SYNTAX OK.
+  - Smoke-проверка (TestClient): `GET /` → 200 (29 194 байта), строк `article-modal` в HTML нет; `GET /static/js/app.js` → 200: присутствуют `href="/post/${post.id}"`, `btn-read-post`, `btn-read-blog`; удалены `openArticleReader`; сохранены `openModal`/`closeModal` и вызовы модалок сообщества.
+  - Наблюдение для Архитектора: новые классы `btn-read-post`/`btn-read-blog` пока не описаны в `static/css/style.css` (имеется только устаревший стиль `.read-more` для прежних кнопок) — при необходимости выдать отдельную директиву на стили (файл `style.css` в этот шаг не входил).
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **175 из 175 тестов PASS** (100% OK за 15.773s).
+  - Локальный коммит (без деплоя): `refactor(articles): replace article modal with standalone page links`.
 - **Текущее состояние:**
-  - Этап 2 закрыт (коммит `81eff3b`); Этап 3: SSR-страницы `/post/{id}` и `/library/{id}` приняты (`143cf17`) и закреплены интеграционными тестами `test_article_routes.py` (175/175 PASS, линтер OK); лендинг пока читает статьи через модалку `#article-modal` (не тронут).
+  - Этап 2 закрыт (`81eff3b`); Этап 3: SSR-страницы `/post/{id}` и `/library/{id}` созданы (`143cf17`), тестированы (`d1221ad`), модалка `#article-modal` демонтирована, карточки лендинга ведут на автономные страницы (`index.html` 528 строк, `app.js` 1293 строки); 175/175 PASS, линтер OK.
 - **Что предстоит:**
-  - Шаг 3.4: демонтаж модалки `#article-modal` с лендинга (`templates/index.html` + `static/js/app.js`) и перевод кнопок «Читать статью»/«Читать далее» на ссылки `/post/{id}` — по директиве Архитектора.
+  - Шаг 3.5 (по директиве Архитектора): возможная адаптация тестов/стилей (`.read-more` → `btn-read-*`) и проверка рендера карточек.
   - Деплой пакета изоляции (Этапы 1–3) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 

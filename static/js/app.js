@@ -293,7 +293,7 @@
                         <h3 style="margin-bottom: 10px; font-size: 1.15rem; line-height: 1.4;">${post.title}</h3>
                         <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-gray); margin-bottom: 16px; display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${post.summary}</p>
                         <div class="blog-card-footer" style="margin-top:auto;">
-                            <button class="read-more" onclick="openArticleReader(${post.id})">Читать статью ✨</button>
+                            <a href="/post/${post.id}" class="btn-read-post">Читать статью ✨</a>
                         </div>
                     </div>
                 `;
@@ -327,7 +327,7 @@
                     <h3 style="margin-bottom: 10px; font-size: 1.15rem; line-height: 1.4;">${post.title}</h3>
                     <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-gray); margin-bottom: 16px;">${post.summary}</p>
                     <div class="blog-card-footer" style="margin-top:auto;">
-                        <button class="read-more" onclick="openArticleReader(${post.id})">Читать далее ✨</button>
+                        <a href="/post/${post.id}" class="btn-read-blog">Читать далее ✨</a>
                     </div>
                 </div>
             `;
@@ -403,119 +403,6 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
-        }
-
-        function getEmbedVideoUrl(url) {
-            if (!url) return '';
-            const trimmed = url.trim();
-            if (trimmed.includes('rutube.ru')) {
-                const match = trimmed.match(/rutube\.ru\/(?:video|play\/embed)\/([a-zA-Z0-9]+)/);
-                if (match && match[1]) {
-                    return `https://rutube.ru/play/embed/${match[1]}`;
-                }
-                return trimmed;
-            }
-            if (trimmed.includes('vk.com') || trimmed.includes('vkvideo.ru')) {
-                if (trimmed.includes('video_ext.php')) return trimmed;
-                const match = trimmed.match(/video(-?\d+)_(\d+)/);
-                if (match) {
-                    return `https://vk.com/video_ext.php?oid=${match[1]}&id=${match[2]}&hd=2`;
-                }
-                return trimmed;
-            }
-            if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) {
-                let videoId = '';
-                if (trimmed.includes('youtu.be/')) {
-                    videoId = trimmed.split('youtu.be/')[1].split(/[?&]/)[0];
-                } else if (trimmed.includes('v=')) {
-                    videoId = trimmed.split('v=')[1].split('&')[0];
-                } else if (trimmed.includes('embed/')) {
-                    return trimmed;
-                }
-                if (videoId) {
-                    return `https://www.youtube.com/embed/${videoId}`;
-                }
-            }
-            return trimmed;
-        }
-
-        function renderMediaBlock(videoUrl, coverImageUrl) {
-            if (!videoUrl && !coverImageUrl) return '';
-            let html = '';
-            
-            if (videoUrl) {
-                const isLocalVideo = videoUrl.endsWith('.mp4') || videoUrl.endsWith('.webm') || videoUrl.includes('/static/uploads/');
-                if (isLocalVideo) {
-                    const posterAttr = coverImageUrl ? `poster="${coverImageUrl}"` : '';
-                    html += `
-                        <div style="margin-bottom: 14px;">
-                            <video controls ${posterAttr} style="width: 100%; max-height: 340px; border-radius: 12px; background: #000; display: block;" src="${videoUrl}"></video>
-                            <div style="margin-top: 8px; font-size: 0.85rem;">
-                                <a href="${videoUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-turquoise); text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
-                                    <span>🔗 Смотреть на первоисточнике</span> <span style="font-size: 0.75rem;">↗</span>
-                                </a>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    const embedUrl = getEmbedVideoUrl(videoUrl);
-                    html += `
-                        <div style="margin-bottom: 14px;">
-                            <iframe src="${embedUrl}" style="width: 100%; height: 320px; border: none; border-radius: 12px; background: #000;" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-                            <div style="margin-top: 8px; font-size: 0.85rem;">
-                                <a href="${videoUrl}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-turquoise); text-decoration: underline; display: inline-flex; align-items: center; gap: 4px;">
-                                    <span>🔗 Смотреть на первоисточнике</span> <span style="font-size: 0.75rem;">↗</span>
-                                </a>
-                            </div>
-                        </div>
-                    `;
-                }
-            } else if (coverImageUrl) {
-                html += `<img src="${coverImageUrl}" style="width: 100%; max-height: 280px; object-fit: cover; border-radius: 12px; margin-bottom: 14px;" alt="Обложка"/>`;
-            }
-            
-            return html;
-        }
-
-        async function openArticleReader(postId) {
-            let post = (cachedPosts || []).find(p => p.id === postId);
-            if (!post || !post.content) {
-                try {
-                    const res = await fetch(`/api/v1/public/posts/${postId}`);
-                    if (res.ok) post = await res.json();
-                } catch(e) {}
-            }
-            if (!post) {
-                post = MOCK_DATA.posts.find(p => p.id === postId);
-            }
-            if (!post) {
-                alert('Статья временно недоступна.');
-                return;
-            }
-
-            document.getElementById('article-modal-title').textContent = post.title;
-            document.getElementById('article-modal-date').textContent = `📅 Дата публикации: ${post.created_at ? post.created_at.split(' ')[0] : 'Недавно'}`;
-            
-            let tagsList = [];
-            if (Array.isArray(post.tags)) tagsList = post.tags;
-            else if (typeof post.tags === 'string') tagsList = post.tags.split(',').map(t => t.trim().replace(/[\[\]"]/g, ''));
-            
-            document.getElementById('article-modal-tags').innerHTML = tagsList.map(t => `<span class="blog-tag" style="margin-right: 6px;">${escapeHtml(t)}</span>`).join('');
-            
-            const mediaContainer = document.getElementById('article-modal-media');
-            if (mediaContainer) {
-                const mediaHTML = renderMediaBlock(post.video_url, post.cover_image_url);
-                if (mediaHTML) {
-                    mediaContainer.innerHTML = mediaHTML;
-                    mediaContainer.style.display = 'block';
-                } else {
-                    mediaContainer.innerHTML = '';
-                    mediaContainer.style.display = 'none';
-                }
-            }
-
-            document.getElementById('article-modal-body').textContent = post.content || post.summary;
-            openModal('article-modal');
         }
 
         async function renderEvents() {
