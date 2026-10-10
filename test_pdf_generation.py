@@ -1,3 +1,4 @@
+import test_bootstrap
 import unittest
 import io
 from unittest.mock import patch

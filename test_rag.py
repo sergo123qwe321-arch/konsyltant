@@ -1,3 +1,4 @@
+import test_bootstrap
 from rag import ask_consultant
 import os
 

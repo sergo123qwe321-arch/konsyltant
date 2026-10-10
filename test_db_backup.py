@@ -1,3 +1,4 @@
+import test_bootstrap
 import os
 import sys
 import time

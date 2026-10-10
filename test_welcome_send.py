@@ -1,3 +1,4 @@
+import test_bootstrap
 from notification_service import NotificationService
 from security_utils import mask_credential
 

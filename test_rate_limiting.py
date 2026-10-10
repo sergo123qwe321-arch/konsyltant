@@ -1,3 +1,4 @@
+import test_bootstrap
 import unittest
 import time
 from fastapi.testclient import TestClient

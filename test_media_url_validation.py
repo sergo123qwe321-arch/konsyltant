@@ -1,3 +1,4 @@
+import test_bootstrap
 import unittest
 from security_utils import validate_media_url, extract_domain, ALLOWLIST_VIDEO_DOMAINS, ALLOWLIST_IMAGE_DOMAINS, BLOCKED_SHORTENERS
 

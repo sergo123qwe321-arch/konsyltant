@@ -1,3 +1,4 @@
+import test_bootstrap
 import unittest
 from database import init_db, ensure_indexes, get_db_indexes, get_connection, DATABASE_URL, psycopg2
 

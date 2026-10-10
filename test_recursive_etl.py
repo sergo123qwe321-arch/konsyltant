@@ -1,3 +1,4 @@
+import test_bootstrap
 import os
 import json
 import unittest

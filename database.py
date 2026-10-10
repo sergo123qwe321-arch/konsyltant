@@ -14,7 +14,7 @@ try:
 except ImportError:
     psycopg2 = None
 
-DB_FILE = "konsyltant.db"
+DB_FILE = os.getenv("SQLITE_DB_PATH", os.getenv("DB_FILE", "konsyltant.db"))
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Render.com иногда выдает строку, начинающуюся с postgres://, 
@@ -27,7 +27,9 @@ def get_connection():
     db_url = os.getenv("DATABASE_URL", DATABASE_URL)
     if check_is_postgres():
         return psycopg2.connect(db_url)
-    db_path = DB_FILE
+    # Путь к SQLite перечитывается на каждом соединении: тестовый бутстрап
+    # устанавливает SQLITE_DB_PATH до первого обращения к БД.
+    db_path = os.getenv("SQLITE_DB_PATH", os.getenv("DB_FILE", DB_FILE))
     if db_url and db_url.startswith("sqlite:///"):
         db_path = db_url.replace("sqlite:///", "", 1)
     elif db_url and db_url.startswith("sqlite://"):
@@ -437,7 +439,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 access_token TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                gdrive_folder_id TEXT UNIQUE NOT NULL,
+                gdrive_folder_id TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 role TEXT DEFAULT 'PATIENT',
                 full_name TEXT DEFAULT '',

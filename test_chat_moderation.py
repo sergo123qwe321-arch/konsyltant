@@ -1,3 +1,4 @@
+import test_bootstrap
 import unittest
 import uuid
 from security_utils import contains_profanity, process_chat_message_moderation

@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 konsyltant.db
 *.db
+test_konsyltant.db*
 процесс.txt
 Процесс для Гемини.txt
 log.txt

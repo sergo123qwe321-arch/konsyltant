@@ -1,3 +1,4 @@
+import test_bootstrap
 """
 test_alert_system.py — Комплексный тестовый набор для подсистемы оповещений о сбоях,
 дедупликации, recovery-уведомлений и аудита документации (process.md и ARCHITECTURE.md).

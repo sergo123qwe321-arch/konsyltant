@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import test_bootstrap
 from fastapi.testclient import TestClient
 from main import app
 from database import init_db

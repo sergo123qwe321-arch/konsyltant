@@ -1,3 +1,4 @@
+import test_bootstrap
 import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient

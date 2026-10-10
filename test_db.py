@@ -1,3 +1,4 @@
+import test_bootstrap
 from database import init_db, create_patient_access, verify_access
 
 def main():

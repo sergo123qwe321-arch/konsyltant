@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import test_bootstrap
 """
 Тесты учетной записи администратора Светланы (Этап 6, шаг 6.2):
 идемпотентный сид в patient_access, логин /api/v1/admin/login и доступ

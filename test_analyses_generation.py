@@ -1,3 +1,4 @@
+import test_bootstrap
 import unittest
 import uuid
 from rag import _deterministic_extract_analyses, _post_process_analyses

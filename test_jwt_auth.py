@@ -1,3 +1,4 @@
+import test_bootstrap
 from datetime import timedelta
 import time
 from fastapi.testclient import TestClient

@@ -1,3 +1,4 @@
+import test_bootstrap
 import unittest
 from fastapi.testclient import TestClient
 from main import app

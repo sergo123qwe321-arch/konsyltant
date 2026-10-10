@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import test_bootstrap
 """
 Интеграционные тесты офлайн-заглушки PWA (Этап 4, шаг 4.2):
 GET /offline и GET /offline/ + ключевые маркеры страницы.

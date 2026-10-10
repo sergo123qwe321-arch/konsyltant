@@ -1,3 +1,4 @@
+import test_bootstrap
 import os
 from crypto_utils import encrypt_text, decrypt_text, generate_key
 
