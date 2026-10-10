@@ -1188,12 +1188,34 @@
   - Целевой прогон `python -m unittest test_offline_routes.py`: **4/4 PASS** (0.049s).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **179 из 179 тестов PASS** (100% OK за 17.434s; было 178 + 1 новый).
   - Локальный коммит (без деплоя): `feat(pwa): add service worker core and root /sw.js endpoint`.
+- [2026-10-10] [Stage 4 - Step 4.4: Register Service Worker Across All App Shells]:
+  - В 4 шаблона-оболочки перед закрывающим `</body>` добавлен идентичный самодостаточный блок (без внешних библиотек, мягкая деградация в старых браузерах, `scope: '/'`, `catch` с `console.warn`):
+    ```html
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            .catch(function(err) { console.warn('SW registration skipped:', err); });
+        });
+      }
+    </script>
+    ```
+    - `templates/index.html` (528 → 536 строк, сразу после `<script src="/static/js/app.js">`);
+    - `templates/article.html` (91 → 99 строк, после `</article>` — самая поздняя загрузка, Zero-JS страница сохранена);
+    - `templates/doctor.html` (234 → 242 строкы, после `<script src="/static/js/doctor.js" defer>`);
+    - `templates/admin.html` (252 → 260 строк, после `<script src="/static/js/admin.js" defer>`).
+    - `templates/offline.html` не тронут (спецификация не указывала — заглушка остается автономной Zero-JS).
+  - `test_offline_routes.py` (+1 тест, итого 5): `test_templates_contain_sw_registration` — GET `/`, `/doctor`, `/admin`, `/post/{id}` (ID из `get_public_posts()`, как в `test_article_routes`) → все 200 и содержат маркер `navigator.serviceWorker.register('/sw.js'`.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Целевой прогон `python -m unittest test_offline_routes.py`: **5/5 PASS** (0.070s).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **180 из 180 тестов PASS** (100% OK за 15.549s; было 179 + 1 новый).
+  - Локальный коммит (без деплоя): `feat(pwa): register service worker across all app shells`.
 - **Текущее состояние:**
   - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки); 175/175 PASS, линтер OK. Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
-  - **Этап 4 продолжается:** аудит (4.1, READ-ONLY), офлайн-заглушка `/offline` + `templates/offline.html` (4.2), **ядро Service Worker** `static/sw.js` + корневой роут `/sw.js` с антикэш-заголовками и `Service-Worker-Allowed: /` (4.3); 179/179 PASS, линтер OK. Регистрация SW в шаблонах — на шаге 4.4 (шаблоны пока не тронуты).
+  - **Этап 4 завершен:** аудит (4.1), офлайн-заглушка `/offline` + `templates/offline.html` (4.2), ядро Service Worker `static/sw.js` + корневой роут `/sw.js` с антикэш-заголовками (4.3), **регистрация SW во всех 4 оболочках** (4.4); 180/180 PASS, линтер OK. Интеграция PWA-контура: `sw.js` → precache `/offline` + ядра → Network-First навигации с офлайн-фоллбэком, Cache-First+SWR для `/static/`, API мимо кэша (152-ФЗ).
 - **Что предстоит:**
-  - Шаг 4.4 (по директиве Архитектора): регистрация Service Worker (`navigator.serviceWorker.register('/sw.js')`) в шаблонах `index.html`/`doctor.html`/`admin.html`/`article.html`, опционально `manifest.json` и иконки PWA.
-  - Деплой пакета изоляции (Этапы 1–3) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
+  - Опционально (по директиве Архитектора): `manifest.json`, иконки PWA (192/512), favicon (сейчас отсутствует), переход `Alik.png` → `Alik.webp` в precache.
+  - Деплой пакета изоляции (Этапы 1–4) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 
 

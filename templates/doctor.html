@@ -230,5 +230,13 @@
 
     <!-- Клиентский скрипт кабинета врача -->
     <script src="/static/js/doctor.js" defer></script>
+    <script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .catch(function(err) { console.warn('SW registration skipped:', err); });
+  });
+}
+</script>
 </body>
 </html>

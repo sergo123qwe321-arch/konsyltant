@@ -523,6 +523,14 @@
 <!-- ИНТЕРАКТИВНЫЙ JS -->
 <script src="/static/js/bubbles.js"></script>
 <script src="/static/js/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .catch(function(err) { console.warn('SW registration skipped:', err); });
+  });
+}
+</script>
 </body>
 </html>
 

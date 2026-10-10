@@ -11,6 +11,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from fastapi.testclient import TestClient  # noqa: E402
 import main  # noqa: E402
+from database import get_public_posts  # noqa: E402
+
+SW_REGISTRATION_MARKER = "navigator.serviceWorker.register('/sw.js'"
 
 
 class OfflinePageTests(unittest.TestCase):
@@ -76,6 +79,17 @@ class OfflinePageTests(unittest.TestCase):
         self.assertIn("'/static/css/style.css'", body)
         self.assertIn("skipWaiting", body)
         self.assertIn("clients.claim", body)
+
+    def test_templates_contain_sw_registration(self):
+        """Все оболочки (/, /doctor, /admin, /post/{id}) регистрируют /sw.js."""
+        posts = get_public_posts()
+        self.assertTrue(posts, "В БД должен существовать хотя бы один пост")
+        routes = ["/", "/doctor", "/admin", f"/post/{posts[0]['id']}"]
+        for route in routes:
+            with self.subTest(route=route):
+                resp = self.client.get(route)
+                self.assertEqual(resp.status_code, 200)
+                self.assertIn(SW_REGISTRATION_MARKER, resp.text)
 
 
 if __name__ == "__main__":

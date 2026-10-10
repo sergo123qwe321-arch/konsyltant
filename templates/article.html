@@ -87,5 +87,13 @@
         <a href="/#contacts" class="article-btn article-btn-accent">Записаться на консультацию →</a>
     </footer>
 </article>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .catch(function(err) { console.warn('SW registration skipped:', err); });
+  });
+}
+</script>
 </body>
 </html>
