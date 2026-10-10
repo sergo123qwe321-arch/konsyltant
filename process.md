@@ -1151,10 +1151,18 @@
   - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **175 из 175 тестов PASS** (100% OK за 15.773s).
   - Локальный коммит (без деплоя): `refactor(articles): replace article modal with standalone page links`.
+- [2026-10-10] [Stage 3 - Step 3.5: Button Styling for Article Card Links (style.css)]:
+  - В `static/css/style.css` (единственный измененный файл кода, +27 строк, дифф без churn) добавлены правила для классов карточек, ведущих на автономные страницы статей:
+    - `.btn-read-post`, `.btn-read-blog`: `display: inline-flex` (с `align-items`, `gap`), скругление `border-radius: 10px`, отступы `9px 16px`, бирюзовая рамка/фон на полупрозрачности, текст `var(--accent-turquoise)`, `font-weight: 600`, **`text-decoration: none`**, `cursor: pointer`, плавный `transition: var(--transition-smooth)`;
+    - ховер-состояние (оба класса): текст `#fff`, фон и рамка `var(--accent-purple)`, `transform: translateY(-1px)`, без подчеркивания — кнопки выглядят как прежние аккуратные «Читать статью ✨» / «Читать далее ✨»;
+    - стиль добавлен рядом с унаследованным `.read-more` (правило сохранено, в разметке больше не используется).
+  - Smoke-проверка (TestClient): `GET /static/css/style.css` → 200 (62 422 байта), селекторы `.btn-read-post` и `.btn-read-blog` и `text-decoration: none` присутствуют; `GET /` → 200.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **175 из 175 тестов PASS** (100% OK за 17.391s).
+  - Локальный коммит (без деплоя): `style(landing): add button styling for standalone article card links`.
 - **Текущее состояние:**
-  - Этап 2 закрыт (`81eff3b`); Этап 3: SSR-страницы `/post/{id}` и `/library/{id}` созданы (`143cf17`), тестированы (`d1221ad`), модалка `#article-modal` демонтирована, карточки лендинга ведут на автономные страницы (`index.html` 528 строк, `app.js` 1293 строки); 175/175 PASS, линтер OK.
+  - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки); 175/175 PASS, линтер OK. Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
 - **Что предстоит:**
-  - Шаг 3.5 (по директиве Архитектора): возможная адаптация тестов/стилей (`.read-more` → `btn-read-*`) и проверка рендера карточек.
   - Деплой пакета изоляции (Этапы 1–3) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 
