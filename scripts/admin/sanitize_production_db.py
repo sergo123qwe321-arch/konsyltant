@@ -13,13 +13,17 @@ scripts/admin/sanitize_production_db.py — санация боевой базы
       - штатная транзакция `COMMIT`/`ROLLBACK` (прагма и VACUUM не применяются);
       - бэкап = `pg_dump --format=custom` в `backups/konsyltant_pg_<timestamp>.dump`.
 
-Правила очистки (одинаковы для обеих СУБД):
-  - удаление из `doctors` всего, что не входит в утвержденный Allowlist;
-  - удаление зависимых записей (`patient_share_grants`, `doctor_notes`,
-    `doctor_chat_history`, `patient_analyses_documents`) с doctor_id вне
-    Allowlist или «висячих» (NULL);
-  - удаление тестовых учеток из `patient_access` (keep-list: admin, svetlana,
-    DOC-PRODUCER/PRODUCER-001); реальные записи пациентов не трогаются;
+Правила очистки (одинаковы для обеих СУБД, утверждены Архитектором в шаге 8.6):
+  - удаление из `doctors` всего, что не входит в утвержденный Allowlist
+    (`DOC-KSENIA-001`, `DOC-SVETLANA-001`) — ровно 2 специалиста;
+  - `patient_share_grants`: удаляются только «висячие» записи, чей
+    `patient_folder_id` не входит в белый список папок реальных Родителей
+    (активные гранты семей сохраняются); `doctor_notes`,
+    `doctor_chat_history`, `patient_analyses_documents` — по doctor_id
+    вне Allowlist или «висячие» (NULL);
+  - `patient_access`: удаляются тестовые и служебные учетки; белый список:
+    админы `admin`/`svetlana`, папки реальных Родителей из
+    `KEEP_PATIENT_FOLDERS`; строки роли `DOCTOR` не сохраняются;
   - идемпотентный фикс каталога Светланы `admin_vault` -> `admin_vault_svetlana`.
 
 Все списки (Allowlist, keep-list) подставляются в SQL строковыми литералами —
@@ -42,20 +46,35 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import database  # noqa: E402  — строго после выставления sys.path
 
-# Утвержденный Allowlist специалистов (Этап 7, шаг 7.2б)
-ALLOWLIST_LICENSES = ("DOC-KSENIA-001", "DOC-PRODUCER", "PRODUCER-001")
+# Утвержденный Allowlist специалистов (Этап 8, шаг 8.6): ровно 2 специалиста
+ALLOWLIST_LICENSES = ("DOC-KSENIA-001", "DOC-SVETLANA-001")
 
-# Собственный каталог администратора Светланы (устранение коллизии с admin_vault)
+# Собственный каталог администратора Светланы (устранение коллизии admin_vault)
 SVETLANA_LOGIN = "svetlana"
 SVETLANA_VAULT = "admin_vault_svetlana"
 
 # Учетные записи, которые сохраняются в patient_access
 KEEP_ADMIN_TOKENS = ("admin", "svetlana")
-KEEP_DOCTOR_TOKENS = ("producer@cmz.site", "PRODUCER-001")
+# Этап 8.6: роли DOCTOR в patient_access не сохраняются (специалисты — в doctors)
+KEEP_DOCTOR_TOKENS = ()
 
-# Явные тестовые артефакты среди пациентов (сгенерированы автотестами/UAT-сидами)
-TEST_PATIENT_FOLDERS = ("test_folder_jwt_789", "disk:/Тестовый Пациент")
-TEST_PATIENT_TOKENS = ("patient_producer_test_2026", "test_patient_token_2026")
+# Белый список папок реальных Родителей и сервисной папки (шаг 8.6, точные
+# литералы получены из боевой PostgreSQL, включая двойные пробелы)
+KEEP_PATIENT_FOLDERS = (
+    "disk:/Дюзгёрен Арон Альп",
+    "disk:/Диагностика Пациент",
+    "disk:/Змиенко",
+    "disk:/Кешишьян Тигран Левонович",
+    "disk:/Кирисик Михаэль Саакович",
+    "disk:/Малышкин Даня",
+    "disk:/Прияцелюк Матвей Сергеевич",
+    "disk:/Ропаев Степан Артурович",
+    "disk:/Харламов Владимир Станиславович",
+    "disk:/Эмексузян Альберт Саакович",
+    "disk:/Якушева Маргарита  Витпльевна",
+    "disk:/Змиенко Ионна Владиславовна",
+    "disk:/Дюзгёрен  Арон  Альп.",
+)
 
 CHILD_TABLES = (
     "patient_share_grants",
@@ -71,16 +90,36 @@ def sql_in(values) -> str:
 
 
 ALLOWLIST_SQL = sql_in(ALLOWLIST_LICENSES)
+KEEP_PATIENT_FOLDERS_SQL = sql_in(KEEP_PATIENT_FOLDERS)
 
 CHILD_DELETE_SQL = (
     "DELETE FROM {table} WHERE doctor_id IS NULL "
     f"OR doctor_id NOT IN (SELECT id FROM doctors WHERE license_number IN ({ALLOWLIST_SQL}))"
 )
+CHILD_COUNT_SQL = (
+    "SELECT COUNT(*) FROM {table} WHERE doctor_id IS NULL "
+    f"OR doctor_id NOT IN (SELECT id FROM doctors WHERE license_number IN ({ALLOWLIST_SQL}))"
+)
+
+# Гранты (шаг 8.6): удаляются только «висячие» записи, чья папка не входит
+# в белый список реальных Родителей; активные гранты семей сохраняются.
+_GRANTS_WHERE = (
+    "patient_folder_id IS NULL "
+    f"OR patient_folder_id NOT IN ({KEEP_PATIENT_FOLDERS_SQL})"
+)
+GRANTS_DELETE_SQL = f"DELETE FROM patient_share_grants WHERE {_GRANTS_WHERE}"
+GRANTS_COUNT_SQL = f"SELECT COUNT(*) FROM patient_share_grants WHERE {_GRANTS_WHERE}"
+
+_DOCTOR_CLAUSE = (
+    "(role = 'DOCTOR' AND access_token NOT IN (" + sql_in(KEEP_DOCTOR_TOKENS) + "))"
+    if KEEP_DOCTOR_TOKENS
+    else "(role = 'DOCTOR')"
+)
 PATIENT_ACCESS_WHERE = (
     "((role = 'ADMIN' AND access_token NOT IN (" + sql_in(KEEP_ADMIN_TOKENS) + ")) "
-    "OR (role = 'DOCTOR' AND access_token NOT IN (" + sql_in(KEEP_DOCTOR_TOKENS) + ")) "
-    "OR (role = 'PATIENT' AND (gdrive_folder_id IN (" + sql_in(TEST_PATIENT_FOLDERS) + ") "
-    "OR access_token IN (" + sql_in(TEST_PATIENT_TOKENS) + "))))"
+    "OR " + _DOCTOR_CLAUSE + " "
+    "OR (role = 'PATIENT' AND COALESCE(gdrive_folder_id, '') NOT IN ("
+    + KEEP_PATIENT_FOLDERS_SQL + ")))"
 )
 PATIENT_ACCESS_DELETE_SQL = "DELETE FROM patient_access WHERE " + PATIENT_ACCESS_WHERE
 PATIENT_ACCESS_COUNT_SQL = "SELECT COUNT(*) FROM patient_access WHERE " + PATIENT_ACCESS_WHERE
@@ -150,11 +189,12 @@ def collect_stats(conn) -> dict:
     for table in CHILD_TABLES:
         database.execute_query(cursor, f"SELECT COUNT(*) FROM {table}")
         table_total = cursor.fetchone()[0]
-        database.execute_query(
-            cursor,
-            f"SELECT COUNT(*) FROM {table} WHERE doctor_id IS NULL "
-            f"OR doctor_id NOT IN (SELECT id FROM doctors WHERE license_number IN ({ALLOWLIST_SQL}))",
+        count_sql = (
+            GRANTS_COUNT_SQL
+            if table == "patient_share_grants"
+            else CHILD_COUNT_SQL.format(table=table)
         )
+        database.execute_query(cursor, count_sql)
         to_delete = cursor.fetchone()[0]
         stats["tables"][table] = {
             "total": table_total,
@@ -234,7 +274,10 @@ def apply_sanitize(conn, is_postgres: bool) -> None:
     try:
         # 1. Зависимые записи (до удаления врачей — явно, без надежды на каскад)
         for table in CHILD_TABLES:
-            database.execute_query(cursor, CHILD_DELETE_SQL.format(table=table))
+            if table == "patient_share_grants":
+                database.execute_query(cursor, GRANTS_DELETE_SQL)
+            else:
+                database.execute_query(cursor, CHILD_DELETE_SQL.format(table=table))
         # 2. Врачи вне Allowlist
         database.execute_query(
             cursor, f"DELETE FROM doctors WHERE license_number NOT IN ({ALLOWLIST_SQL})"
