@@ -1231,14 +1231,37 @@
   - Целевой прогон `python -m unittest test_doctor_ksenia_cabinet.py`: **3/3 PASS** (0.710s).
   - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **183 из 183 тестов PASS** (100% OK за 15.355s; было 180 + 3 новых).
   - Локальный коммит (без деплоя): `feat(doctor): add idempotent seed and isolation tests for Dr. Ksenia Koryakina`.
+- [2026-10-10] [Stage 6 - Step 6.1: Read-only Audit of Admin Authentication & Accounts]:
+  - Режим READ-ONLY: изменения в код не вносились; отчет выдан Архитектору.
+  - **Таблицы `users` НЕТ**: админы хранятся в `patient_access`, где колонка `access_token` выступает логином (`role='ADMIN'`). Логин: `POST /api/v1/admin/login` (`main.py:628`) → `verify_admin_credentials` (`database.py:1283`: `WHERE access_token=? AND role='ADMIN'` + `bcrypt.checkpw`; **plaintext-фоллбэков, как у врачей, нет**) → JWT `{sub: username, role: "ADMIN", allowed_folder: "admin_vault"}` (**без `admin_id` и `full_name`**).
+  - Пароль: `patient_access.password_hash` (bcrypt); источник значения — `os.getenv("ADMIN_PASSWORD", "admin123")` (`database.py:767`), применяется **только в сиде `init_db` и только при нуле админов**; переменных `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH` в коде/`.env` **нет**.
+  - БД: **2 админа** — id=28 `admin` («Администратор Клиники», сид `init_db`, фактический пароль `admin123`), id=56 `producer-admin@cmz.site` (артефакт тестов). **Светланы нет.**
+  - UI: шапка `admin.html:25–27` — статическая подпись «Администратор» (без имени); `handleAdminLogin` сохраняет только токен (`admin.js:69–70`), `data.username` не сохраняется → персонализации нет. **Разделения прав НЕТ**: роль одна `ADMIN`, `switchAdminTab` без проверок, все 5 вкладок у всех; 27 эндпоинтов за `get_current_admin`.
+  - Правовой контекст: платформа «Маршрут» — информационно-навигационный сервис (НЕ мед. организация) → в кабинете Светланы избегать мед-формулировок.
+  - Рекомендация утверждена: **идемпотентный сид `seed_admin_svetlana()`** (нет штатного эндпоинта создания админов).
+- [2026-10-10] [Stage 6 - Step 6.2: Idempotent Seed and Tests for Admin Svetlana]:
+  - `database.py` (+72 строки): новая функция `seed_admin_svetlana()` (перед `init_db()`) + вызов в конце `init_db()` (пункт «7», сразу после `seed_doctor_ksenia()`):
+    - учетная запись: `access_token='svetlana'`, `full_name='дефектолог Светлана / руководитель платформы Маршрут'`, `specialization='Дефектолог / Руководитель платформы'`, `role='ADMIN'`, `is_verified=1`, `gdrive_folder_id='admin_vault'`, пароль `svetlanadefmarshryt123` (bcrypt-хэш **только при создании**);
+    - идемпотентность: `SELECT ... WHERE access_token='svetlana' AND role='ADMIN'` → найдено: `UPDATE` только `full_name`/`specialization` (пароль не сбрасывается, дубликатов нет); нет: `INSERT` (PG — `RETURNING id`, SQLite — `lastrowid`); ошибки не роняют старт (`logger.warning`, `None`).
+    - фактически в БД: **ровно 1 строка, id=62**, `role='ADMIN'`, `is_verified=1` (проверено SQL); всего админов в базе — 3.
+  - Создан `test_admin_svetlana_cabinet.py` (3 теста, `SvetlanaAdminCabinetTests`):
+    - `test_svetlana_account_seeded` — запись в `patient_access` (логин/роль/verified/ФИО/специализация/`admin_vault`) + повторный `database.init_db()` не увеличивает `COUNT(*)` (=1);
+    - `test_svetlana_login_success` — POST `/api/v1/admin/login` (`svetlana` + стартовый пароль) → 200, `token_type=bearer`, `role=ADMIN`; `verify_token` → `role=ADMIN`, `sub='svetlana'`, `allowed_folder='admin_vault'`;
+    - `test_svetlana_admin_api_access` — `GET /api/v1/admin/leads` и `GET /api/v1/admin/doctors` c `Authorization: Bearer` → 200; без токена `GET /api/v1/admin/leads` → 401.
+  - Линтер `python scripts/lint_no_txt_logs.py`: OK (0 запрещенных txt-файлов).
+  - Целевой прогон `python -m unittest test_admin_svetlana_cabinet.py`: **3/3 PASS** (0.709s).
+  - Полный сьют `python -m unittest discover -s . -p "test_*.py"`: **186 из 186 тестов PASS** (100% OK за 16.323s; было 183 + 3 новых).
+  - Локальный коммит (без деплоя): `feat(admin): add idempotent seed and tests for admin Svetlana`.
 - **Текущее состояние:**
-  - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки); 175/175 PASS, линтер OK. Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
-  - **Этап 4 завершен:** аудит (4.1), офлайн-заглушка `/offline` + `templates/offline.html` (4.2), ядро Service Worker `static/sw.js` + корневой роут `/sw.js` с антикэш-заголовками (4.3), **регистрация SW во всех 4 оболочках** (4.4); 180/180 PASS, линтер OK. Интеграция PWA-контура: `sw.js` → precache `/offline` + ядра → Network-First навигации с офлайн-фоллбэком, Cache-First+SWR для `/static/`, API мимо кэша (152-ФЗ).
-  - **Этап 5 начат:** аудит учетных записей врачей (5.1, READ-ONLY) → схема `doctors`, JWT-пейлоад, изоляция заметок, админ-онбординг; **идемпотентный сид профиля Ксении Корякиной** (`seed_doctor_ksenia()` в `init_db`) + тесты изоляции кабинета (5.2); 183/183 PASS, линтер OK. Замечания для этапа харденинга: fallback-пароли `doctor123/doc123/TestAccess2026!`, ~112 тестовых дублей врачей в БД.
+  - **Этап 3 завершен:** SSR-страницы `/post/{id}` и `/library/{id}` (шаблон `article.html`, стили `article.css`, серверные OG-теги, Zero-JS), интеграционные тесты `test_article_routes.py`, модалка `#article-modal` демонтирована, карточки лендинга ссылаются на автономные страницы со стилизованными кнопками (`index.html` 528 строк, `app.js` 1293 строки). Итог Этапов 1–3: `/doctor`, `/admin`, `/post/{id}`, `/library/{id}` — автономны.
+  - **Этап 4 завершен (PWA):** офлайн-заглушка `/offline`, ядро `static/sw.js` + роут `/sw.js` (антикэш), регистрация SW во всех 4 оболочках; интеграция: precache → Network-First навигации /offline-фоллбэком, Cache-First+SWR статики, API мимо кэша (152-ФЗ).
+  - **Этап 5 закрыт Архитектором** (коммит `2165dfb`): аудит учетных записей врачей + идемпотентный сид и тесты кабинета Ксении Корякиной; замечания для харденинга: fallback-пароли `doctor123/doc123/TestAccess2026!`, ~112 тестовых дублей врачей.
+  - **Этап 6 в работе:** аудит админ-контура (6.1, READ-ONLY) → хранение в `patient_access`, JWT без имени, нет разделения прав; **сид учетной записи `svetlana` + тесты логина/доступа** (6.2); 186/186 PASS, линтер OK. Правовой статус «Маршрут» = информационный сервис учтен для формулировок кабинета.
 - **Что предстоит:**
-  - Шаг 5.3 (по директиве Архитектора): персонализация кабинета Ксении (профиль/дашборд) и дальнейшая изоляция данных.
+  - Шаг 6.3 (по директиве Архитектора): персонализация шапки `/admin` под Светлану (имя в ответе логина/JWT `full_name` и отображение в `admin-user-bar`), возможно — разграничение прав.
+  - Шаг 5.3 (отложен, по директиве): персонализация кабинета Ксении.
   - Опционально (по директиве Архитектора): `manifest.json`, иконки PWA (192/512), favicon (сейчас отсутствует), переход `Alik.png` → `Alik.webp` в precache.
-  - Деплой пакета изоляции (Этапы 1–5) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
+  - Деплой пакета изоляции (Этапы 1–6) на VPS Beget — отложен до завершения всего пакета по директиве Архитектора.
 
 
 

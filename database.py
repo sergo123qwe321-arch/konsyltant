@@ -113,6 +113,75 @@ def seed_doctor_ksenia() -> Optional[int]:
         if conn is not None:
             conn.close()
 
+def seed_admin_svetlana() -> Optional[int]:
+    """
+    Идемпотентный сид учетной записи администратора Светланы (Этап 6, шаг 6.2).
+    Поиск: access_token == 'svetlana' AND role == 'ADMIN':
+      - запись найдена — UPDATE только full_name и specialization
+        (пароль не сбрасывается, дубликаты не создаются);
+      - запись отсутствует — INSERT с bcrypt-хэшем стартового пароля.
+    Возвращает id записи (или None при ошибке).
+    """
+    seed_login = "svetlana"
+    seed_password = "svetlanadefmarshryt123"
+    seed_full_name = "дефектолог Светлана / руководитель платформы Маршрут"
+    seed_specialization = "Дефектолог / Руководитель платформы"
+
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        execute_query(
+            cursor,
+            "SELECT id FROM patient_access WHERE access_token = ? AND role = 'ADMIN'",
+            (seed_login,),
+        )
+        row = cursor.fetchone()
+        if row:
+            admin_id = row[0]
+            execute_query(
+                cursor,
+                "UPDATE patient_access SET full_name = ?, specialization = ? WHERE id = ?",
+                (seed_full_name, seed_specialization, admin_id),
+            )
+            conn.commit()
+            return admin_id
+
+        password_hash = bcrypt.hashpw(
+            seed_password.encode("utf-8"), bcrypt.gensalt()
+        ).decode("utf-8")
+        is_postgres = check_is_postgres()
+        val_verified = True if is_postgres else 1
+        if is_postgres:
+            execute_query(
+                cursor,
+                """
+                INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, is_verified, full_name, specialization)
+                VALUES (?, ?, 'admin_vault', 'ADMIN', ?, ?, ?)
+                RETURNING id
+                """,
+                (seed_login, password_hash, val_verified, seed_full_name, seed_specialization),
+            )
+            admin_id = cursor.fetchone()[0]
+        else:
+            execute_query(
+                cursor,
+                """
+                INSERT INTO patient_access (access_token, password_hash, gdrive_folder_id, role, is_verified, full_name, specialization)
+                VALUES (?, ?, 'admin_vault', 'ADMIN', ?, ?, ?)
+                """,
+                (seed_login, password_hash, val_verified, seed_full_name, seed_specialization),
+            )
+            admin_id = cursor.lastrowid
+        conn.commit()
+        return admin_id
+    except Exception as e:
+        logger.warning(f"[SEED ADMIN] Не удалось засеять учетку Светланы: {e}")
+        return None
+    finally:
+        if conn is not None:
+            conn.close()
+
 def init_db():
     """
     Инициализирует базу данных (PostgreSQL или SQLite) и создает таблицы.
@@ -781,6 +850,9 @@ def init_db():
 
     # 6. Идемпотентный сид целевого профиля врача (Этап 5, шаг 5.2)
     seed_doctor_ksenia()
+
+    # 7. Идемпотентный сид учетной записи администратора Светланы (Этап 6, шаг 6.2)
+    seed_admin_svetlana()
 
 def ensure_indexes(conn=None):
     """
