@@ -2065,6 +2065,13 @@ async def doctor_page(request: Request):
 async def admin_page(request: Request):
     return templates.TemplateResponse(request=request, name="admin.html")
 
+# --- Офлайн-заглушка PWA (Этап 4): отдаётся SW для precache ---
+
+@app.get("/offline")
+@app.get("/offline/")
+async def offline_page(request: Request):
+    return templates.TemplateResponse(request=request, name="offline.html")
+
 # --- Автономные SSR-страницы статей и материалов (Этап 3) ---
 
 def _video_embed_url(url: str) -> str:
