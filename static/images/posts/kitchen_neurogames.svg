@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <linearGradient id="bgGrad4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#181824"/>
+      <stop offset="50%" stop-color="#2D124D"/>
+      <stop offset="100%" stop-color="#0E2338"/>
+    </linearGradient>
+    <linearGradient id="gearGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#EC4899"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <filter id="glow4" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="450" fill="url(#bgGrad4)"/>
+
+  <!-- Playful Geometry & Connectors -->
+  <line x1="320" y1="210" x2="480" y2="210" stroke="#A855F7" stroke-width="4" stroke-dasharray="8 6"/>
+
+  <!-- Left Hemisphere Gear (Creativity/Motor) -->
+  <g transform="translate(330, 210)">
+    <circle cx="0" cy="0" r="70" fill="url(#gearGrad)" filter="url(#glow4)"/>
+    <circle cx="0" cy="0" r="30" fill="#181824"/>
+    <!-- Gear Teeth -->
+    <rect x="-12" y="-85" width="24" height="20" rx="6" fill="#F97316"/>
+    <rect x="-12" y="65" width="24" height="20" rx="6" fill="#F97316"/>
+    <rect x="-85" y="-12" width="20" height="24" rx="6" fill="#F97316"/>
+    <rect x="65" y="-12" width="20" height="24" rx="6" fill="#F97316"/>
+    <text x="0" y="10" font-family="'Rubik', sans-serif" font-size="28" font-weight="700" fill="#FFFFFF" text-anchor="middle">🎨</text>
+  </g>
+
+  <!-- Right Hemisphere Gear (Logic/Focus) -->
+  <g transform="translate(470, 210)">
+    <circle cx="0" cy="0" r="55" fill="url(#cyanGrad)" filter="url(#glow4)"/>
+    <circle cx="0" cy="0" r="22" fill="#181824"/>
+    <!-- Gear Teeth -->
+    <rect x="-10" y="-70" width="20" height="18" rx="5" fill="#06B6D4"/>
+    <rect x="-10" y="52" width="20" height="18" rx="5" fill="#06B6D4"/>
+    <rect x="-70" y="-10" width="18" height="20" rx="5" fill="#06B6D4"/>
+    <rect x="52" y="-10" width="18" height="20" rx="5" fill="#06B6D4"/>
+    <text x="0" y="8" font-family="'Rubik', sans-serif" font-size="22" font-weight="700" fill="#FFFFFF" text-anchor="middle">🧩</text>
+  </g>
+
+  <!-- Badge Label -->
+  <rect x="40" y="40" width="160" height="38" rx="19" fill="rgba(249, 115, 22, 0.15)" stroke="#F97316" stroke-width="1.5"/>
+  <text x="120" y="64" font-family="'Rubik', sans-serif" font-size="14" font-weight="600" fill="#FB923C" text-anchor="middle">🎲 ИГРЫ И МОТОРИКА</text>
+
+  <!-- Topic Title on Cover -->
+  <text x="40" y="380" font-family="'Rubik', sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Нейроигры на кухне</text>
+  <text x="40" y="412" font-family="'Rubik', sans-serif" font-size="16" font-weight="400" fill="#94A3B8">Развиваем межполушарные связи подручными средствами</text>
+</svg>

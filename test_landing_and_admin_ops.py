@@ -22,7 +22,7 @@ class TestLandingAndAdminOps(unittest.TestCase):
         cls.patient_token = create_access_token({"sub": "test_patient", "role": "PATIENT"})
 
     def test_01_landing_sections_order(self):
-        """1. Проверка порядка секций лендинга в templates/index.html: Посты первыми, выше Hero!"""
+        """1. Проверка порядка секций лендинга в templates/index.html: Hero первым, затем Посты!"""
         with open("templates/index.html", "r", encoding="utf-8") as f:
             html = f.read()
 
@@ -48,9 +48,9 @@ class TestLandingAndAdminOps(unittest.TestCase):
         self.assertNotEqual(pos_contacts, -1, "Секция Контакты найдена")
         self.assertNotEqual(pos_footer, -1, "Подвал найден")
 
-        # Проверяем строгий порядок: Посты -> Hero -> Библиотека -> Персонажи -> О центре -> Услуги -> Врачи -> События -> Контакты -> Подвал
-        self.assertTrue(pos_posts < pos_hero, "Новые посты должны идти САМЫМИ ПЕРВЫМИ, перед Hero")
-        self.assertTrue(pos_hero < pos_blog, "Hero должен идти перед Библиотекой")
+        # Проверяем строгий порядок: Hero -> Посты -> Библиотека -> Персонажи -> О центре -> Услуги -> Врачи -> События -> Контакты -> Подвал
+        self.assertTrue(pos_hero < pos_posts, "Hero должен идти САМЫМ ПЕРВЫМ, перед Постами")
+        self.assertTrue(pos_posts < pos_blog, "Новые посты должны идти перед Библиотекой")
         self.assertTrue(pos_blog < pos_characters, "Библиотека должна идти перед Персонажами звуков")
         self.assertTrue(pos_characters < pos_about, "Персонажи должны идти перед О центре")
         self.assertTrue(pos_about < pos_services, "О центре перед Услугами")
