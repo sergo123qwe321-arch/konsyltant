@@ -1490,6 +1490,10 @@
     * Сформирован локальный коммит `d37f2ba` (`feat(sanitize): clean duplicate test posts and update harness reporting rules`).
     * Создана стабильная точка отката: `restore-point-20261030-0801`. Активных точек отката: 2 из 7 (`restore-point-20261009-0207`, `restore-point-20261030-0801`).
     * В `OTCHET.md` внесен пункт 5 по правилам AGENTS.md (с датой, без времени, простым языком).
-  - **Статус синхронизации (Git Push):**
-    * Попытка `git push origin main` вернула HTTP 403: локальный Git Credential Manager авторизован под учетной записью `Sergei123321123`, имеющей права `pull: True`, но `push: False` к репозиторию `sergo123qwe321-arch/konsyltant.git`.
-    * Для завершения удаленной отправки требуется предоставить write-доступ учетной записи `Sergei123321123` в настройках репозитория GitHub либо обновить токен доступа.
+  - **Синхронизация с GitHub (Git Push):**
+    * Владелец репозитория `sergo123qwe321-arch` отправил инвайт в коллабораторы для `Sergei123321123`.
+    * Через GitHub REST API запрошен список инвайтов (`GET /user/repository_invitations`) -> обнаружено приглашение ID `340599983` в репозиторий `sergo123qwe321-arch/konsyltant`.
+    * Приглашение принято вызовом `PATCH /user/repository_invitations/340599983` -> HTTP 204 No Content. Права обновлены: `{'push': True, 'pull': True}`.
+    * Выполнена отправка ветки `main`: `git push origin main` -> OK (`abed51f..2687715 main -> main`).
+    * Выполнена отправка тега точки отката: `git push origin restore-point-20261030-0801` -> OK (`* [new tag] restore-point-20261030-0801`).
+    * Активных точек отката в системе: 2 из 7 (`restore-point-20261009-0207`, `restore-point-20261030-0801`).
