@@ -1,6 +1,6 @@
 import test_bootstrap
 import unittest
-from database import init_db, ensure_indexes, get_db_indexes, get_connection, DATABASE_URL, psycopg2
+from database import init_db, ensure_indexes, get_db_indexes, get_connection, check_is_postgres
 
 class TestDatabaseIndexes(unittest.TestCase):
 
@@ -56,7 +56,7 @@ class TestDatabaseIndexes(unittest.TestCase):
         """3. Проверяет использование индексов при поиске по access_token и share_token через EXPLAIN."""
         conn = get_connection()
         cursor = conn.cursor()
-        is_postgres = bool(DATABASE_URL and psycopg2)
+        is_postgres = check_is_postgres()
 
         try:
             if is_postgres:
