@@ -1562,3 +1562,23 @@
     * Линтер текстовых логов: `python scripts/lint_no_txt_logs.py` -> PASS (0 запрещенных .txt логов).
     * Полный тестовый сьют: `python -m unittest discover -s . -p "test_*.py"` -> **189/189 PASS** (18.0с).
     * Отчетность: обновлен файл `OTCHET.md` (добавлен шаг 8 с датой 30.10.2026, строго без времени).
+
+- [2026-10-30] [Этап 12.6 — Деплой пакета изменений на боевой сервер VPS Beget (159.194.232.74) и сквозная валидация]:
+  - **Git-синхронизация:**
+    * Сформированы коммиты `3d14a96` и `4d6feb0`, отправлены в ветку `origin/main`.
+    * На боевом сервере VPS Beget выполнен `git pull origin main` (актуализирован коммит `4d6feb0`).
+  - **Пересборка и запуск контейнеров:**
+    * Пересобран и перезапущен рабочий веб-контейнер: `docker compose build web && docker compose up -d`.
+    * Контейнеры `konsyltant_web`, `konsyltant_db`, `konsyltant_nginx`, `konsyltant_certbot` функционируют штатно.
+  - **Синхронизация данных в боевой PostgreSQL:**
+    * Внутри контейнера `konsyltant_web` запущен `seed_clean_expert_articles.py` -> 4 экспертные статьи добавлены в базу данных.
+    * Выполнен `clean_duplicate_test_posts.py` -> удалено 19 устаревших тестовых записей-клонов.
+    * Итоговое состояние боевой БД: `public_posts` = 13 записей, `public_library` = 4 материала.
+  - **Тестирование внутри боевого контейнера:**
+    * В `konsyltant_web` выполнен прогон полного сьюта `python -m unittest discover -s . -p "test_*.py"`:
+    * **189/189 тестов успешно пройдены (100% PASS)** в среде Linux + PostgreSQL (19.49 с).
+  - **Сетевое смоук-тестирование (HTTPS https://xn--g1aj3a.site):**
+    * Главная страница (HTTP 200 OK): строгая последовательность `#hero` (2936) -> `#posts` (3754) -> `#blog` (4915).
+    * Навигация: ссылка `href="#hero"` активна.
+    * Векторные обложки статей (`/static/images/posts/speech_red_flags.svg`): HTTP 200 OK (2.6 Кб).
+    * Публичный API (`/api/v1/public/chat?limit=1`): HTTP 200 OK.
